@@ -162,15 +162,17 @@ export function ManagerDashboard() {
     const { error } = await supabase.from('services').insert([{
       name: serviceName,
       price: parseFloat(servicePrice),
-      clinic_id: serviceClinicId
+      clinic_id: serviceClinicId === 'general' ? null : serviceClinicId
     }]);
 
     if (!error) {
       alert('تم إضافة الخدمة بنجاح');
       setServiceName('');
       setServicePrice('');
+      setServiceClinicId('');
       fetchServices();
     } else {
+      console.error(error);
       alert('حدث خطأ أثناء إضافة الخدمة');
     }
   };
@@ -528,6 +530,7 @@ export function ManagerDashboard() {
                       <label className="block text-sm font-bold text-gray-700 mb-1">العيادة التابعة</label>
                       <select value={serviceClinicId} onChange={(e) => setServiceClinicId(e.target.value)} required className="w-full border rounded-lg p-2">
                         <option value="">-- اختر العيادة --</option>
+                        <option value="general">خدمة عامة (بدون عيادة)</option>
                         {clinics.map(clinic => (
                           <option key={clinic.id} value={clinic.id}>{clinic.name}</option>
                         ))}
