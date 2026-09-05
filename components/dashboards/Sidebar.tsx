@@ -16,8 +16,11 @@ interface SidebarProps {
 
 export function Sidebar({ items, activeItem, setActiveItem }: SidebarProps) {
   return (
-    <aside className="w-64 bg-white border-l flex-shrink-0 hidden md:block h-full">
-      <nav className="p-4 space-y-2">
+    <aside className="w-64 bg-white border-l flex-shrink-0 hidden md:block h-full flex flex-col">
+      <div className="p-6 border-b flex items-center justify-center">
+        <img src="/logo.png" alt="الطائر الحر" className="w-24 h-auto object-contain" onError={(e) => e.currentTarget.style.display = 'none'} />
+      </div>
+      <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
         {items.map((item) => {
           const isActive = activeItem === item.id;
           return (

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
 import { User, Calendar, FileText, MessageSquare, AlertCircle, List, Calculator } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { MedicalCalculators } from './patient/MedicalCalculators';
 
 const patientNav: SidebarItem[] = [
   { name: 'حجز المواعيد والسجلات', id: 'appointments', icon: Calendar },
@@ -22,18 +23,26 @@ export function PatientDashboard() {
       <Sidebar items={patientNav} activeItem={activeTab} setActiveItem={setActiveTab} />
       <div className="flex-1 p-8 overflow-y-auto bg-gray-50">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-gray-800 mb-8">{patientNav.find(n => n.id === activeTab)?.name}</h2>
           
-          <Card>
-            <CardHeader>
-              <CardTitle>واجهة {patientNav.find(n => n.id === activeTab)?.name}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-500">سيتم ربط هذه الشاشة مع قاعدة بيانات Supabase (جدول {activeTab}).</p>
-            </CardContent>
-          </Card>
+          {activeTab === 'calculators' ? (
+            <MedicalCalculators />
+          ) : (
+            <>
+              <h2 className="text-3xl font-bold text-gray-800 mb-8">{patientNav.find(n => n.id === activeTab)?.name}</h2>
+              <Card>
+                <CardHeader>
+                  <CardTitle>واجهة {patientNav.find(n => n.id === activeTab)?.name}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-gray-500">سيتم ربط هذه الشاشة مع قاعدة بيانات Supabase (جدول {activeTab}).</p>
+                </CardContent>
+              </Card>
+            </>
+          )}
+
         </div>
       </div>
     </div>
   );
 }
+
