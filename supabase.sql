@@ -5,6 +5,9 @@
 -- 1. Custom Types
 CREATE TYPE user_role AS ENUM ('manager', 'doctor', 'patient', 'secretary', 'accountant');
 
+-- Sequence for patient code
+CREATE SEQUENCE IF NOT EXISTS patient_code_seq START 1000 MAXVALUE 999999;
+
 -- 2. Profiles Table (Extends Supabase auth.users)
 CREATE TABLE profiles (
     id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
@@ -13,6 +16,7 @@ CREATE TABLE profiles (
     role user_role DEFAULT 'patient'::user_role,
     phone TEXT,
     avatar_url TEXT,
+    patient_code TEXT UNIQUE,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
@@ -151,14 +155,16 @@ BEGIN
     first_name, 
     last_name, 
     role, 
-    avatar_url
+    avatar_url,
+    patient_code
   )
   VALUES (
     new.id,
     first_name_val,
     last_name_val,
     'patient'::user_role,
-    new.raw_user_meta_data->>'avatar_url'
+    new.raw_user_meta_data->>'avatar_url',
+    nextval('patient_code_seq')::TEXT
   );
   
   RETURN new;

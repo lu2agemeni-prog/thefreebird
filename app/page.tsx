@@ -165,7 +165,7 @@ export default function HomePage() {
     switch (user.role) {
       case 'manager': return <ManagerDashboard />;
       case 'doctor': return <DoctorDashboard />;
-      case 'patient': return <PatientDashboard />;
+      case 'patient': return <PatientDashboard user={user} />;
       case 'secretary': return <SecretaryDashboard />;
       case 'accountant': return <AccountantDashboard />;
       default: return (

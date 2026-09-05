@@ -17,7 +17,7 @@ const patientNav: SidebarItem[] = [
   { name: 'الملف الشخصي', id: 'profile', icon: User },
 ];
 
-export function PatientDashboard() {
+export function PatientDashboard({ user }: { user?: any }) {
   const [activeTab, setActiveTab] = useState('appointments');
 
   return (
@@ -25,6 +25,18 @@ export function PatientDashboard() {
       <Sidebar items={patientNav} activeItem={activeTab} setActiveItem={setActiveTab} />
       <div className="flex-1 p-8 overflow-y-auto bg-gray-50">
         <div className="max-w-6xl mx-auto">
+          {user?.patient_code && (
+            <div className="mb-6 bg-white border-2 border-emerald-100 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+              <div>
+                <h3 className="text-gray-500 font-bold text-sm">مرحباً بك</h3>
+                <p className="text-xl font-bold text-gray-800">{user.first_name} {user.last_name}</p>
+              </div>
+              <div className="text-left bg-emerald-50 px-6 py-3 rounded-xl border border-emerald-100">
+                <p className="text-emerald-700 font-bold text-sm mb-1">الكود الطبي الخاص بك</p>
+                <p className="text-3xl font-black text-emerald-600 font-mono tracking-widest">{user.patient_code}</p>
+              </div>
+            </div>
+          )}
           
           {activeTab === 'calculators' ? (
             <MedicalCalculators />

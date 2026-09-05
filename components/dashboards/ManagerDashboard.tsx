@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase';
 
 const managerNav: SidebarItem[] = [
   { name: 'لوحة القيادة', id: 'dashboard', icon: Activity },
+  { name: 'الملفات الطبية', id: 'medical_records', icon: FileText },
   { name: 'الأطباء', id: 'doctors', icon: Stethoscope },
   { name: 'العيادات', id: 'clinics', icon: Building },
   { name: 'صلاحيات المستخدمين', id: 'staff_management', icon: Shield },
@@ -37,8 +38,12 @@ export function ManagerDashboard() {
   const [consultations, setConsultations] = useState<any[]>([]);
   const [news, setNews] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
+  const [patients, setPatients] = useState<any[]>([]);
   const [reportTab, setReportTab] = useState('clinics');
   const [loading, setLoading] = useState(false);
+  
+  // Search state for medical records
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Services Form State
   const [serviceName, setServiceName] = useState('');
@@ -53,6 +58,7 @@ export function ManagerDashboard() {
 
   useEffect(() => {
     if (activeTab === 'staff_management') fetchUsers();
+    if (activeTab === 'medical_records') fetchPatients();
     if (activeTab === 'doctors' || activeTab === 'medical_news') fetchDoctors();
     if (activeTab === 'clinics' || activeTab === 'dashboard' || activeTab === 'services') fetchClinics();
     if (activeTab === 'services') fetchServices();
@@ -72,6 +78,17 @@ export function ManagerDashboard() {
     setLoading(true);
     const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
     if (data) setUsers(data);
+    setLoading(false);
+  };
+
+  const fetchPatients = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', 'patient')
+      .order('created_at', { ascending: false });
+    if (data) setPatients(data);
     setLoading(false);
   };
 
@@ -394,6 +411,81 @@ export function ManagerDashboard() {
                           <tr>
                             <td colSpan={4} className="p-8 text-center text-gray-500">
                               لا يوجد مستخدمين مسجلين حتى الآن
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {activeTab === 'medical_records' && (
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <CardTitle>الملفات الطبية للمرضى</CardTitle>
+                    <CardDescription>بحث واستعراض ملفات المرضى المسجلين</CardDescription>
+                  </div>
+                  <div className="flex bg-white border rounded-lg px-3 py-2 w-full md:w-80 shadow-sm">
+                    <input 
+                      type="text" 
+                      placeholder="ابحث بالاسم، رقم التليفون، أو الكود..." 
+                      className="w-full outline-none text-sm bg-transparent"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <p className="text-gray-500 py-4">جاري تحميل الملفات...</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50 border-b">
+                          <th className="p-4 font-semibold text-gray-600">الكود الطبي</th>
+                          <th className="p-4 font-semibold text-gray-600">اسم المريض</th>
+                          <th className="p-4 font-semibold text-gray-600">رقم الهاتف</th>
+                          <th className="p-4 font-semibold text-gray-600">تاريخ التسجيل</th>
+                          <th className="p-4 font-semibold text-gray-600">إجراءات</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {patients.filter(p => {
+                          const query = searchQuery.toLowerCase();
+                          const fullName = `${p.first_name} ${p.last_name}`.toLowerCase();
+                          return fullName.includes(query) || (p.phone && p.phone.includes(query)) || (p.patient_code && p.patient_code.includes(query));
+                        }).map(patient => (
+                          <tr key={patient.id} className="border-b hover:bg-gray-50 transition-colors">
+                            <td className="p-4 font-bold text-emerald-600 text-lg">
+                              {patient.patient_code || '---'}
+                            </td>
+                            <td className="p-4">
+                              <div className="font-bold text-gray-800">{patient.first_name} {patient.last_name}</div>
+                            </td>
+                            <td className="p-4 text-gray-600">
+                              <span dir="ltr">{patient.phone || 'غير مسجل'}</span>
+                            </td>
+                            <td className="p-4 text-gray-500 text-sm">
+                              {new Date(patient.created_at).toLocaleDateString('ar-EG')}
+                            </td>
+                            <td className="p-4">
+                              <button className="text-emerald-600 hover:text-emerald-800 text-sm font-bold bg-emerald-50 px-3 py-1.5 rounded-lg transition-colors">
+                                عرض الملف
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {patients.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="p-8 text-center text-gray-500">
+                              لا يوجد مرضى مسجلين حتى الآن
                             </td>
                           </tr>
                         )}
