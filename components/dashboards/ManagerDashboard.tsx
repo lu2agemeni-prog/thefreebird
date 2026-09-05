@@ -253,11 +253,13 @@ export function ManagerDashboard() {
           )}
 
           {activeTab === 'qrcodes' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <QRCodeCard title="لائحة الأسعار" url="https://freebird.clinic/prices" desc="QR Code لصفحة الأسعار والخدمات" />
-              <QRCodeCard title="الشكاوى والاقتراحات" url="https://freebird.clinic/complaints" desc="QR Code لنموذج الشكاوى والمقترحات" />
-              <QRCodeCard title="واي فاي العيادة" url="WIFI:S:FreeBird_Guest;T:WPA;P:12345678;;" desc="QR Code للاتصال المباشر بشبكة الواي فاي" />
-              <QRCodeCard title="العيادة الباطنية" url="https://freebird.clinic/book/internal" desc="QR Code لحجز موعد في العيادة الباطنية" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <QRCodeCard title="لائحة الأسعار" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/prices`} desc="QR Code لصفحة الأسعار والخدمات" />
+              <QRCodeCard title="الشكاوى والاقتراحات" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/complaints`} desc="QR Code لنموذج الشكاوى والمقترحات" />
+              <QRCodeCard title="واي فاي العيادة" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/wifi`} desc="QR Code لصفحة بيانات الواي فاي للزوار" />
+              <QRCodeCard title="الحجز السريع" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/book`} desc="QR Code لحجز موعد في العيادات" />
+              <QRCodeCard title="شاشة النداء الآلي" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/queue`} desc="QR Code لفتح شاشة العرض العامة على الشاشات الكبيرة" />
+              <QRCodeCard title="أطباء المركز" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/doctors`} desc="QR Code لعرض الأطباء ومواعيدهم" />
             </div>
           )}
           
