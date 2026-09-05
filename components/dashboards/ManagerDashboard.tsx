@@ -11,53 +11,63 @@ import { supabase } from '@/lib/supabase';
 
 const managerNav: SidebarItem[] = [
   { name: 'لوحة القيادة', id: 'dashboard', icon: Activity },
-  { name: 'الإعدادات العامة', id: 'settings', icon: Settings },
   { name: 'الأطباء', id: 'doctors', icon: Stethoscope },
-  { name: 'صلاحيات المستخدمين', id: 'staff_management', icon: Shield },
-  { name: 'العاملين', id: 'staff', icon: Users },
-  { name: 'الحسابات', id: 'accounts', icon: CreditCard },
   { name: 'العيادات', id: 'clinics', icon: Building },
+  { name: 'صلاحيات المستخدمين', id: 'staff_management', icon: Shield },
   { name: 'النداء الآلي', id: 'call_queue', icon: Activity },
   { name: 'الماليات والأرباح', id: 'financials', icon: Calculator },
-  { name: 'الخدمات والأسعار', id: 'services', icon: CreditCard },
   { name: 'QR Codes', id: 'qrcodes', icon: QrCode },
 ];
 
 export function ManagerDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // User Management State
+  // Data States
   const [users, setUsers] = useState<any[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [doctors, setDoctors] = useState<any[]>([]);
+  const [clinics, setClinics] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (activeTab === 'staff_management') {
-      fetchUsers();
-    }
+    if (activeTab === 'staff_management') fetchUsers();
+    if (activeTab === 'doctors') fetchDoctors();
+    if (activeTab === 'clinics' || activeTab === 'dashboard') fetchClinics();
   }, [activeTab]);
 
   const fetchUsers = async () => {
-    setLoadingUsers(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
-      
+    setLoading(true);
+    const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
     if (data) setUsers(data);
-    setLoadingUsers(false);
+    setLoading(false);
+  };
+
+  const fetchDoctors = async () => {
+    setLoading(true);
+    // Fetch profiles that have role 'doctor'
+    const { data } = await supabase.from('profiles').select('*').eq('role', 'doctor');
+    if (data) setDoctors(data);
+    setLoading(false);
+  };
+
+  const fetchClinics = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('clinics').select('*');
+    if (data) setClinics(data);
+    setLoading(false);
   };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role: newRole })
-      .eq('id', userId);
-
-    if (error) {
-      alert('حدث خطأ أثناء التحديث: ' + error.message);
-    } else {
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
+    if (!error) {
       setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
-      // alert('تم تحديث الصلاحية بنجاح');
+    }
+  };
+
+  const addDummyClinic = async () => {
+    const name = prompt('أدخل اسم العيادة الجديدة (مثال: عيادة الأسنان):');
+    if (name) {
+      const { error } = await supabase.from('clinics').insert([{ name, description: 'تمت إضافتها حديثاً' }]);
+      if (!error) fetchClinics();
     }
   };
 
@@ -70,11 +80,82 @@ export function ManagerDashboard() {
           
           {activeTab === 'dashboard' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <StatCard title="إجمالي الأطباء" value="12" icon={<Stethoscope />} />
-              <StatCard title="العيادات النشطة" value="5" icon={<Building />} />
-              <StatCard title="مرضى اليوم" value="48" icon={<Users />} />
-              <StatCard title="إيرادات اليوم" value="4,500 ج.م" icon={<Calculator />} />
+              <StatCard title="إجمالي الأطباء" value="قريباً" icon={<Stethoscope />} />
+              <StatCard title="العيادات النشطة" value={clinics.length.toString()} icon={<Building />} />
+              <StatCard title="مرضى اليوم" value="0" icon={<Users />} />
+              <StatCard title="إيرادات اليوم" value="0 ج.م" icon={<Calculator />} />
             </div>
+          )}
+
+          {activeTab === 'doctors' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>أطباء المركز</CardTitle>
+                <CardDescription>قائمة بجميع الأطباء المسجلين في النظام</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {doctors.length === 0 ? (
+                      <p className="text-gray-500">لا يوجد أطباء مسجلين. قم بتغيير صلاحية أحد المستخدمين إلى "طبيب" من شاشة الصلاحيات.</p>
+                    ) : doctors.map((doc) => (
+                      <div key={doc.id} className="border p-4 rounded-xl flex items-center gap-4 bg-white shadow-sm">
+                        {doc.avatar_url ? (
+                          <img src={doc.avatar_url} alt="" className="w-16 h-16 rounded-full" />
+                        ) : (
+                          <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 text-xl font-bold">
+                            {doc.first_name?.[0]}
+                          </div>
+                        )}
+                        <div>
+                          <h4 className="font-bold text-lg">د. {doc.first_name} {doc.last_name}</h4>
+                          <p className="text-gray-500 text-sm">{doc.email}</p>
+                          <span className="inline-block mt-2 text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded-full">طبيب مفعل</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {activeTab === 'clinics' && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>العيادات والتخصصات</CardTitle>
+                  <CardDescription>إدارة العيادات المتاحة في المركز</CardDescription>
+                </div>
+                <button onClick={addDummyClinic} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-800 transition-colors">
+                  + إضافة عيادة
+                </button>
+              </CardHeader>
+              <CardContent>
+                {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {clinics.length === 0 ? (
+                      <p className="text-gray-500">لا توجد عيادات. اضغط على الزر أعلاه لإضافة عيادة.</p>
+                    ) : clinics.map((clinic) => (
+                      <div key={clinic.id} className="border p-4 rounded-xl flex items-center justify-between bg-white shadow-sm hover:border-emerald-200 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
+                            <Building className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-lg">{clinic.name}</h4>
+                            <p className="text-gray-500 text-sm">{clinic.description || 'بدون وصف'}</p>
+                          </div>
+                        </div>
+                        <span className={`text-xs px-2 py-1 rounded-full ${clinic.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                          {clinic.is_active ? 'نشط' : 'غير نشط'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
 
           {activeTab === 'staff_management' && (
