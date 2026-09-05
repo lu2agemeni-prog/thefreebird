@@ -4,7 +4,7 @@ import { Sidebar, SidebarItem } from './Sidebar';
 import { 
   Settings, Users, Building, Calculator, 
   Stethoscope, CreditCard, Activity, QrCode, Shield,
-  BarChart, FileText, Download, CheckCircle, MessageSquare
+  BarChart, FileText, Download, CheckCircle, MessageSquare, Newspaper
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { QRCodeSVG } from 'qrcode.react';
@@ -17,6 +17,7 @@ const managerNav: SidebarItem[] = [
   { name: 'صلاحيات المستخدمين', id: 'staff_management', icon: Shield },
   { name: 'النداء الآلي', id: 'call_queue', icon: Activity },
   { name: 'الماليات والأرباح', id: 'financials', icon: Calculator },
+  { name: 'الأخبار الطبية', id: 'medical_news', icon: Newspaper },
   { name: 'التقارير الشاملة', id: 'reports', icon: BarChart },
   { name: 'QR Codes', id: 'qrcodes', icon: QrCode },
 ];
@@ -33,15 +34,23 @@ export function ManagerDashboard() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [complaints, setComplaints] = useState<any[]>([]);
   const [consultations, setConsultations] = useState<any[]>([]);
+  const [news, setNews] = useState<any[]>([]);
   const [reportTab, setReportTab] = useState('clinics');
   const [loading, setLoading] = useState(false);
 
+  // News Form State
+  const [newsTitle, setNewsTitle] = useState('');
+  const [newsContent, setNewsContent] = useState('');
+  const [newsImage, setNewsImage] = useState('');
+  const [newsDoctor, setNewsDoctor] = useState('');
+
   useEffect(() => {
     if (activeTab === 'staff_management') fetchUsers();
-    if (activeTab === 'doctors') fetchDoctors();
+    if (activeTab === 'doctors' || activeTab === 'medical_news') fetchDoctors();
     if (activeTab === 'clinics' || activeTab === 'dashboard') fetchClinics();
     if (activeTab === 'call_queue') fetchQueue();
     if (activeTab === 'financials') fetchTransactions();
+    if (activeTab === 'medical_news') fetchNews();
     
     if (activeTab === 'reports') {
       if (reportTab === 'clinics') { fetchAppointments(); fetchClinics(); fetchDoctors(); }
@@ -105,6 +114,43 @@ export function ManagerDashboard() {
     const { data } = await supabase.from('consultations').select('*, patient:patient_id(first_name, last_name), doctor:doctor_id(profiles(first_name, last_name))').order('created_at', { ascending: false });
     if (data) setConsultations(data);
     setLoading(false);
+  };
+
+  const fetchNews = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('medical_news').select('*, doctor:doctor_id(first_name, last_name)').order('created_at', { ascending: false });
+    if (data) setNews(data);
+    setLoading(false);
+  };
+
+  const handleCreateNews = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newsTitle || !newsContent) return alert('الرجاء إدخال العنوان والمحتوى');
+    
+    const { error } = await supabase.from('medical_news').insert([{
+      title: newsTitle,
+      content: newsContent,
+      image_url: newsImage || null,
+      doctor_id: newsDoctor || null
+    }]);
+
+    if (!error) {
+      alert('تم نشر الخبر الطبي بنجاح!');
+      setNewsTitle('');
+      setNewsContent('');
+      setNewsImage('');
+      setNewsDoctor('');
+      fetchNews();
+    } else {
+      alert('حدث خطأ أثناء النشر.');
+    }
+  };
+
+  const handleDeleteNews = async (id: string) => {
+    if (confirm('هل أنت متأكد من حذف هذا الخبر؟')) {
+      await supabase.from('medical_news').delete().eq('id', id);
+      fetchNews();
+    }
   };
 
   const exportToCSV = (data: any[], filename: string) => {
@@ -325,6 +371,77 @@ export function ManagerDashboard() {
               <QRCodeCard title="الحجز السريع" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/book`} desc="QR Code لحجز موعد في العيادات" />
               <QRCodeCard title="شاشة النداء الآلي" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/queue`} desc="QR Code لفتح شاشة العرض العامة على الشاشات الكبيرة" />
               <QRCodeCard title="أطباء المركز" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/doctors`} desc="QR Code لعرض الأطباء ومواعيدهم" />
+            </div>
+          )}
+
+          {activeTab === 'medical_news' && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>نشر خبر طبي جديد</CardTitle>
+                  <CardDescription>إضافة مقال أو خبر طبي ليظهر للمرضى في لوحة التحكم الخاصة بهم.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleCreateNews} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-1">عنوان الخبر / المقال</label>
+                      <input type="text" value={newsTitle} onChange={(e) => setNewsTitle(e.target.value)} required className="w-full border rounded-lg p-2" placeholder="مثال: نصائح هامة للوقاية من نزلات البرد" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-1">المحتوى</label>
+                      <textarea value={newsContent} onChange={(e) => setNewsContent(e.target.value)} required rows={4} className="w-full border rounded-lg p-2 resize-none" placeholder="اكتب تفاصيل الخبر هنا..." />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">رابط صورة (اختياري)</label>
+                        <input type="url" value={newsImage} onChange={(e) => setNewsImage(e.target.value)} className="w-full border rounded-lg p-2" placeholder="https://example.com/image.jpg" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">الطبيب المقدم للمقال (اختياري)</label>
+                        <select value={newsDoctor} onChange={(e) => setNewsDoctor(e.target.value)} className="w-full border rounded-lg p-2">
+                          <option value="">-- بدون تحديد طبيب --</option>
+                          {doctors.map(doc => (
+                            <option key={doc.id} value={doc.id}>د. {doc.first_name} {doc.last_name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <button type="submit" className="bg-emerald-600 text-white font-bold px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors">نشر الخبر</button>
+                  </form>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>الأخبار المنشورة</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loading ? <p className="text-gray-500 py-4">جاري تحميل الأخبار...</p> : (
+                    <div className="grid grid-cols-1 gap-4">
+                      {news.length === 0 ? (
+                        <p className="text-gray-500 text-center py-4">لا توجد أخبار منشورة بعد.</p>
+                      ) : news.map((post) => (
+                        <div key={post.id} className="border rounded-xl p-4 flex gap-4 bg-white">
+                          {post.image_url && (
+                            <img src={post.image_url} alt="" className="w-32 h-32 object-cover rounded-lg" />
+                          )}
+                          <div className="flex-1">
+                            <h4 className="font-bold text-lg text-emerald-900">{post.title}</h4>
+                            {post.doctor && (
+                              <p className="text-xs text-gray-500 mb-2">بواسطة: د. {post.doctor.first_name} {post.doctor.last_name}</p>
+                            )}
+                            <p className="text-gray-700 text-sm line-clamp-2">{post.content}</p>
+                            <div className="mt-4 flex justify-between items-center">
+                              <span className="text-xs text-gray-400">{new Date(post.created_at).toLocaleDateString('ar-EG')}</span>
+                              <button onClick={() => handleDeleteNews(post.id)} className="text-red-500 text-sm font-bold hover:text-red-700">حذف الخبر</button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           )}
           

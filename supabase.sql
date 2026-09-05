@@ -199,4 +199,33 @@ ALTER TABLE complaints ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Managers can manage complaints" ON complaints FOR ALL USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'manager'::user_role);
 CREATE POLICY "Anyone can insert complaints" ON complaints FOR INSERT WITH CHECK (true);
 
+-- 14. Medical News Table
+CREATE TABLE medical_news (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    image_url TEXT,
+    doctor_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- 15. News Likes Table
+CREATE TABLE news_likes (
+    news_id UUID REFERENCES medical_news(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+    PRIMARY KEY (news_id, user_id)
+);
+
+-- RLS for medical_news
+ALTER TABLE medical_news ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Medical news is viewable by everyone" ON medical_news FOR SELECT USING (true);
+CREATE POLICY "Managers can manage news" ON medical_news FOR ALL USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'manager'::user_role);
+
+-- RLS for news_likes
+ALTER TABLE news_likes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Likes are viewable by everyone" ON news_likes FOR SELECT USING (true);
+CREATE POLICY "Users can insert their own likes" ON news_likes FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can delete their own likes" ON news_likes FOR DELETE USING (auth.uid() = user_id);
+
 

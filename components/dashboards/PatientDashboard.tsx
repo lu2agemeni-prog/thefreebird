@@ -1,14 +1,16 @@
 'use client';
 import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
-import { User, Calendar, FileText, MessageSquare, AlertCircle, List, Calculator } from 'lucide-react';
+import { User, Calendar, FileText, MessageSquare, AlertCircle, List, Calculator, Newspaper } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { MedicalCalculators } from './patient/MedicalCalculators';
+import { PatientMedicalNews } from './patient/PatientMedicalNews';
 
 const patientNav: SidebarItem[] = [
   { name: 'حجز المواعيد والسجلات', id: 'appointments', icon: Calendar },
   { name: 'البيانات الطبية', id: 'medical_data', icon: FileText },
   { name: 'استشارات', id: 'consultations', icon: MessageSquare },
+  { name: 'الأخبار الطبية', id: 'medical_news', icon: Newspaper },
   { name: 'الخدمات والأسعار', id: 'services', icon: List },
   { name: 'حاسبات طبية', id: 'calculators', icon: Calculator },
   { name: 'الشكاوى والمقترحات', id: 'complaints', icon: AlertCircle },
@@ -26,6 +28,8 @@ export function PatientDashboard() {
           
           {activeTab === 'calculators' ? (
             <MedicalCalculators />
+          ) : activeTab === 'medical_news' ? (
+            <PatientMedicalNews />
           ) : (
             <>
               <h2 className="text-3xl font-bold text-gray-800 mb-8">{patientNav.find(n => n.id === activeTab)?.name}</h2>
