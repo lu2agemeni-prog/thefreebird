@@ -1,9 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Newspaper, ChevronDown, User, Calendar } from 'lucide-react';
+import { useAuth } from '@/lib/auth';
+import { Newspaper, ChevronDown, User, Calendar, Heart } from 'lucide-react';
 
 export function MedicalNewsViewer() {
+  const { user, loginWithGoogle } = useAuth();
   const [news, setNews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
@@ -18,7 +20,7 @@ export function MedicalNewsViewer() {
     setLoading(true);
     const { data, error, count } = await supabase
       .from('medical_news')
-      .select('*, doctor:doctor_id(first_name, last_name)', { count: 'exact' })
+      .select('*, doctor:doctor_id(first_name, last_name), news_likes(user_id)', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(pageIndex * limit, (pageIndex + 1) * limit - 1);
       
@@ -41,6 +43,34 @@ export function MedicalNewsViewer() {
     fetchNews(nextPage);
   };
 
+  const toggleLike = async (newsId: string, isLiked: boolean) => {
+    if (!user) {
+      alert("يرجى تسجيل الدخول أولاً لتتمكن من التفاعل مع المقالات.");
+      loginWithGoogle();
+      return;
+    }
+
+    if (isLiked) {
+      await supabase.from('news_likes').delete().match({ news_id: newsId, user_id: user.id });
+    } else {
+      await supabase.from('news_likes').insert([{ news_id: newsId, user_id: user.id }]);
+    }
+    
+    // Optimistic update
+    setNews(currentNews => 
+      currentNews.map(item => {
+        if (item.id === newsId) {
+          if (isLiked) {
+            return { ...item, news_likes: item.news_likes.filter((l: any) => l.user_id !== user.id) };
+          } else {
+            return { ...item, news_likes: [...(item.news_likes || []), { user_id: user.id }] };
+          }
+        }
+        return item;
+      })
+    );
+  };
+
   return (
     <div className="py-16 bg-white w-full">
       <div className="max-w-6xl mx-auto px-6">
@@ -52,33 +82,50 @@ export function MedicalNewsViewer() {
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {news.map((item) => (
-            <div key={item.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group">
-              {item.image_url ? (
-                <div className="h-56 overflow-hidden">
-                  <img src={item.image_url} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                </div>
-              ) : (
-                <div className="h-56 bg-emerald-50 flex items-center justify-center">
-                  <Newspaper className="w-16 h-16 text-emerald-200" />
-                </div>
-              )}
-              <div className="p-6 flex-1 flex flex-col">
-                <h3 className="text-xl font-bold text-gray-900 mb-3">{item.title}</h3>
-                <p className="text-gray-600 mb-6 line-clamp-3 leading-relaxed flex-1">{item.content}</p>
-                <div className="pt-4 border-t border-gray-50 flex items-center justify-between text-sm text-gray-500">
-                  <div className="flex items-center gap-1.5">
-                    <User className="w-4 h-4" />
-                    <span>{item.doctor ? `د. ${item.doctor.first_name} ${item.doctor.last_name}` : 'عيادات الطائر الحر'}</span>
+          {news.map((item) => {
+            const likesCount = item.news_likes?.length || 0;
+            const isLiked = item.news_likes?.some((like: any) => like.user_id === user?.id);
+            return (
+              <div key={item.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group">
+                {item.image_url ? (
+                  <div className="h-56 overflow-hidden">
+                    <img src={item.image_url} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4" />
-                    <span dir="ltr">{new Date(item.created_at).toLocaleDateString('ar-EG')}</span>
+                ) : (
+                  <div className="h-56 bg-emerald-50 flex items-center justify-center">
+                    <Newspaper className="w-16 h-16 text-emerald-200" />
+                  </div>
+                )}
+                <div className="p-6 flex-1 flex flex-col">
+                  <h3 className="text-xl font-bold text-gray-900 mb-3">{item.title}</h3>
+                  <p className="text-gray-600 mb-6 line-clamp-3 leading-relaxed flex-1">{item.content}</p>
+                  
+                  <div className="flex items-center justify-between mb-4">
+                    <button 
+                      onClick={() => toggleLike(item.id, isLiked)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold transition-colors ${
+                        isLiked ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      <Heart className={`w-4 h-4 ${isLiked ? 'fill-red-600' : ''}`} />
+                      {likesCount} {likesCount === 1 ? 'إعجاب' : 'إعجابات'}
+                    </button>
+                  </div>
+                  
+                  <div className="pt-4 border-t border-gray-50 flex items-center justify-between text-sm text-gray-500">
+                    <div className="flex items-center gap-1.5">
+                      <User className="w-4 h-4" />
+                      <span>{item.doctor ? `د. ${item.doctor.first_name} ${item.doctor.last_name}` : 'عيادات الطائر الحر'}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4" />
+                      <span dir="ltr">{new Date(item.created_at).toLocaleDateString('ar-EG')}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         
         {loading && (

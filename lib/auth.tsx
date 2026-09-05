@@ -12,6 +12,8 @@ interface UserProfile {
   last_name: string;
   role: Role;
   avatar_url?: string;
+  phone?: string;
+  patient_code?: string;
   email?: string;
 }
 

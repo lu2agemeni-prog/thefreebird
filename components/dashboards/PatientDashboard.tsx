@@ -5,6 +5,12 @@ import { User, Calendar, FileText, MessageSquare, AlertCircle, List, Calculator,
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { MedicalCalculators } from './patient/MedicalCalculators';
 import { PatientMedicalNews } from './patient/PatientMedicalNews';
+import { PatientAppointments } from './patient/PatientAppointments';
+import { PatientMedicalRecords } from './patient/PatientMedicalRecords';
+import { PatientConsultations } from './patient/PatientConsultations';
+import { PatientComplaints } from './patient/PatientComplaints';
+import { PatientServices } from './patient/PatientServices';
+import { PatientProfile } from './patient/PatientProfile';
 
 const patientNav: SidebarItem[] = [
   { name: 'حجز المواعيد والسجلات', id: 'appointments', icon: Calendar },
@@ -19,6 +25,32 @@ const patientNav: SidebarItem[] = [
 
 export function PatientDashboard({ user }: { user?: any }) {
   const [activeTab, setActiveTab] = useState('appointments');
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'appointments': return <PatientAppointments />;
+      case 'medical_data': return <PatientMedicalRecords />;
+      case 'consultations': return <PatientConsultations />;
+      case 'medical_news': return <PatientMedicalNews />;
+      case 'services': return <PatientServices />;
+      case 'calculators': return <MedicalCalculators />;
+      case 'complaints': return <PatientComplaints />;
+      case 'profile': return <PatientProfile />;
+      default: return (
+        <>
+          <h2 className="text-3xl font-bold text-gray-800 mb-8">{patientNav.find(n => n.id === activeTab)?.name}</h2>
+          <Card>
+            <CardHeader>
+              <CardTitle>واجهة {patientNav.find(n => n.id === activeTab)?.name}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-500">سيتم ربط هذه الشاشة مع قاعدة بيانات Supabase (جدول {activeTab}).</p>
+            </CardContent>
+          </Card>
+        </>
+      );
+    }
+  };
 
   return (
     <div className="flex h-full w-full">
@@ -38,24 +70,7 @@ export function PatientDashboard({ user }: { user?: any }) {
             </div>
           )}
           
-          {activeTab === 'calculators' ? (
-            <MedicalCalculators />
-          ) : activeTab === 'medical_news' ? (
-            <PatientMedicalNews />
-          ) : (
-            <>
-              <h2 className="text-3xl font-bold text-gray-800 mb-8">{patientNav.find(n => n.id === activeTab)?.name}</h2>
-              <Card>
-                <CardHeader>
-                  <CardTitle>واجهة {patientNav.find(n => n.id === activeTab)?.name}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-gray-500">سيتم ربط هذه الشاشة مع قاعدة بيانات Supabase (جدول {activeTab}).</p>
-                </CardContent>
-              </Card>
-            </>
-          )}
-
+          {renderContent()}
         </div>
       </div>
     </div>
