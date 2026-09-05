@@ -181,3 +181,11 @@ ALTER TABLE clinics ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public clinics are viewable by everyone." ON clinics FOR SELECT USING (true);
 CREATE POLICY "Managers can insert clinics." ON clinics FOR INSERT WITH CHECK ((SELECT role FROM profiles WHERE id = auth.uid()) = 'manager'::user_role);
 
+ALTER TABLE call_queue ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Call queue is viewable by everyone." ON call_queue FOR SELECT USING (true);
+CREATE POLICY "Staff can manage call queue" ON call_queue FOR ALL USING ((SELECT role FROM profiles WHERE id = auth.uid()) IN ('manager'::user_role, 'secretary'::user_role, 'doctor'::user_role));
+
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Transactions viewable by managers and accountants" ON transactions FOR SELECT USING ((SELECT role FROM profiles WHERE id = auth.uid()) IN ('manager'::user_role, 'accountant'::user_role));
+CREATE POLICY "Managers and accountants can insert transactions" ON transactions FOR INSERT WITH CHECK ((SELECT role FROM profiles WHERE id = auth.uid()) IN ('manager'::user_role, 'accountant'::user_role));
+

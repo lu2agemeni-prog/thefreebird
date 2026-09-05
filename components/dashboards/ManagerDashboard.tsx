@@ -26,12 +26,16 @@ export function ManagerDashboard() {
   const [users, setUsers] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
   const [clinics, setClinics] = useState<any[]>([]);
+  const [queue, setQueue] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (activeTab === 'staff_management') fetchUsers();
     if (activeTab === 'doctors') fetchDoctors();
     if (activeTab === 'clinics' || activeTab === 'dashboard') fetchClinics();
+    if (activeTab === 'call_queue') fetchQueue();
+    if (activeTab === 'financials') fetchTransactions();
   }, [activeTab]);
 
   const fetchUsers = async () => {
@@ -43,7 +47,6 @@ export function ManagerDashboard() {
 
   const fetchDoctors = async () => {
     setLoading(true);
-    // Fetch profiles that have role 'doctor'
     const { data } = await supabase.from('profiles').select('*').eq('role', 'doctor');
     if (data) setDoctors(data);
     setLoading(false);
@@ -53,6 +56,20 @@ export function ManagerDashboard() {
     setLoading(true);
     const { data } = await supabase.from('clinics').select('*');
     if (data) setClinics(data);
+    setLoading(false);
+  };
+
+  const fetchQueue = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('call_queue').select('*, clinics(name)').order('updated_at', { ascending: false });
+    if (data) setQueue(data);
+    setLoading(false);
+  };
+
+  const fetchTransactions = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
+    if (data) setTransactions(data);
     setLoading(false);
   };
 
@@ -244,14 +261,88 @@ export function ManagerDashboard() {
             </div>
           )}
           
-          {/* Add basic placeholders for other tabs to show it's wired up */}
-          {activeTab !== 'dashboard' && activeTab !== 'qrcodes' && activeTab !== 'staff_management' && (
+          {activeTab === 'call_queue' && (
             <Card>
               <CardHeader>
-                <CardTitle>جاري تحميل بيانات {managerNav.find(n => n.id === activeTab)?.name}...</CardTitle>
+                <CardTitle>النداء الآلي (شاشة الانتظار)</CardTitle>
+                <CardDescription>المرضى في طابور الانتظار للعيادات</CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-gray-500">سيتم ربط هذه الشاشة مع قاعدة بيانات Supabase (جدول {activeTab}).</p>
+                {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="border-b bg-gray-50">
+                          <th className="p-4 font-semibold text-gray-600">رقم النداء</th>
+                          <th className="p-4 font-semibold text-gray-600">اسم المريض</th>
+                          <th className="p-4 font-semibold text-gray-600">العيادة</th>
+                          <th className="p-4 font-semibold text-gray-600">الحالة</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {queue.map((q) => (
+                          <tr key={q.id} className="border-b hover:bg-gray-50">
+                            <td className="p-4 font-bold text-lg text-emerald-600">{q.token_number}</td>
+                            <td className="p-4 font-medium">{q.patient_name}</td>
+                            <td className="p-4 text-gray-600">{q.clinics?.name || 'غير محدد'}</td>
+                            <td className="p-4">
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${q.status === 'waiting' ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                {q.status === 'waiting' ? 'في الانتظار' : 'اكتمل'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                        {queue.length === 0 && (
+                          <tr><td colSpan={4} className="p-8 text-center text-gray-500">لا يوجد مرضى في طابور الانتظار حالياً</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {activeTab === 'financials' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>الماليات والأرباح</CardTitle>
+                <CardDescription>سجل الإيرادات والمصروفات الخاصة بالمركز</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="border-b bg-gray-50">
+                          <th className="p-4 font-semibold text-gray-600">التاريخ</th>
+                          <th className="p-4 font-semibold text-gray-600">النوع</th>
+                          <th className="p-4 font-semibold text-gray-600">التصنيف</th>
+                          <th className="p-4 font-semibold text-gray-600">المبلغ</th>
+                          <th className="p-4 font-semibold text-gray-600">البيان</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transactions.map((t) => (
+                          <tr key={t.id} className="border-b hover:bg-gray-50">
+                            <td className="p-4 text-sm text-gray-500">{new Date(t.created_at).toLocaleDateString('ar-EG')}</td>
+                            <td className="p-4">
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${t.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                {t.type === 'income' ? 'إيراد' : 'مصروف'}
+                              </span>
+                            </td>
+                            <td className="p-4">{t.category}</td>
+                            <td className="p-4 font-bold" dir="ltr">{t.amount} EGP</td>
+                            <td className="p-4 text-gray-600">{t.description}</td>
+                          </tr>
+                        ))}
+                        {transactions.length === 0 && (
+                          <tr><td colSpan={5} className="p-8 text-center text-gray-500">لا توجد حركات مالية مسجلة حتى الآن</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
