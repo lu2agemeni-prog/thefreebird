@@ -129,14 +129,38 @@ CREATE TABLE call_queue (
 -- Automatically create a profile when a new auth user signs up
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  first_name_val TEXT;
+  last_name_val TEXT;
 BEGIN
-  INSERT INTO public.profiles (id, first_name, last_name, role)
+  -- Try to extract names from Google OAuth metadata, fallback to generic names if missing
+  first_name_val := COALESCE(
+    new.raw_user_meta_data->>'first_name',
+    split_part(new.raw_user_meta_data->>'full_name', ' ', 1),
+    'مستخدم'
+  );
+  
+  last_name_val := COALESCE(
+    new.raw_user_meta_data->>'last_name',
+    substring(new.raw_user_meta_data->>'full_name' from position(' ' in new.raw_user_meta_data->>'full_name') + 1),
+    'جديد'
+  );
+
+  INSERT INTO public.profiles (
+    id, 
+    first_name, 
+    last_name, 
+    role, 
+    avatar_url
+  )
   VALUES (
     new.id,
-    COALESCE(new.raw_user_meta_data->>'first_name', 'New'),
-    COALESCE(new.raw_user_meta_data->>'last_name', 'User'),
-    COALESCE((new.raw_user_meta_data->>'role')::user_role, 'patient'::user_role)
+    first_name_val,
+    last_name_val,
+    'patient'::user_role,
+    new.raw_user_meta_data->>'avatar_url'
   );
+  
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
