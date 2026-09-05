@@ -165,7 +165,7 @@ export function ManagerDashboard() {
                 <CardDescription>التحكم في أدوار جميع المسجلين في النظام (مدير، طبيب، سكرتارية، محاسب، مريض)</CardDescription>
               </CardHeader>
               <CardContent>
-                {loadingUsers ? (
+                {loading ? (
                   <p className="text-gray-500 py-4">جاري تحميل المستخدمين...</p>
                 ) : (
                   <div className="overflow-x-auto">
