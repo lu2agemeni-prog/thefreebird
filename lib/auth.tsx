@@ -76,10 +76,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loginWithGoogle = async () => {
+    // In AI Studio, we need to ensure we redirect back to the Cloud Run URL
+    // rather than localhost (which might be the internal container origin in some setups)
+    const redirectUrl = process.env.APP_URL || (typeof window !== 'undefined' ? window.location.origin : '');
+    
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/` : undefined,
+        redirectTo: redirectUrl,
       }
     });
   };
