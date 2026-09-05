@@ -30,7 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const fetchProfile = async (session: Session) => {
-      // Fetch profile from public.profiles table
+      // First attempt to fetch the profile
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -40,7 +40,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data) {
         setUser({ ...data, email: session.user.email });
       } else {
-        // Fallback if the trigger hasn't fired yet
+        // Fallback: If the trigger failed completely and there's no profile,
+        // we can attempt to insert one directly from the client side as a last resort,
+        // or just set a temporary in-memory user so they aren't blocked.
+        console.warn('Profile not found for user. Assuming trigger failed, using fallback.');
+        
+        // Attempt manual insert as fallback (might fail due to RLS, but worth a shot)
+        try {
+           const { error: insertError } = await supabase.from('profiles').insert([
+             { 
+               id: session.user.id, 
+               first_name: session.user.user_metadata?.full_name?.split(' ')[0] || 'مستخدم', 
+               last_name: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || 'جديد',
+               role: 'patient',
+               avatar_url: session.user.user_metadata?.avatar_url
+             }
+           ]);
+           if (insertError) {
+             console.error("Fallback insert Supabase error:", insertError);
+           }
+        } catch(e) {
+           console.error("Fallback insert failed Exception:", e);
+        }
+
         setUser({
           id: session.user.id,
           first_name: session.user.user_metadata?.full_name?.split(' ')[0] || 'مستخدم',

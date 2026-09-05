@@ -174,6 +174,7 @@ CREATE TRIGGER on_auth_user_created
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public profiles are viewable by everyone." ON profiles FOR SELECT USING (true);
 CREATE POLICY "Users can update own profile." ON profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Users can insert their own profile." ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 CREATE POLICY "Managers can update roles" ON profiles FOR UPDATE USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'manager'::user_role);
 
 -- Note: In a production environment, you should add strict RLS policies to all tables to ensure data privacy.
