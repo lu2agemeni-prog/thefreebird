@@ -1,17 +1,19 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
 import { 
   Settings, Users, Building, Calculator, 
-  Stethoscope, CreditCard, Activity, QrCode
+  Stethoscope, CreditCard, Activity, QrCode, Shield
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { QRCodeSVG } from 'qrcode.react';
+import { supabase } from '@/lib/supabase';
 
 const managerNav: SidebarItem[] = [
   { name: 'لوحة القيادة', id: 'dashboard', icon: Activity },
   { name: 'الإعدادات العامة', id: 'settings', icon: Settings },
   { name: 'الأطباء', id: 'doctors', icon: Stethoscope },
+  { name: 'صلاحيات المستخدمين', id: 'staff_management', icon: Shield },
   { name: 'العاملين', id: 'staff', icon: Users },
   { name: 'الحسابات', id: 'accounts', icon: CreditCard },
   { name: 'العيادات', id: 'clinics', icon: Building },
@@ -23,6 +25,41 @@ const managerNav: SidebarItem[] = [
 
 export function ManagerDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  
+  // User Management State
+  const [users, setUsers] = useState<any[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'staff_management') {
+      fetchUsers();
+    }
+  }, [activeTab]);
+
+  const fetchUsers = async () => {
+    setLoadingUsers(true);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+      
+    if (data) setUsers(data);
+    setLoadingUsers(false);
+  };
+
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: newRole })
+      .eq('id', userId);
+
+    if (error) {
+      alert('حدث خطأ أثناء التحديث: ' + error.message);
+    } else {
+      setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      // alert('تم تحديث الصلاحية بنجاح');
+    }
+  };
 
   return (
     <div className="flex h-full w-full">
@@ -40,6 +77,83 @@ export function ManagerDashboard() {
             </div>
           )}
 
+          {activeTab === 'staff_management' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>إدارة صلاحيات المستخدمين</CardTitle>
+                <CardDescription>التحكم في أدوار جميع المسجلين في النظام (مدير، طبيب، سكرتارية، محاسب، مريض)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingUsers ? (
+                  <p className="text-gray-500 py-4">جاري تحميل المستخدمين...</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="border-b bg-gray-50">
+                          <th className="p-4 font-semibold text-gray-600">الاسم</th>
+                          <th className="p-4 font-semibold text-gray-600">معرف الحساب (ID)</th>
+                          <th className="p-4 font-semibold text-gray-600">الدور الحالي</th>
+                          <th className="p-4 font-semibold text-gray-600">تغيير الصلاحية</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {users.map((user) => (
+                          <tr key={user.id} className="border-b hover:bg-gray-50 transition-colors">
+                            <td className="p-4 font-medium flex items-center gap-3">
+                              {user.avatar_url ? (
+                                <img src={user.avatar_url} alt="" className="w-8 h-8 rounded-full" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold">
+                                  {user.first_name?.[0]}
+                                </div>
+                              )}
+                              {user.first_name} {user.last_name}
+                            </td>
+                            <td className="p-4 text-sm text-gray-500 font-mono">
+                              {user.id.substring(0, 8)}...
+                            </td>
+                            <td className="p-4">
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                user.role === 'manager' ? 'bg-purple-100 text-purple-700' :
+                                user.role === 'doctor' ? 'bg-emerald-100 text-emerald-700' :
+                                user.role === 'secretary' ? 'bg-orange-100 text-orange-700' :
+                                user.role === 'accountant' ? 'bg-blue-100 text-blue-700' :
+                                'bg-gray-100 text-gray-700'
+                              }`}>
+                                {getRoleLabel(user.role)}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <select 
+                                value={user.role || 'patient'}
+                                onChange={(e) => handleRoleChange(user.id, e.target.value)}
+                                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-emerald-500"
+                              >
+                                <option value="patient">مريض</option>
+                                <option value="doctor">طبيب</option>
+                                <option value="secretary">سكرتارية</option>
+                                <option value="accountant">مسئول مالي</option>
+                                <option value="manager">مدير</option>
+                              </select>
+                            </td>
+                          </tr>
+                        ))}
+                        {users.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="p-8 text-center text-gray-500">
+                              لا يوجد مستخدمين مسجلين حتى الآن
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {activeTab === 'qrcodes' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <QRCodeCard title="لائحة الأسعار" url="https://freebird.clinic/prices" desc="QR Code لصفحة الأسعار والخدمات" />
@@ -50,7 +164,7 @@ export function ManagerDashboard() {
           )}
           
           {/* Add basic placeholders for other tabs to show it's wired up */}
-          {activeTab !== 'dashboard' && activeTab !== 'qrcodes' && (
+          {activeTab !== 'dashboard' && activeTab !== 'qrcodes' && activeTab !== 'staff_management' && (
             <Card>
               <CardHeader>
                 <CardTitle>جاري تحميل بيانات {managerNav.find(n => n.id === activeTab)?.name}...</CardTitle>
@@ -98,4 +212,15 @@ function QRCodeCard({ title, url, desc }: { title: string, url: string, desc: st
       </CardContent>
     </Card>
   );
+}
+
+function getRoleLabel(role: string) {
+  switch (role) {
+    case 'manager': return 'مدير';
+    case 'doctor': return 'طبيب';
+    case 'secretary': return 'سكرتارية';
+    case 'accountant': return 'محاسب';
+    case 'patient': return 'مريض';
+    default: return 'غير معروف';
+  }
 }
