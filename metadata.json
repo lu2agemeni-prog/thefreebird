@@ -1,0 +1,6 @@
+{
+  "name": "الطائر الحر - Free Bird Clinic",
+  "description": "نظام إدارة متكامل لمركز طبي وعيادات متعددة",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

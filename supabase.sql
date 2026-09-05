@@ -1,0 +1,154 @@
+-- SQL Script for "الطائر الحر" Clinic Management System
+-- This script creates the necessary tables, roles, and functions for the Supabase database.
+-- Note: Replace UUIDs and dummy data as needed after creation.
+
+-- 1. Custom Types
+CREATE TYPE user_role AS ENUM ('manager', 'doctor', 'patient', 'secretary', 'accountant');
+
+-- 2. Profiles Table (Extends Supabase auth.users)
+CREATE TABLE profiles (
+    id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    role user_role DEFAULT 'patient'::user_role,
+    phone TEXT,
+    avatar_url TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- 3. Clinics Table
+CREATE TABLE clinics (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- 4. Doctors Table
+CREATE TABLE doctors (
+    profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE PRIMARY KEY,
+    clinic_id UUID REFERENCES clinics(id) ON DELETE SET NULL,
+    specialty TEXT,
+    working_days JSONB, -- e.g., ["Monday", "Wednesday"]
+    consultation_fee DECIMAL(10,2),
+    bio TEXT
+);
+
+-- 5. Staff Table (Secretary, Accountant, Nurses)
+CREATE TABLE staff (
+    profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE PRIMARY KEY,
+    job_title TEXT,
+    salary DECIMAL(10,2),
+    hire_date DATE
+);
+
+-- 6. Patient Medical Records Table
+CREATE TABLE patient_records (
+    profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE PRIMARY KEY,
+    blood_group TEXT,
+    allergies TEXT,
+    chronic_diseases TEXT,
+    weight DECIMAL(5,2),
+    height DECIMAL(5,2),
+    notes TEXT
+);
+
+-- 7. Services & Prices Table
+CREATE TABLE services (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    clinic_id UUID REFERENCES clinics(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- 8. Appointments Table
+CREATE TABLE appointments (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    patient_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    doctor_id UUID REFERENCES doctors(profile_id) ON DELETE CASCADE,
+    clinic_id UUID REFERENCES clinics(id) ON DELETE CASCADE,
+    appointment_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    status TEXT DEFAULT 'pending', -- pending, confirmed, completed, cancelled
+    queue_number INT,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- 9. Consultations Table
+CREATE TABLE consultations (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    patient_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    doctor_id UUID REFERENCES doctors(profile_id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    reply TEXT,
+    status TEXT DEFAULT 'pending', -- pending, answered
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- 10. Financial Transactions Table (Income, Expenses, Salaries)
+CREATE TABLE transactions (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    type TEXT NOT NULL, -- 'income', 'expense'
+    category TEXT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    description TEXT,
+    user_id UUID REFERENCES profiles(id) ON DELETE SET NULL, -- Who initiated/received
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- 11. Complaints & Suggestions Table
+CREATE TABLE complaints (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    type TEXT NOT NULL, -- 'complaint', 'suggestion'
+    message TEXT NOT NULL,
+    status TEXT DEFAULT 'open', -- open, resolved
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- 12. Settings Table (General Clinic Settings)
+CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value JSONB
+);
+
+-- 13. Patient Call Queue Table (For the 32-inch screen)
+CREATE TABLE call_queue (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    clinic_id UUID REFERENCES clinics(id) ON DELETE CASCADE,
+    patient_name TEXT NOT NULL,
+    token_number INT NOT NULL,
+    status TEXT DEFAULT 'waiting', -- waiting, calling, completed
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- Functions & Triggers
+-- Automatically create a profile when a new auth user signs up
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, first_name, last_name, role)
+  VALUES (
+    new.id,
+    COALESCE(new.raw_user_meta_data->>'first_name', 'New'),
+    COALESCE(new.raw_user_meta_data->>'last_name', 'User'),
+    COALESCE((new.raw_user_meta_data->>'role')::user_role, 'patient'::user_role)
+  );
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- Row Level Security (RLS) 
+-- (Add your RLS policies here based on requirements, currently tables are accessible for quick start)
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public profiles are viewable by everyone." ON profiles FOR SELECT USING (true);
+CREATE POLICY "Users can update own profile." ON profiles FOR UPDATE USING (auth.uid() = id);
+
+-- Note: In a production environment, you should add strict RLS policies to all tables to ensure data privacy.
