@@ -4,7 +4,7 @@ import { Sidebar, SidebarItem } from './Sidebar';
 import { 
   Settings, Users, Building, Calculator, 
   Stethoscope, CreditCard, Activity, QrCode, Shield,
-  BarChart, FileText, Download, CheckCircle, MessageSquare, Newspaper
+  BarChart, FileText, Download, CheckCircle, MessageSquare, Newspaper, List
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { QRCodeSVG } from 'qrcode.react';
@@ -15,6 +15,7 @@ const managerNav: SidebarItem[] = [
   { name: 'الأطباء', id: 'doctors', icon: Stethoscope },
   { name: 'العيادات', id: 'clinics', icon: Building },
   { name: 'صلاحيات المستخدمين', id: 'staff_management', icon: Shield },
+  { name: 'الخدمات والأسعار', id: 'services', icon: List },
   { name: 'النداء الآلي', id: 'call_queue', icon: Activity },
   { name: 'الماليات والأرباح', id: 'financials', icon: Calculator },
   { name: 'الأخبار الطبية', id: 'medical_news', icon: Newspaper },
@@ -35,8 +36,14 @@ export function ManagerDashboard() {
   const [complaints, setComplaints] = useState<any[]>([]);
   const [consultations, setConsultations] = useState<any[]>([]);
   const [news, setNews] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
   const [reportTab, setReportTab] = useState('clinics');
   const [loading, setLoading] = useState(false);
+
+  // Services Form State
+  const [serviceName, setServiceName] = useState('');
+  const [servicePrice, setServicePrice] = useState('');
+  const [serviceClinicId, setServiceClinicId] = useState('');
 
   // News Form State
   const [newsTitle, setNewsTitle] = useState('');
@@ -47,7 +54,8 @@ export function ManagerDashboard() {
   useEffect(() => {
     if (activeTab === 'staff_management') fetchUsers();
     if (activeTab === 'doctors' || activeTab === 'medical_news') fetchDoctors();
-    if (activeTab === 'clinics' || activeTab === 'dashboard') fetchClinics();
+    if (activeTab === 'clinics' || activeTab === 'dashboard' || activeTab === 'services') fetchClinics();
+    if (activeTab === 'services') fetchServices();
     if (activeTab === 'call_queue') fetchQueue();
     if (activeTab === 'financials') fetchTransactions();
     if (activeTab === 'medical_news') fetchNews();
@@ -121,6 +129,40 @@ export function ManagerDashboard() {
     const { data } = await supabase.from('medical_news').select('*, doctor:doctor_id(first_name, last_name)').order('created_at', { ascending: false });
     if (data) setNews(data);
     setLoading(false);
+  };
+
+  const fetchServices = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('services').select('*, clinic:clinic_id(name)').order('name', { ascending: true });
+    if (data) setServices(data);
+    setLoading(false);
+  };
+
+  const handleCreateService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!serviceName || !servicePrice || !serviceClinicId) return alert('الرجاء إدخال اسم الخدمة والسعر والعيادة');
+    
+    const { error } = await supabase.from('services').insert([{
+      name: serviceName,
+      price: parseFloat(servicePrice),
+      clinic_id: serviceClinicId
+    }]);
+
+    if (!error) {
+      alert('تم إضافة الخدمة بنجاح');
+      setServiceName('');
+      setServicePrice('');
+      fetchServices();
+    } else {
+      alert('حدث خطأ أثناء إضافة الخدمة');
+    }
+  };
+
+  const handleDeleteService = async (id: string) => {
+    if (confirm('هل أنت متأكد من حذف هذه الخدمة؟')) {
+      await supabase.from('services').delete().eq('id', id);
+      fetchServices();
+    }
   };
 
   const handleCreateNews = async (e: React.FormEvent) => {
@@ -371,6 +413,74 @@ export function ManagerDashboard() {
               <QRCodeCard title="الحجز السريع" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/book`} desc="QR Code لحجز موعد في العيادات" />
               <QRCodeCard title="شاشة النداء الآلي" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/queue`} desc="QR Code لفتح شاشة العرض العامة على الشاشات الكبيرة" />
               <QRCodeCard title="أطباء المركز" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/doctors`} desc="QR Code لعرض الأطباء ومواعيدهم" />
+            </div>
+          )}
+
+          {activeTab === 'services' && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>إضافة خدمة جديدة</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleCreateService} className="flex flex-col md:flex-row gap-4 items-end">
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold text-gray-700 mb-1">اسم الخدمة</label>
+                      <input type="text" value={serviceName} onChange={(e) => setServiceName(e.target.value)} required className="w-full border rounded-lg p-2" placeholder="مثال: كشف باطنة" />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold text-gray-700 mb-1">السعر (جنيه)</label>
+                      <input type="number" value={servicePrice} onChange={(e) => setServicePrice(e.target.value)} required className="w-full border rounded-lg p-2" placeholder="250" min="0" />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold text-gray-700 mb-1">العيادة التابعة</label>
+                      <select value={serviceClinicId} onChange={(e) => setServiceClinicId(e.target.value)} required className="w-full border rounded-lg p-2">
+                        <option value="">-- اختر العيادة --</option>
+                        {clinics.map(clinic => (
+                          <option key={clinic.id} value={clinic.id}>{clinic.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button type="submit" className="bg-emerald-600 text-white font-bold px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors h-[42px]">إضافة</button>
+                  </form>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>الخدمات والأسعار الحالية</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loading ? <p className="text-gray-500 py-4">جاري تحميل الخدمات...</p> : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right border-collapse">
+                        <thead>
+                          <tr className="bg-gray-50 border-b">
+                            <th className="p-3 font-semibold text-gray-600">اسم الخدمة</th>
+                            <th className="p-3 font-semibold text-gray-600">العيادة</th>
+                            <th className="p-3 font-semibold text-gray-600">السعر</th>
+                            <th className="p-3 font-semibold text-gray-600">إجراءات</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {services.length === 0 ? (
+                            <tr><td colSpan={4} className="text-center p-4 text-gray-500">لا توجد خدمات مسجلة.</td></tr>
+                          ) : services.map(service => (
+                            <tr key={service.id} className="border-b">
+                              <td className="p-3 font-bold text-gray-800">{service.name}</td>
+                              <td className="p-3 text-gray-600">{service.clinic?.name || 'غير محدد'}</td>
+                              <td className="p-3 font-bold text-emerald-600">{service.price} ج.م</td>
+                              <td className="p-3">
+                                <button onClick={() => handleDeleteService(service.id)} className="text-red-500 hover:text-red-700 text-sm font-bold">حذف</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           )}
 

@@ -6,7 +6,7 @@ import { DoctorDashboard } from '@/components/dashboards/DoctorDashboard';
 import { PatientDashboard } from '@/components/dashboards/PatientDashboard';
 import { SecretaryDashboard } from '@/components/dashboards/SecretaryDashboard';
 import { AccountantDashboard } from '@/components/dashboards/AccountantDashboard';
-import { HeartPulse, LogIn, Loader2 } from 'lucide-react';
+import { HeartPulse, LogIn, Loader2, Calculator } from 'lucide-react';
 
 export default function HomePage() {
   const { user, loading, loginWithGoogle, logout } = useAuth();
@@ -56,6 +56,10 @@ export default function HomePage() {
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
               الشكاوى والاقتراحات
             </a>
+            <a href="/calculators" className="flex items-center gap-3 px-4 py-3 text-emerald-100 hover:bg-emerald-600 hover:text-white rounded-xl transition-colors">
+              <Calculator className="w-5 h-5" />
+              الحاسبات والأدلة الطبية
+            </a>
           </nav>
         </aside>
 
@@ -93,6 +97,14 @@ export default function HomePage() {
                 </p>
                 
                 <div className="flex flex-col gap-4 max-w-sm mx-auto">
+                  <a 
+                    href="/calculators"
+                    className="flex items-center justify-center gap-3 w-full bg-white text-emerald-700 font-bold text-lg py-3 px-6 rounded-2xl border-2 border-emerald-100 hover:border-emerald-300 hover:bg-emerald-50 transition-all shadow-sm group"
+                  >
+                    <Calculator className="w-6 h-6" />
+                    استخدم الحاسبات والأدلة الطبية
+                  </a>
+
                   <button 
                     onClick={loginWithGoogle}
                     className="flex items-center justify-center gap-3 w-full bg-white text-gray-800 font-bold text-lg py-4 px-6 rounded-2xl border-2 border-gray-100 hover:border-emerald-200 hover:bg-emerald-50 transition-all shadow-sm hover:shadow-md group"

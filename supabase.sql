@@ -228,4 +228,10 @@ CREATE POLICY "Likes are viewable by everyone" ON news_likes FOR SELECT USING (t
 CREATE POLICY "Users can insert their own likes" ON news_likes FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can delete their own likes" ON news_likes FOR DELETE USING (auth.uid() = user_id);
 
+-- RLS for services
+ALTER TABLE services ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Services are viewable by everyone" ON services FOR SELECT USING (true);
+CREATE POLICY "Managers can manage services" ON services FOR ALL USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'manager'::user_role);
+
+
 
