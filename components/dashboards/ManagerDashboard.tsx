@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
 import { 
   Settings, Users, Building, Calculator, 
-  Stethoscope, CreditCard, Activity, QrCode, Shield
+  Stethoscope, CreditCard, Activity, QrCode, Shield,
+  BarChart, FileText, Download, CheckCircle, MessageSquare
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { QRCodeSVG } from 'qrcode.react';
@@ -16,6 +17,7 @@ const managerNav: SidebarItem[] = [
   { name: 'صلاحيات المستخدمين', id: 'staff_management', icon: Shield },
   { name: 'النداء الآلي', id: 'call_queue', icon: Activity },
   { name: 'الماليات والأرباح', id: 'financials', icon: Calculator },
+  { name: 'التقارير الشاملة', id: 'reports', icon: BarChart },
   { name: 'QR Codes', id: 'qrcodes', icon: QrCode },
 ];
 
@@ -28,6 +30,10 @@ export function ManagerDashboard() {
   const [clinics, setClinics] = useState<any[]>([]);
   const [queue, setQueue] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [complaints, setComplaints] = useState<any[]>([]);
+  const [consultations, setConsultations] = useState<any[]>([]);
+  const [reportTab, setReportTab] = useState('clinics');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -36,7 +42,14 @@ export function ManagerDashboard() {
     if (activeTab === 'clinics' || activeTab === 'dashboard') fetchClinics();
     if (activeTab === 'call_queue') fetchQueue();
     if (activeTab === 'financials') fetchTransactions();
-  }, [activeTab]);
+    
+    if (activeTab === 'reports') {
+      if (reportTab === 'clinics') { fetchAppointments(); fetchClinics(); fetchDoctors(); }
+      if (reportTab === 'financials') { fetchTransactions(); fetchUsers(); }
+      if (reportTab === 'complaints') fetchComplaints();
+      if (reportTab === 'consultations') fetchConsultations();
+    }
+  }, [activeTab, reportTab]);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -68,9 +81,61 @@ export function ManagerDashboard() {
 
   const fetchTransactions = async () => {
     setLoading(true);
-    const { data } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
+    const { data } = await supabase.from('transactions').select('*, profiles(first_name, last_name)').order('created_at', { ascending: false });
     if (data) setTransactions(data);
     setLoading(false);
+  };
+
+  const fetchAppointments = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('appointments').select('*, patient:patient_id(first_name, last_name), doctor:doctor_id(profiles(first_name, last_name)), clinics(name)').order('created_at', { ascending: false });
+    if (data) setAppointments(data);
+    setLoading(false);
+  };
+
+  const fetchComplaints = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('complaints').select('*, profiles(first_name, last_name)').order('created_at', { ascending: false });
+    if (data) setComplaints(data);
+    setLoading(false);
+  };
+
+  const fetchConsultations = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('consultations').select('*, patient:patient_id(first_name, last_name), doctor:doctor_id(profiles(first_name, last_name))').order('created_at', { ascending: false });
+    if (data) setConsultations(data);
+    setLoading(false);
+  };
+
+  const exportToCSV = (data: any[], filename: string) => {
+    if (!data || data.length === 0) {
+      alert('لا توجد بيانات لتصديرها');
+      return;
+    }
+    const headers = Object.keys(data[0]).join(",");
+    const rows = data.map(row => 
+      Object.values(row).map(val => {
+        if (val === null || val === undefined) return '""';
+        if (typeof val === 'object') return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
+        return `"${String(val).replace(/"/g, '""')}"`;
+      }).join(",")
+    );
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + headers + "\n" + rows.join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", filename + ".csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleReplyComplaint = async (id: string) => {
+    const reply = prompt('أدخل ردك على هذه الشكوى/المقترح:');
+    if (reply) {
+      await supabase.from('complaints').update({ status: 'resolved' }).eq('id', id);
+      fetchComplaints();
+    }
   };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
@@ -322,6 +387,7 @@ export function ManagerDashboard() {
                           <th className="p-4 font-semibold text-gray-600">التصنيف</th>
                           <th className="p-4 font-semibold text-gray-600">المبلغ</th>
                           <th className="p-4 font-semibold text-gray-600">البيان</th>
+                          <th className="p-4 font-semibold text-gray-600">بواسطة</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -336,10 +402,11 @@ export function ManagerDashboard() {
                             <td className="p-4">{t.category}</td>
                             <td className="p-4 font-bold" dir="ltr">{t.amount} EGP</td>
                             <td className="p-4 text-gray-600">{t.description}</td>
+                            <td className="p-4 text-sm">{t.profiles ? `${t.profiles.first_name} ${t.profiles.last_name}` : 'غير محدد'}</td>
                           </tr>
                         ))}
                         {transactions.length === 0 && (
-                          <tr><td colSpan={5} className="p-8 text-center text-gray-500">لا توجد حركات مالية مسجلة حتى الآن</td></tr>
+                          <tr><td colSpan={6} className="p-8 text-center text-gray-500">لا توجد حركات مالية مسجلة حتى الآن</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -347,6 +414,217 @@ export function ManagerDashboard() {
                 )}
               </CardContent>
             </Card>
+          )}
+
+          {activeTab === 'reports' && (
+            <div className="space-y-6">
+              {/* Reports Navigation */}
+              <div className="flex flex-wrap gap-2 mb-6">
+                <button onClick={() => setReportTab('clinics')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${reportTab === 'clinics' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>العيادات والكشوفات</button>
+                <button onClick={() => setReportTab('financials')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${reportTab === 'financials' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>الحسابات والماليات</button>
+                <button onClick={() => setReportTab('complaints')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${reportTab === 'complaints' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>الشكاوى والمقترحات</button>
+                <button onClick={() => setReportTab('consultations')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${reportTab === 'consultations' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>الاستشارات الطبية</button>
+              </div>
+
+              {/* Clinics & Doctors Report */}
+              {reportTab === 'clinics' && (
+                <Card>
+                  <CardHeader className="flex flex-row justify-between items-center">
+                    <div>
+                      <CardTitle>تقارير العيادات والكشوفات الطبية</CardTitle>
+                      <CardDescription>إحصائيات المواعيد والكشوفات لجميع العيادات والأطباء</CardDescription>
+                    </div>
+                    <button onClick={() => exportToCSV(appointments, 'تقرير_الكشوفات')} className="flex items-center gap-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-200">
+                      <Download className="w-4 h-4" />
+                      تصدير Excel
+                    </button>
+                  </CardHeader>
+                  <CardContent>
+                    {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-right border-collapse">
+                          <thead>
+                            <tr className="border-b bg-gray-50">
+                              <th className="p-4 font-semibold text-gray-600">التاريخ</th>
+                              <th className="p-4 font-semibold text-gray-600">المريض</th>
+                              <th className="p-4 font-semibold text-gray-600">العيادة</th>
+                              <th className="p-4 font-semibold text-gray-600">الطبيب</th>
+                              <th className="p-4 font-semibold text-gray-600">الحالة</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {appointments.map((a) => (
+                              <tr key={a.id} className="border-b hover:bg-gray-50">
+                                <td className="p-4 text-sm">{new Date(a.appointment_date).toLocaleString('ar-EG')}</td>
+                                <td className="p-4 font-medium">{a.patient ? `${a.patient.first_name} ${a.patient.last_name}` : 'غير محدد'}</td>
+                                <td className="p-4">{a.clinics?.name}</td>
+                                <td className="p-4 text-gray-600">{a.doctor?.profiles ? `د. ${a.doctor.profiles.first_name} ${a.doctor.profiles.last_name}` : 'غير محدد'}</td>
+                                <td className="p-4">
+                                  <span className={`px-2 py-1 rounded-full text-xs ${a.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                                    {a.status === 'completed' ? 'مكتمل' : 'معلق/ملغي'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                            {appointments.length === 0 && (
+                              <tr><td colSpan={5} className="p-8 text-center text-gray-500">لا توجد حجوزات أو كشوفات مسجلة</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Financial Report */}
+              {reportTab === 'financials' && (
+                <Card>
+                  <CardHeader className="flex flex-row justify-between items-center">
+                    <div>
+                      <CardTitle>تقارير الحسابات والماليات الشاملة</CardTitle>
+                      <CardDescription>الإيرادات والمصروفات مفصلة لكل طبيب وعامل</CardDescription>
+                    </div>
+                    <button onClick={() => exportToCSV(transactions, 'التقرير_المالي')} className="flex items-center gap-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-200">
+                      <Download className="w-4 h-4" />
+                      تصدير Excel
+                    </button>
+                  </CardHeader>
+                  <CardContent>
+                    {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-right border-collapse">
+                          <thead>
+                            <tr className="border-b bg-gray-50">
+                              <th className="p-4 font-semibold text-gray-600">التاريخ</th>
+                              <th className="p-4 font-semibold text-gray-600">النوع</th>
+                              <th className="p-4 font-semibold text-gray-600">بواسطة / الطبيب</th>
+                              <th className="p-4 font-semibold text-gray-600">المبلغ</th>
+                              <th className="p-4 font-semibold text-gray-600">البيان</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {transactions.map((t) => (
+                              <tr key={t.id} className="border-b hover:bg-gray-50">
+                                <td className="p-4 text-sm text-gray-500">{new Date(t.created_at).toLocaleDateString('ar-EG')}</td>
+                                <td className="p-4">
+                                  <span className={`px-2 py-1 rounded-full text-xs ${t.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                    {t.type === 'income' ? 'إيراد' : 'مصروف'}
+                                  </span>
+                                </td>
+                                <td className="p-4 font-medium">{t.profiles ? `${t.profiles.first_name} ${t.profiles.last_name}` : 'غير محدد'}</td>
+                                <td className="p-4 font-bold" dir="ltr">{t.amount} EGP</td>
+                                <td className="p-4 text-gray-600">{t.description}</td>
+                              </tr>
+                            ))}
+                            {transactions.length === 0 && (
+                              <tr><td colSpan={5} className="p-8 text-center text-gray-500">لا توجد حركات مالية</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Complaints Report */}
+              {reportTab === 'complaints' && (
+                <Card>
+                  <CardHeader className="flex flex-row justify-between items-center">
+                    <div>
+                      <CardTitle>الشكاوى والمقترحات</CardTitle>
+                      <CardDescription>اطلع على شكاوى ومقترحات المرضى وقم بالرد عليها</CardDescription>
+                    </div>
+                    <button onClick={() => exportToCSV(complaints, 'تقرير_الشكاوى')} className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">
+                      <Download className="w-4 h-4" />
+                      تصدير Excel
+                    </button>
+                  </CardHeader>
+                  <CardContent>
+                    {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
+                      <div className="grid gap-4">
+                        {complaints.map((c) => (
+                          <div key={c.id} className="border rounded-xl p-4 bg-white shadow-sm">
+                            <div className="flex justify-between items-start mb-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-1 rounded text-xs font-bold ${c.type === 'complaint' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                                  {c.type === 'complaint' ? 'شكوى' : 'اقتراح'}
+                                </span>
+                                <span className="font-bold text-gray-900">{c.profiles ? `${c.profiles.first_name} ${c.profiles.last_name}` : 'زائر غير مسجل'}</span>
+                                <span className="text-xs text-gray-400">{new Date(c.created_at).toLocaleDateString('ar-EG')}</span>
+                              </div>
+                              <span className={`px-2 py-1 rounded-full text-xs ${c.status === 'resolved' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                                {c.status === 'resolved' ? 'تم الرد' : 'مفتوحة'}
+                              </span>
+                            </div>
+                            <p className="text-gray-700 text-sm bg-gray-50 p-3 rounded-lg border border-gray-100 mb-3">{c.message}</p>
+                            
+                            {c.status !== 'resolved' && (
+                              <button onClick={() => handleReplyComplaint(c.id)} className="text-emerald-600 text-sm font-bold flex items-center gap-1 hover:text-emerald-700">
+                                <MessageSquare className="w-4 h-4" /> إضافة رد وإغلاق
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        {complaints.length === 0 && (
+                          <p className="text-gray-500 text-center py-8">لا توجد شكاوى أو مقترحات حتى الآن</p>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Consultations Report */}
+              {reportTab === 'consultations' && (
+                <Card>
+                  <CardHeader className="flex flex-row justify-between items-center">
+                    <div>
+                      <CardTitle>الاستشارات الطبية</CardTitle>
+                      <CardDescription>الاطلاع على جميع الاستشارات الطبية بين المرضى والأطباء</CardDescription>
+                    </div>
+                    <button onClick={() => exportToCSV(consultations, 'تقرير_الاستشارات')} className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">
+                      <Download className="w-4 h-4" />
+                      تصدير Excel
+                    </button>
+                  </CardHeader>
+                  <CardContent>
+                    {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
+                      <div className="grid gap-4">
+                        {consultations.map((c) => (
+                          <div key={c.id} className="border rounded-xl p-4 bg-white shadow-sm">
+                            <div className="flex justify-between items-start mb-3">
+                              <div className="text-sm">
+                                <span className="font-bold text-gray-900">المريض: {c.patient ? `${c.patient.first_name} ${c.patient.last_name}` : 'غير محدد'}</span>
+                                <span className="mx-2 text-gray-300">|</span>
+                                <span className="text-emerald-700 font-bold">للطبيب: {c.doctor?.profiles ? `د. ${c.doctor.profiles.first_name} ${c.doctor.profiles.last_name}` : 'غير محدد'}</span>
+                              </div>
+                              <span className="text-xs text-gray-400">{new Date(c.created_at).toLocaleDateString('ar-EG')}</span>
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm text-gray-700 mb-2">
+                              <p className="font-bold text-xs text-gray-500 mb-1">السؤال:</p>
+                              {c.message}
+                            </div>
+                            {c.reply ? (
+                              <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100 text-sm text-emerald-800">
+                                <p className="font-bold text-xs text-emerald-600 mb-1">الرد الطبي:</p>
+                                {c.reply}
+                              </div>
+                            ) : (
+                              <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full">في انتظار الرد</span>
+                            )}
+                          </div>
+                        ))}
+                        {consultations.length === 0 && (
+                          <p className="text-gray-500 text-center py-8">لا توجد استشارات طبية حتى الآن</p>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           )}
         </div>
       </div>

@@ -189,3 +189,14 @@ ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Transactions viewable by managers and accountants" ON transactions FOR SELECT USING ((SELECT role FROM profiles WHERE id = auth.uid()) IN ('manager'::user_role, 'accountant'::user_role));
 CREATE POLICY "Managers and accountants can insert transactions" ON transactions FOR INSERT WITH CHECK ((SELECT role FROM profiles WHERE id = auth.uid()) IN ('manager'::user_role, 'accountant'::user_role));
 
+ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Managers can manage appointments" ON appointments FOR ALL USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'manager'::user_role);
+
+ALTER TABLE consultations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Managers can manage consultations" ON consultations FOR ALL USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'manager'::user_role);
+
+ALTER TABLE complaints ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Managers can manage complaints" ON complaints FOR ALL USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'manager'::user_role);
+CREATE POLICY "Anyone can insert complaints" ON complaints FOR INSERT WITH CHECK (true);
+
+
