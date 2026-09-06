@@ -1,32 +1,36 @@
 'use client';
 import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
-import { UserPlus, Activity } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Users, Activity, Calendar } from 'lucide-react';
+
+import { SecretaryAppointments } from './secretary/SecretaryAppointments';
+import { SecretaryPatients } from './secretary/SecretaryPatients';
+import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
 
 const secretaryNav: SidebarItem[] = [
-  { name: 'إضافة زائر وتسجيل', id: 'add_patient', icon: UserPlus },
+  { name: 'إدارة المواعيد', id: 'appointments', icon: Calendar },
+  { name: 'دليل المرضى', id: 'patients', icon: Users },
   { name: 'النداء الآلي', id: 'call_queue', icon: Activity },
 ];
 
 export function SecretaryDashboard() {
-  const [activeTab, setActiveTab] = useState('add_patient');
+  const [activeTab, setActiveTab] = useState('appointments');
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'appointments': return <SecretaryAppointments />;
+      case 'patients': return <SecretaryPatients />;
+      case 'call_queue': return <SecretaryCallQueue />;
+      default: return null;
+    }
+  };
 
   return (
     <div className="flex h-full w-full">
       <Sidebar items={secretaryNav} activeItem={activeTab} setActiveItem={setActiveTab} />
-      <div className="flex-1 p-8 overflow-y-auto bg-gray-50">
+      <div className="flex-1 p-4 md:p-8 pt-20 md:pt-8 overflow-y-auto bg-gray-50">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-gray-800 mb-8">{secretaryNav.find(n => n.id === activeTab)?.name}</h2>
-          
-          <Card>
-            <CardHeader>
-              <CardTitle>واجهة {secretaryNav.find(n => n.id === activeTab)?.name}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-500">سيتم ربط هذه الشاشة مع قاعدة بيانات Supabase (جدول {activeTab}).</p>
-            </CardContent>
-          </Card>
+          {renderContent()}
         </div>
       </div>
     </div>

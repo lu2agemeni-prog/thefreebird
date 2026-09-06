@@ -55,7 +55,7 @@ export function PatientDashboard({ user }: { user?: any }) {
   return (
     <div className="flex h-full w-full">
       <Sidebar items={patientNav} activeItem={activeTab} setActiveItem={setActiveTab} />
-      <div className="flex-1 p-8 overflow-y-auto bg-gray-50">
+      <div className="flex-1 p-4 md:p-8 pt-20 md:pt-8 overflow-y-auto bg-gray-50">
         <div className="max-w-6xl mx-auto">
           {user?.patient_code && (
             <div className="mb-6 bg-white border-2 border-emerald-100 rounded-2xl p-4 flex items-center justify-between shadow-sm">
