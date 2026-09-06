@@ -138,7 +138,7 @@ export function AccountantExpenses() {
           ) : transactions.length === 0 ? (
             <div className="p-12 text-center text-gray-500">لا توجد معاملات مسجلة بعد.</div>
           ) : (
-            <div className="overflow-x-auto table-responsive">
+            <div className="overflow-x-auto">
               <table className="w-full text-right border-collapse">
                 <thead>
                   <tr className="bg-white border-b">

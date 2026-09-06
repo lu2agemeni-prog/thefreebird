@@ -167,7 +167,7 @@ export function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div className="notif-popover absolute left-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden" dir="rtl">
+        <div className="absolute left-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden" dir="rtl">
           <div className="p-4 border-b flex justify-between items-center bg-gray-50">
             <h3 className="font-bold text-gray-800">الإشعارات</h3>
             {unreadCount > 0 && (

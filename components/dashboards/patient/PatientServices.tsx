@@ -34,7 +34,7 @@ export function PatientServices() {
           {loading ? (
             <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>
           ) : (
-            <div className="overflow-x-auto table-responsive">
+            <div className="overflow-x-auto">
               <table className="w-full text-right border-collapse">
                 <thead>
                   <tr className="bg-gray-50 border-b">
