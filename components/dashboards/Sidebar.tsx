@@ -22,7 +22,7 @@ export function Sidebar({ items, activeItem, setActiveItem }: SidebarProps) {
     <>
       {/* Mobile Toggle Button */}
       <button 
-        className="md:hidden fixed top-4 right-4 z-50 p-2 bg-white text-emerald-700 border border-emerald-100 rounded-lg shadow-sm flex items-center justify-center"
+        className="md:hidden fixed top-4 right-4 z-[60] p-2.5 bg-white text-emerald-700 border border-emerald-100 rounded-lg shadow-sm flex items-center justify-center"
         onClick={() => setIsOpen(!isOpen)}
         aria-label="Toggle Menu"
       >
@@ -30,7 +30,7 @@ export function Sidebar({ items, activeItem, setActiveItem }: SidebarProps) {
       </button>
 
       {/* Floating Notification Bell for all screens */}
-      <div className="fixed top-4 left-4 z-50">
+      <div className="fixed top-4 left-4 z-[55]">
         <NotificationBell />
       </div>
 
@@ -44,7 +44,7 @@ export function Sidebar({ items, activeItem, setActiveItem }: SidebarProps) {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed inset-y-0 right-0 z-40 w-72 md:w-64 bg-white border-l flex-col transition-transform duration-300 ease-in-out md:static md:flex md:translate-x-0 h-full flex-shrink-0 shadow-2xl md:shadow-none",
+        "fixed inset-y-0 right-0 z-40 max-w-[85vw] w-72 md:w-64 bg-white border-l flex-col transition-transform duration-300 ease-in-out md:static md:flex md:translate-x-0 h-full flex-shrink-0 shadow-2xl md:shadow-none",
         isOpen ? "translate-x-0 flex" : "translate-x-full hidden md:flex"
       )}>
         <div className="p-6 border-b flex items-center justify-center h-24">

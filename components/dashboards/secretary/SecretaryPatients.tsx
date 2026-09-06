@@ -56,7 +56,7 @@ export function SecretaryPatients() {
           ) : filteredPatients.length === 0 ? (
             <div className="p-12 text-center text-gray-500 font-bold">لا توجد نتائج مطابقة</div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto table-responsive">
               <table className="w-full text-right border-collapse">
                 <thead>
                   <tr className="bg-gray-50 border-b">

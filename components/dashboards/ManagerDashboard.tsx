@@ -261,11 +261,11 @@ export function ManagerDashboard() {
   };
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex flex-col md:flex-row h-full w-full">
       <Sidebar items={managerNav} activeItem={activeTab} setActiveItem={setActiveTab} />
-      <div className="flex-1 p-4 md:p-8 pt-20 md:pt-8 overflow-y-auto bg-gray-50">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-gray-800 mb-8">{managerNav.find(n => n.id === activeTab)?.name}</h2>
+      <div className="flex-1 p-3 sm:p-4 md:p-8 pt-[calc(3.5rem+env(safe-area-inset-top))] md:pt-8 overflow-y-auto bg-gray-50">
+        <div className="max-w-6xl mx-auto full-bleed-cap">
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-6 md:mb-8">{managerNav.find(n => n.id === activeTab)?.name}</h2>
           
           {activeTab === 'dashboard' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -357,7 +357,7 @@ export function ManagerDashboard() {
                 {loading ? (
                   <p className="text-gray-500 py-4">جاري تحميل المستخدمين...</p>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto table-responsive">
                     <table className="w-full text-right border-collapse">
                       <thead>
                         <tr className="border-b bg-gray-50">
@@ -447,7 +447,7 @@ export function ManagerDashboard() {
                 {loading ? (
                   <p className="text-gray-500 py-4">جاري تحميل الملفات...</p>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto table-responsive">
                     <table className="w-full text-right border-collapse">
                       <thead>
                         <tr className="bg-gray-50 border-b">
@@ -547,7 +547,7 @@ export function ManagerDashboard() {
                 </CardHeader>
                 <CardContent>
                   {loading ? <p className="text-gray-500 py-4">جاري تحميل الخدمات...</p> : (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto table-responsive">
                       <table className="w-full text-right border-collapse">
                         <thead>
                           <tr className="bg-gray-50 border-b">
@@ -658,7 +658,7 @@ export function ManagerDashboard() {
               </CardHeader>
               <CardContent>
                 {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto table-responsive">
                     <table className="w-full text-right border-collapse">
                       <thead>
                         <tr className="border-b bg-gray-50">
@@ -700,7 +700,7 @@ export function ManagerDashboard() {
               </CardHeader>
               <CardContent>
                 {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto table-responsive">
                     <table className="w-full text-right border-collapse">
                       <thead>
                         <tr className="border-b bg-gray-50">
@@ -763,7 +763,7 @@ export function ManagerDashboard() {
                   </CardHeader>
                   <CardContent>
                     {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
-                      <div className="overflow-x-auto">
+                      <div className="overflow-x-auto table-responsive">
                         <table className="w-full text-right border-collapse">
                           <thead>
                             <tr className="border-b bg-gray-50">
@@ -814,7 +814,7 @@ export function ManagerDashboard() {
                   </CardHeader>
                   <CardContent>
                     {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
-                      <div className="overflow-x-auto">
+                      <div className="overflow-x-auto table-responsive">
                         <table className="w-full text-right border-collapse">
                           <thead>
                             <tr className="border-b bg-gray-50">

@@ -60,7 +60,7 @@ export function DoctorFinancials() {
               لا توجد معاملات مالية مسجلة بعد.
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto table-responsive">
               <table className="w-full text-right border-collapse">
                 <thead>
                   <tr className="bg-white border-b">
