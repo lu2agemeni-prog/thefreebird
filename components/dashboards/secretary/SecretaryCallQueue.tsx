@@ -34,7 +34,7 @@ export function SecretaryCallQueue() {
     if (clinicsData) setClinics(clinicsData);
     await fetchQueueOnly();
     setLoading(false);
-  }, []);
+  };
 
   const fetchQueueOnly = async () => {
     const { data } = await supabase
@@ -43,7 +43,7 @@ export function SecretaryCallQueue() {
       .in('status', ['waiting', 'calling'])
       .order('token_number', { ascending: true });
     if (data) setQueues(data);
-  }, []);
+  };
 
   const handleAddToQueue = async (e: React.FormEvent) => {
     e.preventDefault();
