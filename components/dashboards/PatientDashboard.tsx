@@ -55,15 +55,15 @@ export function PatientDashboard({ user }: { user?: any }) {
   return (
     <div className="flex h-full w-full">
       <Sidebar items={patientNav} activeItem={activeTab} setActiveItem={setActiveTab} />
-      <div className="flex-1 p-4 md:p-8 pt-20 md:pt-8 overflow-y-auto bg-gray-50">
+      <div className="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto bg-gray-50">
         <div className="max-w-6xl mx-auto">
           {user?.patient_code && (
-            <div className="mb-6 bg-white border-2 border-emerald-100 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+            <div className="mb-6 bg-white border-2 border-emerald-100 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-right shadow-sm">
               <div>
                 <h3 className="text-gray-500 font-bold text-sm">مرحباً بك</h3>
                 <p className="text-xl font-bold text-gray-800">{user.first_name} {user.last_name}</p>
               </div>
-              <div className="text-left bg-emerald-50 px-6 py-3 rounded-xl border border-emerald-100">
+              <div className="text-center sm:text-left bg-emerald-50 px-6 py-3 rounded-xl border border-emerald-100 w-full sm:w-auto">
                 <p className="text-emerald-700 font-bold text-sm mb-1">الكود الطبي الخاص بك</p>
                 <p className="text-3xl font-black text-emerald-600 font-mono tracking-widest">{user.patient_code}</p>
               </div>

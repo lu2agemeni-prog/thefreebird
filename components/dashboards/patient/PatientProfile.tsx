@@ -14,9 +14,9 @@ export function PatientProfile() {
 
   useEffect(() => {
     if (user) {
-      setFirstName(user.first_name || '');
-      setLastName(user.last_name || '');
-      setPhone(user.phone || '');
+      
+      
+      
     }
   }, [user]);
 

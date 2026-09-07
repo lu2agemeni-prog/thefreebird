@@ -21,7 +21,7 @@ export function SecretaryAppointments() {
     
     if (data) setAppointments(data);
     setLoading(false);
-  };
+  }, []);
 
   const updateStatus = async (id: string, newStatus: string) => {
     const { error } = await supabase

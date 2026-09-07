@@ -22,7 +22,7 @@ export function Sidebar({ items, activeItem, setActiveItem }: SidebarProps) {
     <>
       {/* Mobile Toggle Button */}
       <button 
-        className="md:hidden fixed top-4 right-4 z-50 p-2 bg-white text-emerald-700 border border-emerald-100 rounded-lg shadow-sm flex items-center justify-center"
+        className="md:hidden fixed bottom-6 right-6 z-50 p-4 bg-emerald-600 text-white rounded-full shadow-xl flex items-center justify-center hover:bg-emerald-700 transition-colors"
         onClick={() => setIsOpen(!isOpen)}
         aria-label="Toggle Menu"
       >
@@ -30,7 +30,7 @@ export function Sidebar({ items, activeItem, setActiveItem }: SidebarProps) {
       </button>
 
       {/* Floating Notification Bell for all screens */}
-      <div className="fixed top-4 left-4 z-50">
+      <div className="fixed bottom-6 left-6 md:top-4 md:left-4 md:bottom-auto z-50">
         <NotificationBell />
       </div>
 

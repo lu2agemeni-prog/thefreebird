@@ -78,31 +78,31 @@ export default function HomePage() {
 
         {/* Main Content Area */}
         <main className="flex-1 md:mr-64 pb-20 md:pb-0">
-          <div className="min-h-screen bg-gradient-to-br from-blue-50 to-emerald-50 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+          <div className="min-h-[calc(100vh-72px)] md:min-h-screen bg-gradient-to-br from-blue-50 to-emerald-50 flex flex-col items-center justify-center p-4 md:p-6 relative overflow-hidden">
             {/* Background Decorations */}
-            <div className="absolute top-[-10%] right-[-5%] w-96 h-96 bg-emerald-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob"></div>
-            <div className="absolute top-[-10%] left-[-5%] w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-2000"></div>
-            <div className="absolute bottom-[-20%] left-[20%] w-96 h-96 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-4000"></div>
+            <div className="absolute top-[-10%] right-[-5%] w-64 md:w-96 h-64 md:h-96 bg-emerald-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob"></div>
+            <div className="absolute top-[-10%] left-[-5%] w-64 md:w-96 h-64 md:h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-2000"></div>
+            <div className="absolute bottom-[-20%] left-[20%] w-64 md:w-96 h-64 md:h-96 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-4000"></div>
 
             <div className="text-center z-10 max-w-2xl w-full">
-              <div className="bg-white/80 backdrop-blur-lg p-10 rounded-3xl shadow-xl border border-white">
-                <div className="bg-emerald-100 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
-                  <img src="/logo.png" alt="Logo" className="w-16 h-16 object-contain drop-shadow-md" onError={(e) => {
+              <div className="bg-white/80 backdrop-blur-lg p-6 md:p-10 rounded-3xl shadow-xl border border-white">
+                <div className="bg-emerald-100 w-20 h-20 md:w-24 md:h-24 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+                  <img src="/logo.png" alt="Logo" className="w-12 h-12 md:w-16 md:h-16 object-contain drop-shadow-md" onError={(e) => {
                      (e.target as HTMLImageElement).src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>';
                   }} />
                 </div>
                 
-                <h2 className="text-4xl md:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">مرحباً بك في مركز <span className="text-emerald-600">الطائر الحر</span></h2>
-                <p className="text-lg md:text-xl text-gray-600 mb-10 leading-relaxed">
+                <h2 className="text-3xl md:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">مرحباً بك في <br className="md:hidden" /> مركز <span className="text-emerald-600">الطائر الحر</span></h2>
+                <p className="text-base md:text-xl text-gray-600 mb-8 md:mb-10 leading-relaxed">
                   نقدم رعاية صحية متكاملة بأحدث التقنيات وأفضل الكوادر الطبية لضمان صحتك وصحة عائلتك.
                 </p>
                 
-                <div className="flex flex-col gap-4 max-w-sm mx-auto">
+                <div className="flex flex-col gap-4 max-w-sm mx-auto w-full">
                   <button 
                     onClick={loginWithGoogle}
-                    className="flex items-center justify-center gap-3 w-full bg-white text-gray-800 font-bold text-lg py-4 px-6 rounded-2xl border-2 border-gray-100 hover:border-emerald-200 hover:bg-emerald-50 transition-all shadow-sm hover:shadow-md group"
+                    className="flex items-center justify-center gap-2 md:gap-3 w-full bg-white text-gray-800 font-bold text-sm md:text-lg py-3 md:py-4 px-4 md:px-6 rounded-2xl border-2 border-gray-100 hover:border-emerald-200 hover:bg-emerald-50 transition-all shadow-sm hover:shadow-md group"
                   >
-                    <svg className="w-6 h-6 transition-transform group-hover:scale-110" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 md:w-6 md:h-6 transition-transform group-hover:scale-110" viewBox="0 0 24 24">
                       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
                       <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
                       <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
@@ -113,9 +113,9 @@ export default function HomePage() {
 
                   <a 
                     href="/book"
-                    className="flex items-center justify-center gap-3 w-full bg-emerald-600 text-white font-bold text-lg py-4 px-6 rounded-2xl hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg"
+                    className="flex items-center justify-center gap-2 md:gap-3 w-full bg-emerald-600 text-white font-bold text-sm md:text-lg py-3 md:py-4 px-4 md:px-6 rounded-2xl hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg"
                   >
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                     احجز موعدك الآن مجاناً
                   </a>
                 </div>
@@ -174,22 +174,22 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center z-10">
+      <header className="bg-white shadow-sm border-b px-4 md:px-6 py-3 md:py-4 flex flex-col sm:flex-row justify-between items-center gap-3 z-10">
         <div className="flex items-center gap-3">
-          <HeartPulse className="w-8 h-8 text-emerald-600" />
-          <h2 className="text-xl font-bold text-gray-800">الطائر الحر - لوحة تحكم {getRoleName(user.role)}</h2>
+          <HeartPulse className="w-6 h-6 md:w-8 md:h-8 text-emerald-600" />
+          <h2 className="text-lg md:text-xl font-bold text-gray-800 text-center">الطائر الحر - لوحة تحكم {getRoleName(user.role)}</h2>
         </div>
         <div className="flex items-center gap-4">
           {user.avatar_url && (
-            <img src={user.avatar_url} alt="Profile" className="w-10 h-10 rounded-full border border-gray-200" />
+            <img src={user.avatar_url} alt="Profile" className="w-8 h-8 md:w-10 md:h-10 rounded-full border border-gray-200 hidden sm:block" />
           )}
-          <div className="flex flex-col">
+          <div className="flex flex-col text-center sm:text-right">
             <span className="text-sm font-semibold text-gray-900">{user.first_name} {user.last_name}</span>
-            <span className="text-xs text-gray-500">{user.email}</span>
+            <span className="text-xs text-gray-500 hidden sm:block">{user.email}</span>
           </div>
           <button 
             onClick={logout}
-            className="ms-4 text-sm font-medium text-red-600 hover:text-red-800 bg-red-50 px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+            className="ms-2 md:ms-4 text-xs md:text-sm font-medium text-red-600 hover:text-red-800 bg-red-50 px-3 py-1.5 md:px-4 md:py-2 rounded-lg transition-colors flex items-center gap-1 md:gap-2"
           >
             <LogIn className="w-4 h-4" />
             خروج

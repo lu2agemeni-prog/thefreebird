@@ -16,12 +16,12 @@ export function usePWAInstall() {
     const isStandalone =
       window.matchMedia('(display-mode: standalone)').matches ||
       (window.navigator as unknown as { standalone?: boolean }).standalone === true;
-    setIsInstalled(isStandalone);
+    
 
     // Detect iOS devices
     const userAgent = window.navigator.userAgent.toLowerCase();
     const isIOSDevice = /iphone|ipad|ipod/.test(userAgent);
-    setIsIOS(isIOSDevice);
+    
 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
