@@ -23,7 +23,7 @@ export function SecretaryPatients() {
     
     if (data) setPatients(data);
     setLoading(false);
-  }, []);
+  };
 
   const filteredPatients = patients.filter(p => 
     (p.first_name + ' ' + p.last_name).toLowerCase().includes(search.toLowerCase()) ||

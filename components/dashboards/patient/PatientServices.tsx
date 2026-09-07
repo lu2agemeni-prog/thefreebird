@@ -20,7 +20,7 @@ export function PatientServices() {
     
     if (data) setServices(data);
     setLoading(false);
-  }, []);
+  };
 
   return (
     <div className="space-y-6">
