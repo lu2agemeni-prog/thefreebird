@@ -5,16 +5,6 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
-  eslint: {
-    // The eslint-config-next 16 React Compiler rules (react-hooks/immutability)
-    // flag `useEffect` callbacks that call a `const fn = async () => {}`
-    // declared later in the same component. This is safe at runtime (the
-    // effect body only runs after the component function has finished
-    // executing, so the const is already assigned) but the new rule treats
-    // it as an error and fails the build. Don't let lint errors block
-    // deploys; `npm run lint` still reports them for cleanup.
-    ignoreDuringBuilds: true,
-  },
   images: {
     remotePatterns: [
       {
