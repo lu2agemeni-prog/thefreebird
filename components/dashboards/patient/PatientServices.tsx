@@ -16,6 +16,7 @@ export function PatientServices() {
     const { data } = await supabase
       .from('services')
       .select('*, clinic:clinic_id(name)')
+      .eq('is_active', true)
       .order('name', { ascending: true });
     
     if (data) setServices(data);

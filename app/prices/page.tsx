@@ -17,6 +17,7 @@ export default function PricesPage() {
     const { data, error } = await supabase
       .from('services')
       .select('*, clinic:clinic_id(name)')
+      .eq('is_active', true)
       .order('name', { ascending: true });
     
     if (!error && data) {
@@ -84,4 +85,3 @@ export default function PricesPage() {
     </div>
   );
 }
-
