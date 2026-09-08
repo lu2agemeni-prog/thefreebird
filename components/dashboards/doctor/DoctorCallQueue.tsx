@@ -6,15 +6,18 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Activity, Volume2, Users, Loader2 } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
+import { playQueueAnnouncement } from '@/lib/queueAudio';
 
 export function DoctorCallQueue() {
   const { user } = useAuth();
   const [queue, setQueue] = useState<any[]>([]);
+  const [clinic, setClinic] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [doctorClinicId, setDoctorClinicId] = useState<string | null>(null);
   const [clinicLoadError, setClinicLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [queueLoadError, setQueueLoadError] = useState<string | null>(null);
+  const [callInProgress, setCallInProgress] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -51,6 +54,8 @@ export function DoctorCallQueue() {
       }
     } else if (data) {
       setDoctorClinicId(data.clinic_id);
+      const { data: clinicData } = await supabase.from('clinics').select('*').eq('id', data.clinic_id).single();
+      if (clinicData) setClinic(clinicData);
     }
     setLoading(false);
   };
@@ -80,12 +85,44 @@ export function DoctorCallQueue() {
     }
   };
 
-  const callPatient = (id: string) => {
-    updateStatus(id, 'calling');
-  };
-
   const completePatient = (id: string) => {
     updateStatus(id, 'completed');
+  };
+
+  const handleCallNext = async () => {
+    if (!doctorClinicId) return;
+    setCallInProgress(true);
+    setActionError(null);
+    const { data, error } = await supabase.rpc('call_next_in_queue', { p_clinic_id: doctorClinicId });
+    setCallInProgress(false);
+    if (error) {
+      setActionError(getFriendlyErrorMessage(error, 'تعذر نداء المريض التالي.'));
+      return;
+    }
+    if (!data) {
+      setActionError('لا يوجد مرضى في قائمة الانتظار.');
+      return;
+    }
+    fetchQueue();
+    if (clinic) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
+  };
+
+  const handleCallPrevious = async () => {
+    if (!doctorClinicId) return;
+    setCallInProgress(true);
+    setActionError(null);
+    const { data, error } = await supabase.rpc('call_previous_in_queue', { p_clinic_id: doctorClinicId });
+    setCallInProgress(false);
+    if (error) {
+      setActionError(getFriendlyErrorMessage(error, 'تعذر استدعاء المريض السابق.'));
+      return;
+    }
+    if (!data) {
+      setActionError('لا يوجد نداء سابق يمكن الرجوع إليه.');
+      return;
+    }
+    fetchQueue();
+    if (clinic) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
   };
 
   if (loading) {
@@ -120,6 +157,23 @@ export function DoctorCallQueue() {
       {(queueLoadError || actionError) && (
         <InlineError message={queueLoadError || actionError} />
       )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button
+          onClick={handleCallNext}
+          disabled={callInProgress}
+          className="bg-emerald-600 text-white font-bold py-4 rounded-xl hover:bg-emerald-700 disabled:opacity-50"
+        >
+          العميل التالي
+        </button>
+        <button
+          onClick={handleCallPrevious}
+          disabled={callInProgress}
+          className="bg-gray-100 text-gray-700 font-bold py-4 rounded-xl hover:bg-gray-200 disabled:opacity-50"
+        >
+          العميل السابق
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="border-blue-100 shadow-md">
@@ -174,8 +228,24 @@ export function DoctorCallQueue() {
                       <div className="font-bold text-gray-800">{p.patient_name}</div>
                     </div>
       <button
-                      onClick={() => callPatient(p.id)}
-                      className="bg-orange-100 text-orange-700 px-4 py-2 rounded-lg font-bold hover:bg-orange-200"
+                      onClick={async () => {
+                        if (!doctorClinicId) return;
+                        setCallInProgress(true);
+                        setActionError(null);
+                        const { data, error } = await supabase.rpc('call_specific_in_queue', {
+                          p_clinic_id: doctorClinicId,
+                          p_token: p.token_number,
+                        });
+                        setCallInProgress(false);
+                        if (error) {
+                          setActionError(getFriendlyErrorMessage(error, 'تعذر نداء هذا المريض.'));
+                          return;
+                        }
+                        fetchQueue();
+                        if (clinic && data) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
+                      }}
+                      disabled={callInProgress}
+                      className="bg-orange-100 text-orange-700 px-4 py-2 rounded-lg font-bold hover:bg-orange-200 disabled:opacity-50"
                     >
                       نداء المريض
                     </button>
