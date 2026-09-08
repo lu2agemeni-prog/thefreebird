@@ -3,9 +3,12 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Calculator, Loader2 } from 'lucide-react';
+import { ErrorState } from '@/components/ui/error-state';
+import { getFriendlyErrorMessage } from '@/lib/errors';
 
 export function AccountantOverview() {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [stats, setStats] = useState({ income: 0, expense: 0, net: 0 });
 
   useEffect(() => {
@@ -13,17 +16,21 @@ export function AccountantOverview() {
   }, []);
 
   const fetchStats = async () => {
+    setLoadError(null);
     setLoading(true);
-    const { data } = await supabase.from('transactions').select('amount, type');
-    
-    if (data) {
+    const { data, error } = await supabase.from('transactions').select('amount, type');
+
+    if (error) {
+      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل الملخص المالي.'));
+      setStats({ income: 0, expense: 0, net: 0 });
+    } else if (data) {
       let income = 0;
       let expense = 0;
       data.forEach(t => {
         if (t.type === 'income') income += Number(t.amount);
         else expense += Number(t.amount); // includes 'expense' and 'salary'
       });
-      
+
       setStats({
         income,
         expense,
@@ -35,6 +42,9 @@ export function AccountantOverview() {
 
   if (loading) {
     return <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>;
+  }
+  if (loadError) {
+    return <ErrorState message={loadError} onRetry={fetchStats} />;
   }
 
   return (
@@ -51,14 +61,14 @@ export function AccountantOverview() {
             <p className="text-4xl font-black text-emerald-600" dir="ltr">+{stats.income.toLocaleString()} <span className="text-lg">EGP</span></p>
           </CardContent>
         </Card>
-        
+
         <Card className="border-t-4 border-t-red-500 shadow-sm">
           <CardContent className="p-6">
             <p className="text-sm font-bold text-gray-500 mb-2">إجمالي المصروفات</p>
             <p className="text-4xl font-black text-red-600" dir="ltr">-{stats.expense.toLocaleString()} <span className="text-lg">EGP</span></p>
           </CardContent>
         </Card>
-        
+
         <Card className={`border-t-4 shadow-sm ${stats.net >= 0 ? 'border-t-blue-500' : 'border-t-orange-500'}`}>
           <CardContent className="p-6">
             <p className="text-sm font-bold text-gray-500 mb-2">صافي الربح / الخسارة</p>
@@ -68,15 +78,15 @@ export function AccountantOverview() {
           </CardContent>
         </Card>
       </div>
-      
+
       <Card>
         <CardHeader>
-          <CardTitle>ملاحظة هامة</CardTitle>
+          <CardTitle>ملاحظة مهمة</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-gray-600 leading-relaxed">
             هذه الأرقام تمثل إجمالي الحركات المالية المسجلة على النظام (الإيرادات تمثل كل المدخولات المسجلة، بينما المصروفات تشمل النفقات التشغيلية بالإضافة لرواتب ومستحقات الأطباء والموظفين).
-            للاطلاع على السجل التفصيلي أو تسجيل مصروف جديد، يرجى الانتقال إلى تبويب "المصروفات والمستهلكات".
+            للاطلاع على السجل التفصيلي أو تسجيل مصروف جديد، يرجى الانتقال إلى تبويب &quot;المصروفات والمستهلكات&quot;.
           </p>
         </CardContent>
       </Card>

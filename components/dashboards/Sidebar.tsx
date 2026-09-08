@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { LucideIcon, Menu, X } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
@@ -48,7 +49,7 @@ export function Sidebar({ items, activeItem, setActiveItem }: SidebarProps) {
         isOpen ? "translate-x-0 flex" : "translate-x-full hidden md:flex"
       )}>
         <div className="p-6 border-b flex items-center justify-center h-24">
-          <img src="/logo.png" alt="الطائر الحر" className="w-24 h-auto object-contain" onError={(e) => e.currentTarget.style.display = 'none'} />
+          <Image src="/logo.png" alt="الطائر الحر" width={96} height={48} className="w-24 h-auto object-contain" />
         </div>
         <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
           {items.map((item) => {

@@ -1,13 +1,35 @@
 'use client';
 import { ArrowRight, Wifi, Copy, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { supabase } from '@/lib/supabase';
 
 export default function WifiPage() {
   const [copied, setCopied] = useState(false);
-  const networkName = 'FreeBird_Guest';
-  const networkPass = '12345678';
+  // بيانات الواي فاي من جدول settings (أُسسس كافتريفات مختلفة في المركز في محرك إطلاق قاعدة البيانات — كانت مكتوبة ثابتة في الكود بدلاً من الإعدادات)
+  const DEFAULT_NAME = 'FreeBird_Guest';
+  const DEFAULT_PASS = '12345678';
+  const [networkName, setNetworkName] = useState(DEFAULT_NAME);
+  const [networkPass, setNetworkPass] = useState(DEFAULT_PASS);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('settings')
+          .select('value')
+          .eq('key', 'wifi_credentials')
+          .maybeSingle();
+        if (!error && data?.value?.ssid) {
+          setNetworkName(String(data.value.ssid));
+          if (data.value.password) setNetworkPass(String(data.value.password));
+        }
+      } catch {
+        // نتجاهل أي خطأ ونبقى على القيم الافتراضية
+      }
+    })();
+  }, []);
   
   const handleCopy = () => {
     navigator.clipboard.writeText(networkPass);

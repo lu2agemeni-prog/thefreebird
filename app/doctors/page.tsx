@@ -3,19 +3,39 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ArrowRight, Stethoscope, Calendar, Clock, Star } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
+import { ErrorState } from '@/components/ui/error-state';
+import { getFriendlyErrorMessage } from '@/lib/errors';
+import { workingDaysLabel } from '@/lib/types';
 
 export default function DoctorsPage() {
   const [doctors, setDoctors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const FETCH_CAP = 200;
 
   useEffect(() => {
-    const fetchDoctors = async () => {
-      const { data } = await supabase.from('profiles').select('*').eq('role', 'doctor');
-      if (data) setDoctors(data);
-      setLoading(false);
-    };
     fetchDoctors();
   }, []);
+
+  const fetchDoctors = async () => {
+    setLoading(true);
+    setLoadError(null);
+    // profiles + doctors (التخصص/مواعيد/سعر الكشف) — كانت البيانات مكتوبة ثابتة في الواجهة
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*, doctor:doctors(specialty, working_days, consultation_fee, bio)')
+      .eq('role', 'doctor')
+      .order('first_name', { ascending: true })
+      .limit(FETCH_CAP);
+    if (error) {
+      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل قائمة الأطباء.'));
+    } else {
+      setDoctors(data);
+    }
+    setLoading(false);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
@@ -43,6 +63,8 @@ export default function DoctorsPage() {
           <div className="flex justify-center p-12 text-emerald-600">
             <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
           </div>
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={fetchDoctors} />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {doctors.map((doc) => (
@@ -50,7 +72,7 @@ export default function DoctorsPage() {
                 <div className="h-32 bg-emerald-50 relative">
                   <div className="absolute -bottom-12 left-1/2 -translate-x-1/2">
                     {doc.avatar_url ? (
-                      <img src={doc.avatar_url} alt="Doctor" className="w-24 h-24 rounded-full border-4 border-white shadow-md object-cover" />
+                      <Image src={doc.avatar_url} alt="Doctor" width={96} height={96} className="w-24 h-24 rounded-full border-4 border-white shadow-md object-cover" />
                     ) : (
                       <div className="w-24 h-24 rounded-full border-4 border-white shadow-md bg-emerald-600 flex items-center justify-center text-white text-3xl font-bold">
                         {doc.first_name?.[0]}
@@ -61,7 +83,7 @@ export default function DoctorsPage() {
                 
                 <div className="pt-16 pb-8 px-6 text-center">
                   <h3 className="text-xl font-bold text-gray-900 mb-1">د. {doc.first_name} {doc.last_name}</h3>
-                  <p className="text-emerald-600 font-medium mb-4">أخصائي متميز</p>
+                  <p className="text-emerald-600 font-medium mb-4">{doc.doctor?.specialty || 'استشارة طبية عامة'}</p>
                   
                   <div className="flex items-center justify-center gap-1 text-amber-400 mb-6">
                     <Star className="w-4 h-4 fill-current" />
@@ -74,11 +96,11 @@ export default function DoctorsPage() {
                   <div className="bg-gray-50 rounded-2xl p-4 text-right space-y-3 mb-6 border border-gray-100">
                     <div className="flex items-center gap-3 text-sm text-gray-600">
                       <Calendar className="w-4 h-4 text-emerald-600" />
-                      <span>الأيام: السبت، الإثنين، الأربعاء</span>
+                      <span>الأيام: {workingDaysLabel(doc.doctor?.working_days)}</span>
                     </div>
                     <div className="flex items-center gap-3 text-sm text-gray-600">
                       <Clock className="w-4 h-4 text-emerald-600" />
-                      <span>المواعيد: 4:00 م - 9:00 م</span>
+                      <span>سعر الكشف: {doc.doctor?.consultation_fee ? `${doc.doctor.consultation_fee} ج.م` : 'حسب الخدمة'}</span>
                     </div>
                   </div>
                   

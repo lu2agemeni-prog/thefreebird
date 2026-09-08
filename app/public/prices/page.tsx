@@ -1,12 +1,16 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Stethoscope, FileText, Banknote } from 'lucide-react';
+import { ErrorState } from '@/components/ui/error-state';
+import { getFriendlyErrorMessage } from '@/lib/errors';
 
 export default function PublicPricesPage() {
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchServices();
@@ -14,13 +18,17 @@ export default function PublicPricesPage() {
 
   const fetchServices = async () => {
     setLoading(true);
-    const { data } = await supabase
+    setLoadError(null);
+    const { data, error } = await supabase
       .from('services')
       .select('*, clinic:clinic_id(name)')
       .eq('is_active', true)
-      .order('name', { ascending: true });
-    
-    if (data) {
+      .order('name', { ascending: true })
+      .limit(200);
+
+    if (error) {
+      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل لائحة الأسعار.'));
+    } else if (data) {
       // Group by clinic
       const grouped = data.reduce((acc, curr) => {
         const clinicName = curr.clinic?.name || 'خدمات عامة';
@@ -37,7 +45,7 @@ export default function PublicPricesPage() {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center py-12 px-4 sm:px-6">
       <div className="w-full max-w-3xl">
         <div className="text-center mb-10">
-          <img src="/logo.png" alt="الطائر الحر" className="w-32 h-auto mx-auto mb-4" onError={(e) => e.currentTarget.style.display = 'none'} />
+          <Image src="/logo.png" alt="الطائر الحر" width={128} height={64} className="w-32 h-auto mx-auto mb-4" />
           <h1 className="text-3xl font-bold text-gray-900 mb-2">لائحة أسعار الخدمات</h1>
           <p className="text-gray-500">مركز الطائر الحر الطبي</p>
         </div>
@@ -46,6 +54,8 @@ export default function PublicPricesPage() {
           <div className="flex justify-center p-12">
             <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
           </div>
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={fetchServices} />
         ) : services.length === 0 ? (
           <div className="text-center p-12 bg-white rounded-2xl shadow-sm border text-gray-500">
             لا توجد خدمات مسعرة حالياً

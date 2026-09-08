@@ -3,23 +3,32 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 import { List, Loader2 } from 'lucide-react';
+import { ErrorState } from '@/components/ui/error-state';
+import { getFriendlyErrorMessage } from '@/lib/errors';
 
 export function PatientServices() {
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchServices();
   }, []);
 
   const fetchServices = async () => {
-    const { data } = await supabase
+    setLoadError(null);
+    setLoading(true);
+    const { data, error } = await supabase
       .from('services')
       .select('*, clinic:clinic_id(name)')
       .eq('is_active', true)
       .order('name', { ascending: true });
-    
-    if (data) setServices(data);
+
+    if (error) {
+      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل قائمة الخدمات.'));
+    } else if (data) {
+      setServices(data);
+    }
     setLoading(false);
   };
 
@@ -34,6 +43,10 @@ export function PatientServices() {
         <CardContent className="p-0">
           {loading ? (
             <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>
+          ) : loadError ? (
+            <div className="p-6">
+              <ErrorState message={loadError} onRetry={fetchServices} compact />
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-right border-collapse">

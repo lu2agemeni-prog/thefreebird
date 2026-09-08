@@ -4,12 +4,17 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
 import { Activity, Volume2, Users, Loader2 } from 'lucide-react';
+import { ErrorState, InlineError } from '@/components/ui/error-state';
+import { getFriendlyErrorMessage } from '@/lib/errors';
 
 export function DoctorCallQueue() {
   const { user } = useAuth();
   const [queue, setQueue] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [doctorClinicId, setDoctorClinicId] = useState<string | null>(null);
+  const [clinicLoadError, setClinicLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [queueLoadError, setQueueLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -27,7 +32,7 @@ export function DoctorCallQueue() {
           fetchQueue();
         })
         .subscribe();
-        
+
       return () => {
         supabase.removeChannel(channel);
       };
@@ -35,24 +40,44 @@ export function DoctorCallQueue() {
   }, [doctorClinicId]);
 
   const fetchDoctorClinic = async () => {
-    const { data } = await supabase.from('doctors').select('clinic_id').eq('profile_id', user?.id).single();
-    if (data) setDoctorClinicId(data.clinic_id);
+    setClinicLoadError(null);
+    const { data, error } = await supabase.from('doctors').select('clinic_id').eq('profile_id', user?.id).single();
+    if (error) {
+      // PGRST116: لم يُنشأ صف طبيب بعد — حالة طبيعية (غير مرتبط بعيادة)
+      if (error.code === 'PGRST116') {
+        setDoctorClinicId(null);
+      } else {
+        setClinicLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل بيانات العيادة الخاصة بك.'));
+      }
+    } else if (data) {
+      setDoctorClinicId(data.clinic_id);
+    }
     setLoading(false);
   };
 
   const fetchQueue = async () => {
-    const { data } = await supabase
+    setQueueLoadError(null);
+    const { data, error } = await supabase
       .from('call_queue')
       .select('*')
       .eq('clinic_id', doctorClinicId)
       .in('status', ['waiting', 'calling'])
       .order('token_number', { ascending: true });
-    
-    if (data) setQueue(data);
+    if (error) {
+      setQueueLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل قائمة النداء.'));
+    } else {
+      setQueue(data || []);
+    }
   };
 
   const updateStatus = async (id: string, newStatus: string) => {
-    await supabase.from('call_queue').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id);
+    setActionError(null);
+    const { error } = await supabase.from('call_queue').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) {
+      setActionError(getFriendlyErrorMessage(error, 'تعذر تحديث حالة النداء.'));
+    } else {
+      fetchQueue();
+    }
   };
 
   const callPatient = (id: string) => {
@@ -63,20 +88,23 @@ export function DoctorCallQueue() {
     updateStatus(id, 'completed');
   };
 
-  if (!doctorClinicId && !loading) {
+  if (loading) {
+    return <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>;
+  }
+  if (clinicLoadError) {
+    return <ErrorState message={clinicLoadError} onRetry={fetchDoctorClinic} />;
+  }
+
+  if (!doctorClinicId) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3 mb-6">
           <Activity className="w-8 h-8 text-emerald-600" />
           <h2 className="text-3xl font-bold text-gray-800">النداء الآلي</h2>
         </div>
-        <div className="p-8 text-center text-gray-500 font-bold bg-white rounded-xl border border-gray-200">أنت غير مسجل في أي عيادة حالياً. يرجى مراجعة الإدارة لربط حسابك بعيادة.</div>
+        <div className="p-8 text-center text-gray-500 font-bold bg-white rounded-xl border border-gray-200">أنت غير مسجل في أي عيادة حاليًا. يرجى مراجعة الإدارة لربط حسابك بعيادة.</div>
       </div>
     );
-  }
-
-  if (loading && queue.length === 0) {
-    return <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>;
   }
 
   const calling = queue.filter(q => q.status === 'calling');
@@ -89,12 +117,16 @@ export function DoctorCallQueue() {
         <h2 className="text-3xl font-bold text-gray-800">النداء الآلي</h2>
       </div>
 
+      {(queueLoadError || actionError) && (
+        <InlineError message={queueLoadError || actionError} />
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="border-blue-100 shadow-md">
           <CardContent className="p-6">
             <h3 className="text-xl font-bold text-blue-900 mb-4 flex items-center gap-2">
               <Volume2 className="w-5 h-5 text-blue-600" />
-              قيد النداء حالياً
+              قيد النداء حاليًا
             </h3>
             {calling.length === 0 ? (
               <p className="text-gray-500 bg-gray-50 p-4 rounded-xl text-center">لا يوجد مريض تحت النداء</p>
@@ -106,15 +138,18 @@ export function DoctorCallQueue() {
                       <div className="text-sm font-bold text-blue-600 mb-1">رقم الدور</div>
                       <div className="text-4xl font-black text-blue-900">{p.token_number}</div>
                       <div className="font-bold text-lg text-blue-800 mt-2">{p.patient_name}</div>
+                          <div className="text-xs text-blue-500 mt-1" dir="ltr">
+                            {p.created_at ? new Date(p.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''}
+                          </div>
                     </div>
-                    <button 
+                    <button
                       onClick={() => completePatient(p.id)}
                       className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-sm"
                     >
                       إنهاء المقابلة
                     </button>
-                  </div>
-                ))}
+                    </div>
+                  ))}
               </div>
             )}
           </CardContent>
@@ -138,7 +173,7 @@ export function DoctorCallQueue() {
                       </div>
                       <div className="font-bold text-gray-800">{p.patient_name}</div>
                     </div>
-                    <button 
+      <button
                       onClick={() => callPatient(p.id)}
                       className="bg-orange-100 text-orange-700 px-4 py-2 rounded-lg font-bold hover:bg-orange-200"
                     >

@@ -2,7 +2,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { Bell, Check, Trash2, X } from 'lucide-react';
+import { Bell, Check, Trash2, X, AlertTriangle } from 'lucide-react';
+import { getFriendlyErrorMessage } from '@/lib/errors';
 
 export function NotificationBell() {
   const { user } = useAuth();
@@ -10,6 +11,7 @@ export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -95,14 +97,18 @@ export function NotificationBell() {
 
   const fetchNotifications = async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('notifications')
       .select('*')
       .eq('user_id', user?.id)
       .order('created_at', { ascending: false })
       .limit(20);
-      
-    if (data) {
+
+    if (error) {
+      // فشل التحميل كان صامتًا في السابق — يظهر الآن داخل القائمة
+      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل الإشعارات.'));
+    } else if (data) {
+      setLoadError(null);
       setNotifications(prev => {
         // preserve dynamic notifications
         const dynamic = prev.filter(p => typeof p.id === 'string' && p.id.startsWith('upcoming-'));
@@ -180,6 +186,19 @@ export function NotificationBell() {
           <div className="max-h-96 overflow-y-auto">
             {loading && notifications.length === 0 ? (
               <div className="p-8 text-center text-gray-500 text-sm">جاري التحميل...</div>
+            ) : loadError ? (
+              <div className="p-6 text-center">
+                <div className="flex items-center justify-center gap-1.5 text-red-600 text-sm font-bold mb-3">
+                  <AlertTriangle className="w-4 h-4" />
+                  {loadError}
+                </div>
+                <button
+                  onClick={fetchNotifications}
+                  className="text-xs text-emerald-600 hover:text-emerald-700 font-bold underline"
+                >
+                  إعادة المحاولة
+                </button>
+              </div>
             ) : notifications.length === 0 ? (
               <div className="p-8 text-center text-gray-500 text-sm">لا توجد إشعارات جديدة</div>
             ) : (

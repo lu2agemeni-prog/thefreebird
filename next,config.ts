@@ -13,6 +13,20 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      // أفاتار Google (تسجيل الدخول بـ Google) — كانت مفقودة مما يكسر <Image> مع أفاتار المستخدمين
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com',
+        port: '',
+        pathname: '/**',
+      },
+      // مصادر أخرى لصور الأخبار/المقالات
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
   // `output: 'standalone'` is only for self-hosting (Docker/VPS). On Vercel it

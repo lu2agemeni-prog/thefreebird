@@ -1,11 +1,15 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
+import { getFriendlyErrorMessage } from '@/lib/errors';
 import { supabase } from '@/lib/supabase';
 import { Volume2, Monitor } from 'lucide-react';
+import { InlineError } from '@/components/ui/error-state';
 
 export default function PublicCallQueuePage() {
   const [queue, setQueue] = useState<any[]>([]);
   const [currentCalling, setCurrentCalling] = useState<any | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchQueue();
@@ -32,12 +36,17 @@ export default function PublicCallQueuePage() {
   }, []);
 
   const fetchQueue = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('call_queue')
       .select('*, clinic:clinic_id(name)')
       .in('status', ['waiting', 'calling'])
-      .order('updated_at', { ascending: false });
-    
+      .order('updated_at', { ascending: false })
+      .limit(200);
+
+    if (error) {
+      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل طابور النداء.'));
+      return;
+    }
     if (data) {
       setQueue(data);
       // Auto-set current calling if there's any actively calling right now
@@ -79,8 +88,10 @@ export default function PublicCallQueuePage() {
             <p className="text-gray-400 mt-1">مركز الطائر الحر الطبي</p>
           </div>
         </div>
-        <img src="/logo.png" alt="Logo" className="h-16 w-auto bg-white rounded-xl p-2" onError={(e) => e.currentTarget.style.display = 'none'} />
+        <Image src="/logo.png" alt="Logo" width={64} height={64} className="h-16 w-auto bg-white rounded-xl p-2" />
       </div>
+
+      {loadError && <div className="mb-4 bg-red-900/20 border border-red-700 rounded-xl p-4"><InlineError message={loadError} /></div>}
 
       {/* Currently Calling Banner */}
       {currentCalling && (

@@ -1,14 +1,30 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import Image from 'next/image';
 import { Sidebar, SidebarItem } from './Sidebar';
 import { 
   Settings, Users, Building, Calculator, 
   Stethoscope, CreditCard, Activity, QrCode, Shield,
-  BarChart, FileText, Download, CheckCircle, MessageSquare, Newspaper, List
+  BarChart, FileText, Download, CheckCircle, MessageSquare, Newspaper, List,
+  Loader2, Plus, X, Send
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '@/lib/supabase';
+import { ErrorState, InlineError } from '../ui/error-state';
+import { Pagination } from '../ui/pagination';
+import { SearchInput } from '../ui/search-input';
+import { getFriendlyErrorMessage } from '@/lib/errors';
+import {
+  toAppointmentStatus, APPOINTMENT_STATUS_LABELS, APPOINTMENT_STATUS_COLORS,
+  toComplaintStatus, COMPLAINT_STATUS_LABELS, COMPLAINT_STATUS_COLORS,
+  toComplaintType, COMPLAINT_TYPE_LABELS,
+  toCallQueueStatus, CALL_QUEUE_STATUS_LABELS, CALL_QUEUE_STATUS_COLORS,
+  toTransactionType, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPE_COLORS,
+} from '@/lib/types';
+
+const FETCH_CAP = 2000;
+const PAGE_SIZE = 10;
 
 const managerNav: SidebarItem[] = [
   { name: 'لوحة القيادة', id: 'dashboard', icon: Activity },
@@ -41,9 +57,156 @@ export function ManagerDashboard() {
   const [patients, setPatients] = useState<any[]>([]);
   const [reportTab, setReportTab] = useState('clinics');
   const [loading, setLoading] = useState(false);
-  
-  // Search state for medical records
-  const [searchQuery, setSearchQuery] = useState('');
+  const [loadErrors, setLoadErrors] = useState<Record<string, string | null>>({});
+
+  // حالة الخطأ مع إعادة المحاولة لكل جدول
+  const setTableError = (table: string, msg: string | null) => {
+    setLoadErrors(prev => ({ ...prev, [table]: msg }));
+  };
+  const tableError = (table: string): string | null => loadErrors[table] || null;
+
+  // Search states — كان البحث في تبويب واحد فقط من 11
+  const [searchQuery, setSearchQuery] = useState('');       // medical_records
+  const [doctorsSearch, setDoctorsSearch] = useState('');
+  const [clinicsSearch, setClinicsSearch] = useState('');
+  const [staffSearch, setStaffSearch] = useState('');
+  const [queueSearch, setQueueSearch] = useState('');
+  const [finSearch, setFinSearch] = useState('');
+  const [reportSearch, setReportSearch] = useState('');
+
+  // Pagination states (client-side)
+  const [patientsPage, setPatientsPage] = useState(0);
+  const [staffPage, setStaffPage] = useState(0);
+  const [doctorsPage, setDoctorsPage] = useState(0);
+  const [clinicsPage, setClinicsPage] = useState(0);
+  const [queuePage, setQueuePage] = useState(0);
+  const [finPage, setFinPage] = useState(0);
+  const [reportPage, setReportPage] = useState(0);
+
+  useEffect(() => {
+    setPatientsPage(0);
+  }, [searchQuery]);
+  useEffect(() => { setStaffPage(0); }, [staffSearch]);
+  useEffect(() => { setDoctorsPage(0); }, [doctorsSearch]);
+  useEffect(() => { setClinicsPage(0); }, [clinicsSearch]);
+  useEffect(() => { setQueuePage(0); }, [queueSearch]);
+  useEffect(() => { setFinPage(0); }, [finSearch]);
+  useEffect(() => { setReportPage(0); }, [reportSearch, reportTab]);
+
+  // ==== تصفية البحث + فهرسة صفحة مأمونة (كان البحث في تبويب واحد فقط من 11 ولا ترقيم إطلاقًا) ====
+  const filteredPatients = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return patients;
+    return patients.filter(p => {
+      const fullName = `${p.first_name} ${p.last_name}`.toLowerCase();
+      return fullName.includes(q)
+        || (p.phone && p.phone.toLowerCase().includes(q))
+        || (p.patient_code && p.patient_code.toLowerCase().includes(q));
+    });
+  }, [patients, searchQuery]);
+
+  const filteredStaff = useMemo(() => {
+    const q = staffSearch.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter(u => {
+      const fullName = `${u.first_name} ${u.last_name}`.toLowerCase();
+      return fullName.includes(q)
+        || (u.email && u.email.toLowerCase().includes(q))
+        || (u.role && u.role.toLowerCase().includes(q))
+        || (u.id && u.id.toLowerCase().includes(q));
+    });
+  }, [users, staffSearch]);
+
+  const filteredDoctors = useMemo(() => {
+    const q = doctorsSearch.trim().toLowerCase();
+    if (!q) return doctors;
+    return doctors.filter(d => `${d.first_name} ${d.last_name}`.toLowerCase().includes(q) || (d.email && d.email.toLowerCase().includes(q)));
+  }, [doctors, doctorsSearch]);
+
+  const filteredClinics = useMemo(() => {
+    const q = clinicsSearch.trim().toLowerCase();
+    if (!q) return clinics;
+    return clinics.filter(c => (c.name || '').toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q));
+  }, [clinics, clinicsSearch]);
+
+  const filteredQueue = useMemo(() => {
+    const q = queueSearch.trim().toLowerCase();
+    if (!q) return queue;
+    return queue.filter(item => (item.patient_name || '').toLowerCase().includes(q)
+      || (item.clinics?.name || '').toLowerCase().includes(q)
+      || String(item.token_number || '').includes(q));
+  }, [queue, queueSearch]);
+
+  const filteredTransactions = useMemo(() => {
+    const q = finSearch.trim().toLowerCase();
+    if (!q) return transactions;
+    return transactions.filter(t => {
+      const byUser = t.profiles ? `${t.profiles.first_name} ${t.profiles.last_name}`.toLowerCase() : '';
+      return (t.description || '').toLowerCase().includes(q)
+        || (t.category || '').toLowerCase().includes(q)
+        || (t.type || '').toLowerCase().includes(q)
+        || byUser.includes(q);
+    });
+  }, [transactions, finSearch]);
+
+  const filteredAppointments = useMemo(() => {
+    const q = reportSearch.trim().toLowerCase();
+    if (!q) return appointments;
+    return appointments.filter(a => {
+      const patient = a.patient ? `${a.patient.first_name} ${a.patient.last_name}`.toLowerCase() : '';
+      const doctor = a.doctor?.profiles ? `${a.doctor.profiles.first_name} ${a.doctor.profiles.last_name}`.toLowerCase() : '';
+      const clinic = (a.clinics?.name || '').toLowerCase();
+      return patient.includes(q) || doctor.includes(q) || clinic.includes(q) || (a.status || '').toLowerCase().includes(q);
+    });
+  }, [appointments, reportSearch]);
+
+  const filteredReportTransactions = useMemo(() => {
+    const q = reportSearch.trim().toLowerCase();
+    if (!q) return transactions;
+    return transactions.filter(t => {
+      const byUser = t.profiles ? `${t.profiles.first_name} ${t.profiles.last_name}`.toLowerCase() : '';
+      return (t.description || '').toLowerCase().includes(q)
+        || (t.category || '').toLowerCase().includes(q)
+        || (t.type || '').toLowerCase().includes(q)
+        || byUser.includes(q);
+    });
+  }, [transactions, reportSearch]);
+
+  const filteredComplaints = useMemo(() => {
+    const q = reportSearch.trim().toLowerCase();
+    if (!q) return complaints;
+    return complaints.filter(c => {
+      const byUser = c.profiles ? `${c.profiles.first_name} ${c.profiles.last_name}`.toLowerCase() : '';
+      return (c.message || '').toLowerCase().includes(q)
+        || (c.status || '').toLowerCase().includes(q)
+        || (c.type || '').toLowerCase().includes(q)
+        || (c.admin_reply || '').toLowerCase().includes(q)
+        || byUser.includes(q);
+    });
+  }, [complaints, reportSearch]);
+
+  const filteredConsultations = useMemo(() => {
+    const q = reportSearch.trim().toLowerCase();
+    if (!q) return consultations;
+    return consultations.filter(c => {
+      const patient = c.patient ? `${c.patient.first_name} ${c.patient.last_name}`.toLowerCase() : '';
+      const doctor = c.doctor?.profiles ? `${c.doctor.profiles.first_name} ${c.doctor.profiles.last_name}`.toLowerCase() : '';
+      return (c.message || '').toLowerCase().includes(q) || (c.reply || '').toLowerCase().includes(q)
+        || patient.includes(q) || doctor.includes(q);
+    });
+  }, [consultations, reportSearch]);
+
+  // فهارس صفحة محمية من الخروج عن المدى بعد التصفية
+  const patientsSafePage = Math.min(patientsPage, Math.max(0, Math.ceil(filteredPatients.length / PAGE_SIZE) - 1));
+  const staffSafePage = Math.min(staffPage, Math.max(0, Math.ceil(filteredStaff.length / PAGE_SIZE) - 1));
+  const doctorsSafePage = Math.min(doctorsPage, Math.max(0, Math.ceil(filteredDoctors.length / PAGE_SIZE) - 1));
+  const clinicsSafePage = Math.min(clinicsPage, Math.max(0, Math.ceil(filteredClinics.length / PAGE_SIZE) - 1));
+  const queueSafePage = Math.min(queuePage, Math.max(0, Math.ceil(filteredQueue.length / PAGE_SIZE) - 1));
+  const finSafePage = Math.min(finPage, Math.max(0, Math.ceil(filteredTransactions.length / PAGE_SIZE) - 1));
+  const appointmentsSafePage = Math.min(reportPage, Math.max(0, Math.ceil(filteredAppointments.length / PAGE_SIZE) - 1));
+  const reportFinSafePage = Math.min(reportPage, Math.max(0, Math.ceil(filteredReportTransactions.length / PAGE_SIZE) - 1));
+  const complaintsSafePage = Math.min(reportPage, Math.max(0, Math.ceil(filteredComplaints.length / PAGE_SIZE) - 1));
+  const consultationsSafePage = Math.min(reportPage, Math.max(0, Math.ceil(filteredConsultations.length / PAGE_SIZE) - 1));
 
   // Services Form State
   const [serviceName, setServiceName] = useState('');
@@ -76,82 +239,105 @@ export function ManagerDashboard() {
 
   const fetchUsers = async () => {
     setLoading(true);
-    const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-    if (data) setUsers(data);
+    setTableError('users', null);
+    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false }).limit(FETCH_CAP);
+    if (error) setTableError('users', getFriendlyErrorMessage(error, 'تعذر تحميل المستخدمين.'));
+    else setUsers(data || []);
     setLoading(false);
   };
 
   const fetchPatients = async () => {
     setLoading(true);
-    const { data } = await supabase
+    setTableError('patients', null);
+    const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('role', 'patient')
-      .order('created_at', { ascending: false });
-    if (data) setPatients(data);
+      .order('created_at', { ascending: false })
+      .limit(FETCH_CAP);
+    if (error) setTableError('patients', getFriendlyErrorMessage(error, 'تعذر تحميل ملفات المرضى.'));
+    else setPatients(data || []);
     setLoading(false);
   };
 
   const fetchDoctors = async () => {
     setLoading(true);
-    const { data } = await supabase.from('profiles').select('*').eq('role', 'doctor');
-    if (data) setDoctors(data);
+    setTableError('doctors', null);
+    const { data, error } = await supabase.from('profiles').select('*').eq('role', 'doctor').limit(FETCH_CAP);
+    if (error) setTableError('doctors', getFriendlyErrorMessage(error, 'تعذر تحميل قائمة الأطباء.'));
+    else setDoctors(data || []);
     setLoading(false);
   };
 
   const fetchClinics = async () => {
     setLoading(true);
-    const { data } = await supabase.from('clinics').select('*');
-    if (data) setClinics(data);
+    setTableError('clinics', null);
+    const { data, error } = await supabase.from('clinics').select('*').limit(FETCH_CAP);
+    if (error) setTableError('clinics', getFriendlyErrorMessage(error, 'تعذر تحميل العيادات.'));
+    else setClinics(data || []);
     setLoading(false);
   };
 
   const fetchQueue = async () => {
     setLoading(true);
-    const { data } = await supabase.from('call_queue').select('*, clinics(name)').order('updated_at', { ascending: false });
-    if (data) setQueue(data);
+    setTableError('queue', null);
+    const { data, error } = await supabase.from('call_queue').select('*, clinics(name)').order('updated_at', { ascending: false }).limit(FETCH_CAP);
+    if (error) setTableError('queue', getFriendlyErrorMessage(error, 'تعذر تحميل طابور النداء.'));
+    else setQueue(data || []);
     setLoading(false);
   };
 
   const fetchTransactions = async () => {
     setLoading(true);
-    const { data } = await supabase.from('transactions').select('*, profiles(first_name, last_name)').order('created_at', { ascending: false });
-    if (data) setTransactions(data);
+    setTableError('transactions', null);
+    const { data, error } = await supabase.from('transactions').select('*, profiles(first_name, last_name)').order('created_at', { ascending: false }).limit(FETCH_CAP);
+    if (error) setTableError('transactions', getFriendlyErrorMessage(error, 'تعذر تحميل المعاملات المالية.'));
+    else setTransactions(data || []);
     setLoading(false);
   };
 
   const fetchAppointments = async () => {
     setLoading(true);
-    const { data } = await supabase.from('appointments').select('*, patient:patient_id(first_name, last_name), doctor:doctor_id(profiles(first_name, last_name)), clinics(name)').order('created_at', { ascending: false });
-    if (data) setAppointments(data);
+    setTableError('appointments', null);
+    const { data, error } = await supabase.from('appointments').select('*, patient:patient_id(first_name, last_name), doctor:doctor_id(profiles(first_name, last_name)), clinics(name)').order('created_at', { ascending: false }).limit(FETCH_CAP);
+    if (error) setTableError('appointments', getFriendlyErrorMessage(error, 'تعذر تحميل المواعيد.'));
+    else setAppointments(data || []);
     setLoading(false);
   };
 
   const fetchComplaints = async () => {
     setLoading(true);
-    const { data } = await supabase.from('complaints').select('*, profiles(first_name, last_name)').order('created_at', { ascending: false });
-    if (data) setComplaints(data);
+    setTableError('complaints', null);
+    const { data, error } = await supabase.from('complaints').select('*, profiles(first_name, last_name)').order('created_at', { ascending: false }).limit(FETCH_CAP);
+    if (error) setTableError('complaints', getFriendlyErrorMessage(error, 'تعذر تحميل الشكاوى.'));
+    else setComplaints(data || []);
     setLoading(false);
   };
 
   const fetchConsultations = async () => {
     setLoading(true);
-    const { data } = await supabase.from('consultations').select('*, patient:patient_id(first_name, last_name), doctor:doctor_id(profiles(first_name, last_name))').order('created_at', { ascending: false });
-    if (data) setConsultations(data);
+    setTableError('consultations', null);
+    const { data, error } = await supabase.from('consultations').select('*, patient:patient_id(first_name, last_name), doctor:doctor_id(profiles(first_name, last_name))').order('created_at', { ascending: false }).limit(FETCH_CAP);
+    if (error) setTableError('consultations', getFriendlyErrorMessage(error, 'تعذر تحميل الاستشارات.'));
+    else setConsultations(data || []);
     setLoading(false);
   };
 
   const fetchNews = async () => {
     setLoading(true);
-    const { data } = await supabase.from('medical_news').select('*, doctor:doctor_id(first_name, last_name)').order('created_at', { ascending: false });
-    if (data) setNews(data);
+    setTableError('news', null);
+    const { data, error } = await supabase.from('medical_news').select('*, doctor:doctor_id(first_name, last_name)').order('created_at', { ascending: false }).limit(FETCH_CAP);
+    if (error) setTableError('news', getFriendlyErrorMessage(error, 'تعذر تحميل الأخبار الطبية.'));
+    else setNews(data || []);
     setLoading(false);
   };
 
   const fetchServices = async () => {
     setLoading(true);
-    const { data } = await supabase.from('services').select('*, clinic:clinic_id(name)').order('name', { ascending: true });
-    if (data) setServices(data);
+    setTableError('services', null);
+    const { data, error } = await supabase.from('services').select('*, clinic:clinic_id(name)').order('name', { ascending: true }).limit(FETCH_CAP);
+    if (error) setTableError('services', getFriendlyErrorMessage(error, 'تعذر تحميل الخدمات.'));
+    else setServices(data || []);
     setLoading(false);
   };
 
@@ -237,10 +423,40 @@ export function ManagerDashboard() {
     document.body.removeChild(link);
   };
 
-  const handleReplyComplaint = async (id: string) => {
-    const reply = prompt('أدخل ردك على هذه الشكوى/المقترح:');
-    if (reply) {
-      await supabase.from('complaints').update({ status: 'resolved' }).eq('id', id);
+// ===== الرد على الشكاوى — نموذج داخلي يكتب admin_reply فعلًا (كان prompt() لا يكتب شيئًا) =====
+  const [replyComplaintId, setReplyComplaintId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [replySaving, setReplySaving] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [replyOk, setReplyOk] = useState<string | null>(null);
+
+  const openReplyForm = (id: string, existing: string = '') => {
+    setReplyComplaintId(id);
+    setReplyText(existing);
+    setReplyError(null);
+    setReplyOk(null);
+  };
+
+  const submitReply = async () => {
+    if (!replyComplaintId) return;
+    if (!replyText.trim() || replyText.trim().length < 5) {
+      setReplyError('يرجى كتابة رد لا يقل عن 5 أحرف.');
+      return;
+    }
+    setReplySaving(true);
+    setReplyError(null);
+    // الكتابة الفعلية لعمود admin_reply + إغلاق الشكوى — تُشغّل إشعار notify_complaint_reply للمريض
+    const { error } = await supabase
+      .from('complaints')
+      .update({ admin_reply: replyText.trim(), status: 'resolved' })
+      .eq('id', replyComplaintId);
+    setReplySaving(false);
+    if (error) {
+      setReplyError(getFriendlyErrorMessage(error, 'تعذر حفظ الرد.'));
+    } else {
+      setReplyOk('تم حفظ الرد وإرسال إشعار للمريض.');
+      setReplyText('');
+      setReplyComplaintId(null);
       fetchComplaints();
     }
   };
@@ -249,14 +465,33 @@ export function ManagerDashboard() {
     const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
     if (!error) {
       setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
+    } else {
+      setTableError('users', getFriendlyErrorMessage(error, ''));
     }
   };
 
-  const addDummyClinic = async () => {
-    const name = prompt('أدخل اسم العيادة الجديدة (مثال: عيادة الأسنان):');
-    if (name) {
-      const { error } = await supabase.from('clinics').insert([{ name, description: 'تمت إضافتها حديثاً' }]);
-      if (!error) fetchClinics();
+// ===== إضافة عيادة — نموذج داخلي بدل prompt() =====
+  const [newClinicName, setNewClinicName] = useState('');
+  const [newClinicDesc, setNewClinicDesc] = useState('');
+  const [addingClinic, setAddingClinic] = useState(false);
+  const [addClinicError, setAddClinicError] = useState<string | null>(null);
+
+  const handleAddClinic = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddClinicError(null);
+    if (!newClinicName.trim()) {
+      setAddClinicError('يرجى إدخال اسم العيادة.');
+      return;
+    }
+    setAddingClinic(true);
+    const { error } = await supabase.from('clinics').insert([{ name: newClinicName.trim(), description: newClinicDesc.trim() || 'تمت إضافتها حديثًا' }]);
+    setAddingClinic(false);
+    if (error) {
+      setAddClinicError(getFriendlyErrorMessage(error, 'تعذر إضافة العيادة.'));
+    } else {
+      setNewClinicName('');
+      setNewClinicDesc('');
+      fetchClinics();
     }
   };
 
@@ -281,16 +516,20 @@ export function ManagerDashboard() {
               <CardHeader>
                 <CardTitle>أطباء المركز</CardTitle>
                 <CardDescription>قائمة بجميع الأطباء المسجلين في النظام</CardDescription>
+                <div className="mt-3 max-w-md">
+                  <SearchInput value={doctorsSearch} onValueChange={setDoctorsSearch} placeholder="ابحث باسم الطبيب أو البريد..." />
+                </div>
               </CardHeader>
               <CardContent>
+                {tableError('doctors') && <ErrorState message={tableError('doctors')!} onRetry={fetchDoctors} compact />}
                 {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {doctors.length === 0 ? (
+                    {filteredDoctors.length === 0 ? (
                       <p className="text-gray-500">لا يوجد أطباء مسجلين. قم بتغيير صلاحية أحد المستخدمين إلى "طبيب" من شاشة الصلاحيات.</p>
-                    ) : doctors.map((doc) => (
+                    ) : filteredDoctors.slice(doctorsSafePage * PAGE_SIZE, doctorsSafePage * PAGE_SIZE + PAGE_SIZE).map((doc) => (
                       <div key={doc.id} className="border p-4 rounded-xl flex items-center gap-4 bg-white shadow-sm">
                         {doc.avatar_url ? (
-                          <img src={doc.avatar_url} alt="" className="w-16 h-16 rounded-full" />
+                          <Image src={doc.avatar_url} alt="" width={64} height={64} className="w-16 h-16 rounded-full object-cover" unoptimized={false} />
                         ) : (
                           <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 text-xl font-bold">
                             {doc.first_name?.[0]}
@@ -305,6 +544,7 @@ export function ManagerDashboard() {
                     ))}
                   </div>
                 )}
+              {!loading && <Pagination page={doctorsSafePage} pageSize={PAGE_SIZE} total={filteredDoctors.length} onPageChange={setDoctorsPage} isLoading={loading} />}
               </CardContent>
             </Card>
           )}
@@ -316,16 +556,48 @@ export function ManagerDashboard() {
                   <CardTitle>العيادات والتخصصات</CardTitle>
                   <CardDescription>إدارة العيادات المتاحة في المركز</CardDescription>
                 </div>
-                <button onClick={addDummyClinic} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-800 transition-colors">
-                  + إضافة عيادة
-                </button>
+                
+                <div className="mt-3 max-w-md">
+                  <SearchInput value={clinicsSearch} onValueChange={setClinicsSearch} placeholder="ابحث باسم العيادة أو الوصف..." />
+                </div>
               </CardHeader>
               <CardContent>
+                {tableError('clinics') && <ErrorState message={tableError('clinics')!} onRetry={fetchClinics} compact />}
+                {/* نموذج إضافة عيادة — كان prompt() قبلًا */}
+                <form onSubmit={handleAddClinic} className="mb-6 flex flex-col md:flex-row gap-3 items-end bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <div className="flex-1 w-full">
+                    <label className="block text-xs font-bold text-gray-500 mb-1">اسم العيادة الجديدة</label>
+                    <input
+                      type="text"
+                      value={newClinicName}
+                      onChange={(e) => setNewClinicName(e.target.value)}
+                      className="w-full border rounded-lg p-2 text-sm"
+                      placeholder="مثال: عيادة الأسنان"
+                      required
+                    />
+                  </div>
+                  <div className="flex-1 w-full">
+                    <label className="block text-xs font-bold text-gray-500 mb-1">الوصف (اختياري)</label>
+                    <input
+                      type="text"
+                      value={newClinicDesc}
+                      onChange={(e) => setNewClinicDesc(e.target.value)}
+                      className="w-full border rounded-lg p-2 text-sm"
+                      placeholder="وصف مختصر للعيادة..."
+                    />
+                  </div>
+                  <button type="submit" disabled={addingClinic} className="bg-emerald-600 text-white font-bold px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 disabled:opacity-50 h-[42px] whitespace-nowrap">
+                    {addingClinic ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+                    إضافة عيادة
+                  </button>
+                  {addClinicError && <div className="w-full"><InlineError message={addClinicError} /></div>}
+                </form>
+
                 {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {clinics.length === 0 ? (
+                    {filteredClinics.length === 0 ? (
                       <p className="text-gray-500">لا توجد عيادات. اضغط على الزر أعلاه لإضافة عيادة.</p>
-                    ) : clinics.map((clinic) => (
+                    ) : filteredClinics.slice(clinicsSafePage * PAGE_SIZE, clinicsSafePage * PAGE_SIZE + PAGE_SIZE).map((clinic) => (
                       <div key={clinic.id} className="border p-4 rounded-xl flex items-center justify-between bg-white shadow-sm hover:border-emerald-200 transition-colors">
                         <div className="flex items-center gap-3">
                           <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
@@ -343,6 +615,7 @@ export function ManagerDashboard() {
                     ))}
                   </div>
                 )}
+              {!loading && <Pagination page={clinicsSafePage} pageSize={PAGE_SIZE} total={filteredClinics.length} onPageChange={setClinicsPage} isLoading={loading} />}
               </CardContent>
             </Card>
           )}
@@ -352,8 +625,12 @@ export function ManagerDashboard() {
               <CardHeader>
                 <CardTitle>إدارة صلاحيات المستخدمين</CardTitle>
                 <CardDescription>التحكم في أدوار جميع المسجلين في النظام (مدير، طبيب، سكرتارية، محاسب، مريض)</CardDescription>
+                <div className="mt-3 max-w-md">
+                  <SearchInput value={staffSearch} onValueChange={setStaffSearch} placeholder="ابحث بالاسم أو البريد أو الدور..." />
+                </div>
               </CardHeader>
               <CardContent>
+                {tableError('users') && <ErrorState message={tableError('users')!} onRetry={fetchUsers} compact />}
                 {loading ? (
                   <p className="text-gray-500 py-4">جاري تحميل المستخدمين...</p>
                 ) : (
@@ -368,11 +645,11 @@ export function ManagerDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {users.map((user) => (
+                        {filteredStaff.slice(staffSafePage * PAGE_SIZE, staffSafePage * PAGE_SIZE + PAGE_SIZE).map((user) => (
                           <tr key={user.id} className="border-b hover:bg-gray-50 transition-colors">
                             <td className="p-4 font-medium flex items-center gap-3">
                               {user.avatar_url ? (
-                                <img src={user.avatar_url} alt="" className="w-8 h-8 rounded-full" />
+                                <Image src={user.avatar_url} alt="" width={32} height={32} className="w-8 h-8 rounded-full object-cover" />
                               ) : (
                                 <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold">
                                   {user.first_name?.[0]}
@@ -409,7 +686,7 @@ export function ManagerDashboard() {
                             </td>
                           </tr>
                         ))}
-                        {users.length === 0 && (
+                        {filteredStaff.length === 0 && (
                           <tr>
                             <td colSpan={4} className="p-8 text-center text-gray-500">
                               لا يوجد مستخدمين مسجلين حتى الآن
@@ -420,6 +697,7 @@ export function ManagerDashboard() {
                     </table>
                   </div>
                 )}
+              {!loading && <Pagination page={staffSafePage} pageSize={PAGE_SIZE} total={filteredStaff.length} onPageChange={setStaffPage} isLoading={loading} />}
               </CardContent>
             </Card>
           )}
@@ -432,18 +710,13 @@ export function ManagerDashboard() {
                     <CardTitle>الملفات الطبية للمرضى</CardTitle>
                     <CardDescription>بحث واستعراض ملفات المرضى المسجلين</CardDescription>
                   </div>
-                  <div className="flex bg-white border rounded-lg px-3 py-2 w-full md:w-80 shadow-sm">
-                    <input 
-                      type="text" 
-                      placeholder="ابحث بالاسم، رقم التليفون، أو الكود..." 
-                      className="w-full outline-none text-sm bg-transparent"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
+                  <div className="w-full md:w-80">
+                    <SearchInput value={searchQuery} onValueChange={setSearchQuery} placeholder="ابحث بالاسم، رقم التليفون، أو الكود..." />
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
+                {tableError('patients') && <ErrorState message={tableError('patients')!} onRetry={fetchPatients} compact />}
                 {loading ? (
                   <p className="text-gray-500 py-4">جاري تحميل الملفات...</p>
                 ) : (
@@ -459,11 +732,7 @@ export function ManagerDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {patients.filter(p => {
-                          const query = searchQuery.toLowerCase();
-                          const fullName = `${p.first_name} ${p.last_name}`.toLowerCase();
-                          return fullName.includes(query) || (p.phone && p.phone.includes(query)) || (p.patient_code && p.patient_code.includes(query));
-                        }).map(patient => (
+                        {filteredPatients.slice(patientsSafePage * PAGE_SIZE, patientsSafePage * PAGE_SIZE + PAGE_SIZE).map(patient => (
                           <tr key={patient.id} className="border-b hover:bg-gray-50 transition-colors">
                             <td className="p-4 font-bold text-emerald-600 text-lg">
                               {patient.patient_code || '---'}
@@ -484,6 +753,9 @@ export function ManagerDashboard() {
                             </td>
                           </tr>
                         ))}
+                        {patients.length > 0 && filteredPatients.length === 0 && (
+                          <tr><td colSpan={5} className="p-8 text-center text-gray-500">لا توجد نتائج مطابقة للبحث</td></tr>
+                        )}
                         {patients.length === 0 && (
                           <tr>
                             <td colSpan={5} className="p-8 text-center text-gray-500">
@@ -495,6 +767,7 @@ export function ManagerDashboard() {
                     </table>
                   </div>
                 )}
+              {!loading && <Pagination page={patientsSafePage} pageSize={PAGE_SIZE} total={filteredPatients.length} onPageChange={setPatientsPage} isLoading={loading} />}
               </CardContent>
             </Card>
           )}
@@ -502,7 +775,7 @@ export function ManagerDashboard() {
           {activeTab === 'qrcodes' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <QRCodeCard title="لائحة الأسعار" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/prices`} desc="QR Code لصفحة الأسعار والخدمات" />
-              <QRCodeCard title="الشكاوى والاقتراحات" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/complaints`} desc="QR Code لنموذج الشكاوى والمقترحات" />
+              <QRCodeCard title="الشكاوى والاقتراحات" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/public/complaints`} desc="QR Code لنموذج الشكاوى والمقترحات" />
               <QRCodeCard title="واي فاي العيادة" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/wifi`} desc="QR Code لصفحة بيانات الواي فاي للزوار" />
               <QRCodeCard title="الحجز السريع" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/book`} desc="QR Code لحجز موعد في العيادات" />
               <QRCodeCard title="شاشة النداء الآلي" url={`${typeof window !== 'undefined' ? window.location.origin : ''}/queue`} desc="QR Code لفتح شاشة العرض العامة على الشاشات الكبيرة" />
@@ -546,6 +819,7 @@ export function ManagerDashboard() {
                   <CardTitle>الخدمات والأسعار الحالية</CardTitle>
                 </CardHeader>
                 <CardContent>
+                  {tableError('services') && <ErrorState message={tableError('services')!} onRetry={fetchServices} compact />}
                   {loading ? <p className="text-gray-500 py-4">جاري تحميل الخدمات...</p> : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-right border-collapse">
@@ -621,6 +895,7 @@ export function ManagerDashboard() {
                   <CardTitle>الأخبار المنشورة</CardTitle>
                 </CardHeader>
                 <CardContent>
+                  {tableError('news') && <ErrorState message={tableError('news')!} onRetry={fetchNews} compact />}
                   {loading ? <p className="text-gray-500 py-4">جاري تحميل الأخبار...</p> : (
                     <div className="grid grid-cols-1 gap-4">
                       {news.length === 0 ? (
@@ -628,7 +903,7 @@ export function ManagerDashboard() {
                       ) : news.map((post) => (
                         <div key={post.id} className="border rounded-xl p-4 flex gap-4 bg-white">
                           {post.image_url && (
-                            <img src={post.image_url} alt="" className="w-32 h-32 object-cover rounded-lg" />
+                            <Image src={post.image_url} alt="" width={128} height={128} className="w-32 h-32 object-cover rounded-lg" />
                           )}
                           <div className="flex-1">
                             <h4 className="font-bold text-lg text-emerald-900">{post.title}</h4>
@@ -655,8 +930,12 @@ export function ManagerDashboard() {
               <CardHeader>
                 <CardTitle>النداء الآلي (شاشة الانتظار)</CardTitle>
                 <CardDescription>المرضى في طابور الانتظار للعيادات</CardDescription>
+                <div className="mt-3 max-w-md">
+                  <SearchInput value={queueSearch} onValueChange={setQueueSearch} placeholder="ابحث باسم المريض أو العيادة أو رقم النداء..." />
+                </div>
               </CardHeader>
               <CardContent>
+                {tableError('queue') && <ErrorState message={tableError('queue')!} onRetry={fetchQueue} compact />}
                 {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-right border-collapse">
@@ -669,25 +948,26 @@ export function ManagerDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {queue.map((q) => (
+                        {filteredQueue.slice(queueSafePage * PAGE_SIZE, queueSafePage * PAGE_SIZE + PAGE_SIZE).map((q) => (
                           <tr key={q.id} className="border-b hover:bg-gray-50">
                             <td className="p-4 font-bold text-lg text-emerald-600">{q.token_number}</td>
                             <td className="p-4 font-medium">{q.patient_name}</td>
                             <td className="p-4 text-gray-600">{q.clinics?.name || 'غير محدد'}</td>
                             <td className="p-4">
-                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${q.status === 'waiting' ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                {q.status === 'waiting' ? 'في الانتظار' : 'اكتمل'}
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${CALL_QUEUE_STATUS_COLORS[toCallQueueStatus(q.status)]}`}>
+                                {CALL_QUEUE_STATUS_LABELS[toCallQueueStatus(q.status)]}
                               </span>
                             </td>
                           </tr>
                         ))}
-                        {queue.length === 0 && (
+                        {filteredQueue.length === 0 && (
                           <tr><td colSpan={4} className="p-8 text-center text-gray-500">لا يوجد مرضى في طابور الانتظار حالياً</td></tr>
                         )}
                       </tbody>
                     </table>
                   </div>
                 )}
+              {!loading && <Pagination page={queueSafePage} pageSize={PAGE_SIZE} total={filteredQueue.length} onPageChange={setQueuePage} isLoading={loading} />}
               </CardContent>
             </Card>
           )}
@@ -697,8 +977,12 @@ export function ManagerDashboard() {
               <CardHeader>
                 <CardTitle>الماليات والأرباح</CardTitle>
                 <CardDescription>سجل الإيرادات والمصروفات الخاصة بالمركز</CardDescription>
+                <div className="mt-3 max-w-md">
+                  <SearchInput value={finSearch} onValueChange={setFinSearch} placeholder="ابحث بالوصف أو التصنيف أو النوع أو المسئول..." />
+                </div>
               </CardHeader>
               <CardContent>
+                {tableError('transactions') && <ErrorState message={tableError('transactions')!} onRetry={fetchTransactions} compact />}
                 {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-right border-collapse">
@@ -713,12 +997,12 @@ export function ManagerDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {transactions.map((t) => (
+                        {filteredTransactions.slice(finSafePage * PAGE_SIZE, finSafePage * PAGE_SIZE + PAGE_SIZE).map((t) => (
                           <tr key={t.id} className="border-b hover:bg-gray-50">
                             <td className="p-4 text-sm text-gray-500">{new Date(t.created_at).toLocaleDateString('ar-EG')}</td>
                             <td className="p-4">
-                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${t.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                {t.type === 'income' ? 'إيراد' : 'مصروف'}
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${TRANSACTION_TYPE_COLORS[toTransactionType(t.type)]}`}>
+                                {TRANSACTION_TYPE_LABELS[toTransactionType(t.type)]}
                               </span>
                             </td>
                             <td className="p-4">{t.category}</td>
@@ -727,13 +1011,14 @@ export function ManagerDashboard() {
                             <td className="p-4 text-sm">{t.profiles ? `${t.profiles.first_name} ${t.profiles.last_name}` : 'غير محدد'}</td>
                           </tr>
                         ))}
-                        {transactions.length === 0 && (
+                        {filteredTransactions.length === 0 && (
                           <tr><td colSpan={6} className="p-8 text-center text-gray-500">لا توجد حركات مالية مسجلة حتى الآن</td></tr>
                         )}
                       </tbody>
                     </table>
                   </div>
                 )}
+              {!loading && <Pagination page={finSafePage} pageSize={PAGE_SIZE} total={filteredTransactions.length} onPageChange={setFinPage} isLoading={loading} />}
               </CardContent>
             </Card>
           )}
@@ -748,7 +1033,12 @@ export function ManagerDashboard() {
                 <button onClick={() => setReportTab('consultations')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${reportTab === 'consultations' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>الاستشارات الطبية</button>
               </div>
 
-              {/* Clinics & Doctors Report */}
+                            {/* بحث موحد للتقرير المفعل حاليًا */}
+              <div className="max-w-md mb-2">
+                <SearchInput value={reportSearch} onValueChange={setReportSearch} placeholder="ابحث داخل نتائج التقرير..." />
+              </div>
+
+{/* Clinics & Doctors Report */}
               {reportTab === 'clinics' && (
                 <Card>
                   <CardHeader className="flex flex-row justify-between items-center">
@@ -762,6 +1052,7 @@ export function ManagerDashboard() {
                     </button>
                   </CardHeader>
                   <CardContent>
+                    {tableError('appointments') && <ErrorState message={tableError('appointments')!} onRetry={fetchAppointments} compact />}
                     {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
                       <div className="overflow-x-auto">
                         <table className="w-full text-right border-collapse">
@@ -775,26 +1066,27 @@ export function ManagerDashboard() {
                             </tr>
                           </thead>
                           <tbody>
-                            {appointments.map((a) => (
+                            {filteredAppointments.slice(appointmentsSafePage * PAGE_SIZE, appointmentsSafePage * PAGE_SIZE + PAGE_SIZE).map((a) => (
                               <tr key={a.id} className="border-b hover:bg-gray-50">
                                 <td className="p-4 text-sm">{new Date(a.appointment_date).toLocaleString('ar-EG')}</td>
                                 <td className="p-4 font-medium">{a.patient ? `${a.patient.first_name} ${a.patient.last_name}` : 'غير محدد'}</td>
                                 <td className="p-4">{a.clinics?.name}</td>
                                 <td className="p-4 text-gray-600">{a.doctor?.profiles ? `د. ${a.doctor.profiles.first_name} ${a.doctor.profiles.last_name}` : 'غير محدد'}</td>
                                 <td className="p-4">
-                                  <span className={`px-2 py-1 rounded-full text-xs ${a.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
-                                    {a.status === 'completed' ? 'مكتمل' : 'معلق/ملغي'}
+                                  <span className={`px-2 py-1 rounded-full text-xs ${APPOINTMENT_STATUS_COLORS[toAppointmentStatus(a.status)]}`}>
+                                    {APPOINTMENT_STATUS_LABELS[toAppointmentStatus(a.status)]}
                                   </span>
                                 </td>
                               </tr>
                             ))}
-                            {appointments.length === 0 && (
+                            {filteredAppointments.length === 0 && (
                               <tr><td colSpan={5} className="p-8 text-center text-gray-500">لا توجد حجوزات أو كشوفات مسجلة</td></tr>
                             )}
                           </tbody>
                         </table>
                       </div>
                     )}
+                  {!loading && <Pagination page={appointmentsSafePage} pageSize={PAGE_SIZE} total={filteredAppointments.length} onPageChange={setReportPage} isLoading={loading} />}
                   </CardContent>
                 </Card>
               )}
@@ -813,6 +1105,7 @@ export function ManagerDashboard() {
                     </button>
                   </CardHeader>
                   <CardContent>
+                    {tableError('transactions') && <ErrorState message={tableError('transactions')!} onRetry={fetchTransactions} compact />}
                     {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
                       <div className="overflow-x-auto">
                         <table className="w-full text-right border-collapse">
@@ -826,12 +1119,12 @@ export function ManagerDashboard() {
                             </tr>
                           </thead>
                           <tbody>
-                            {transactions.map((t) => (
+                            {filteredReportTransactions.slice(reportFinSafePage * PAGE_SIZE, reportFinSafePage * PAGE_SIZE + PAGE_SIZE).map((t) => (
                               <tr key={t.id} className="border-b hover:bg-gray-50">
                                 <td className="p-4 text-sm text-gray-500">{new Date(t.created_at).toLocaleDateString('ar-EG')}</td>
                                 <td className="p-4">
                                   <span className={`px-2 py-1 rounded-full text-xs ${t.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                    {t.type === 'income' ? 'إيراد' : 'مصروف'}
+                                    {TRANSACTION_TYPE_LABELS[toTransactionType(t.type)]}
                                   </span>
                                 </td>
                                 <td className="p-4 font-medium">{t.profiles ? `${t.profiles.first_name} ${t.profiles.last_name}` : 'غير محدد'}</td>
@@ -839,13 +1132,14 @@ export function ManagerDashboard() {
                                 <td className="p-4 text-gray-600">{t.description}</td>
                               </tr>
                             ))}
-                            {transactions.length === 0 && (
+                            {filteredReportTransactions.length === 0 && (
                               <tr><td colSpan={5} className="p-8 text-center text-gray-500">لا توجد حركات مالية</td></tr>
                             )}
                           </tbody>
                         </table>
                       </div>
                     )}
+                  {!loading && <Pagination page={reportFinSafePage} pageSize={PAGE_SIZE} total={filteredReportTransactions.length} onPageChange={setReportPage} isLoading={loading} />}
                   </CardContent>
                 </Card>
               )}
@@ -864,36 +1158,66 @@ export function ManagerDashboard() {
                     </button>
                   </CardHeader>
                   <CardContent>
+                    {tableError('complaints') && <ErrorState message={tableError('complaints')!} onRetry={fetchComplaints} compact />}
                     {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
                       <div className="grid gap-4">
-                        {complaints.map((c) => (
+                        {filteredComplaints.slice(complaintsSafePage * PAGE_SIZE, complaintsSafePage * PAGE_SIZE + PAGE_SIZE).map((c) => (
                           <div key={c.id} className="border rounded-xl p-4 bg-white shadow-sm">
                             <div className="flex justify-between items-start mb-3">
                               <div className="flex items-center gap-2">
-                                <span className={`px-2 py-1 rounded text-xs font-bold ${c.type === 'complaint' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                                  {c.type === 'complaint' ? 'شكوى' : 'اقتراح'}
+                                <span className={`px-2 py-1 rounded text-xs font-bold ${toComplaintType(c.type) === 'complaint' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                                  {COMPLAINT_TYPE_LABELS[toComplaintType(c.type)]}
                                 </span>
                                 <span className="font-bold text-gray-900">{c.profiles ? `${c.profiles.first_name} ${c.profiles.last_name}` : 'زائر غير مسجل'}</span>
                                 <span className="text-xs text-gray-400">{new Date(c.created_at).toLocaleDateString('ar-EG')}</span>
                               </div>
-                              <span className={`px-2 py-1 rounded-full text-xs ${c.status === 'resolved' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
-                                {c.status === 'resolved' ? 'تم الرد' : 'مفتوحة'}
-                              </span>
+                              <span className={`px-2 py-1 rounded-full text-xs ${COMPLAINT_STATUS_COLORS[toComplaintStatus(c.status)]}`}>
+                                  {COMPLAINT_STATUS_LABELS[toComplaintStatus(c.status)]}
+                                </span>
                             </div>
                             <p className="text-gray-700 text-sm bg-gray-50 p-3 rounded-lg border border-gray-100 mb-3">{c.message}</p>
                             
-                            {c.status !== 'resolved' && (
-                              <button onClick={() => handleReplyComplaint(c.id)} className="text-emerald-600 text-sm font-bold flex items-center gap-1 hover:text-emerald-700">
-                                <MessageSquare className="w-4 h-4" /> إضافة رد وإغلاق
-                              </button>
+                            {c.admin_reply && (
+                              <div className="mt-2 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
+                                <p className="font-bold text-emerald-700 mb-1">رد الإدارة:</p>
+                                {c.admin_reply}
+                              </div>
+                            )}
+                            {toComplaintStatus(c.status) !== 'resolved' && (
+                              replyComplaintId === c.id ? (
+                                <div className="mt-3 space-y-2">
+                                  <textarea
+                                    value={replyText}
+                                    onChange={(e) => setReplyText(e.target.value)}
+                                    rows={3}
+                                    className="w-full border rounded-lg p-2 text-sm bg-white"
+                                    placeholder="اكتب رد الإدارة هنا (سيصل المريض كإشعار)..."
+                                  />
+                                  {replyError && <InlineError message={replyError} />}
+                                  <div className="flex gap-2">
+                                    <button onClick={submitReply} disabled={replySaving} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-700 flex items-center gap-1 disabled:opacity-50">
+                                      {replySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                      حفظ الرد وإغلاق الشكوى
+                                    </button>
+                                    <button onClick={() => setReplyComplaintId(null)} className="border border-gray-200 px-4 py-2 rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-50 flex items-center gap-1">
+                                      <X className="w-4 h-4" /> إلغاء
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button onClick={() => openReplyForm(c.id)} className="text-emerald-600 text-sm font-bold flex items-center gap-1 hover:text-emerald-700">
+                                  <MessageSquare className="w-4 h-4" /> إضافة رد وإغلاق
+                                </button>
+                              )
                             )}
                           </div>
                         ))}
-                        {complaints.length === 0 && (
+                        {filteredComplaints.length === 0 && (
                           <p className="text-gray-500 text-center py-8">لا توجد شكاوى أو مقترحات حتى الآن</p>
                         )}
                       </div>
                     )}
+                  {!loading && <Pagination page={complaintsSafePage} pageSize={PAGE_SIZE} total={filteredComplaints.length} onPageChange={setReportPage} isLoading={loading} />}
                   </CardContent>
                 </Card>
               )}
@@ -912,9 +1236,10 @@ export function ManagerDashboard() {
                     </button>
                   </CardHeader>
                   <CardContent>
+                    {tableError('consultations') && <ErrorState message={tableError('consultations')!} onRetry={fetchConsultations} compact />}
                     {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
                       <div className="grid gap-4">
-                        {consultations.map((c) => (
+                        {filteredConsultations.slice(consultationsSafePage * PAGE_SIZE, consultationsSafePage * PAGE_SIZE + PAGE_SIZE).map((c) => (
                           <div key={c.id} className="border rounded-xl p-4 bg-white shadow-sm">
                             <div className="flex justify-between items-start mb-3">
                               <div className="text-sm">
@@ -938,11 +1263,12 @@ export function ManagerDashboard() {
                             )}
                           </div>
                         ))}
-                        {consultations.length === 0 && (
+                        {filteredConsultations.length === 0 && (
                           <p className="text-gray-500 text-center py-8">لا توجد استشارات طبية حتى الآن</p>
                         )}
                       </div>
                     )}
+                  {!loading && <Pagination page={consultationsSafePage} pageSize={PAGE_SIZE} total={filteredConsultations.length} onPageChange={setReportPage} isLoading={loading} />}
                   </CardContent>
                 </Card>
               )}
