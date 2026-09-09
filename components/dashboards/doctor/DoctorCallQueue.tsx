@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
-import { Activity, Volume2, Users, Loader2 } from 'lucide-react';
+import { Activity, Volume2, Users, Loader2, Hash } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
@@ -18,6 +18,7 @@ export function DoctorCallQueue() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [queueLoadError, setQueueLoadError] = useState<string | null>(null);
   const [callInProgress, setCallInProgress] = useState(false);
+  const [specificToken, setSpecificToken] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -73,6 +74,30 @@ export function DoctorCallQueue() {
     } else {
       setQueue(data || []);
     }
+  };
+
+  const handleCallSpecific = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = parseInt(specificToken, 10);
+    if (!doctorClinicId || !token) return;
+    setCallInProgress(true);
+    setActionError(null);
+    const { data, error } = await supabase.rpc('call_specific_in_queue', {
+      p_clinic_id: doctorClinicId,
+      p_token: token,
+    });
+    setCallInProgress(false);
+    if (error) {
+      setActionError(getFriendlyErrorMessage(error, 'تعذر نداء هذا الرقم.'));
+      return;
+    }
+    if (!data) {
+      setActionError(`لا يوجد مريض برقم الدور ${token} في قائمة انتظار اليوم.`);
+      return;
+    }
+    setSpecificToken('');
+    fetchQueue();
+    if (clinic) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
   };
 
   const updateStatus = async (id: string, newStatus: string) => {
@@ -174,6 +199,26 @@ export function DoctorCallQueue() {
           العميل السابق
         </button>
       </div>
+
+      <form onSubmit={handleCallSpecific} className="flex gap-2">
+        <div className="relative flex-1">
+          <Hash className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="number"
+            value={specificToken}
+            onChange={(e) => setSpecificToken(e.target.value)}
+            placeholder="نداء رقم دور محدد..."
+            className="w-full border rounded-lg py-3 pr-9 pl-3"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={callInProgress || !specificToken}
+          className="bg-blue-600 text-white font-bold px-6 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        >
+          نداء
+        </button>
+      </form>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="border-blue-100 shadow-md">

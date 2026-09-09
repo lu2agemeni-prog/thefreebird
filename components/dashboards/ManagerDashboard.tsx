@@ -9,6 +9,7 @@ import {
   Loader2, Plus, X, Send
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
+import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '@/lib/supabase';
 import { ErrorState, InlineError } from '../ui/error-state';
@@ -925,52 +926,7 @@ export function ManagerDashboard() {
             </div>
           )}
           
-          {activeTab === 'call_queue' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>النداء الآلي (شاشة الانتظار)</CardTitle>
-                <CardDescription>المرضى في طابور الانتظار للعيادات</CardDescription>
-                <div className="mt-3 max-w-md">
-                  <SearchInput value={queueSearch} onValueChange={setQueueSearch} placeholder="ابحث باسم المريض أو العيادة أو رقم النداء..." />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {tableError('queue') && <ErrorState message={tableError('queue')!} onRetry={fetchQueue} compact />}
-                {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-right border-collapse">
-                      <thead>
-                        <tr className="border-b bg-gray-50">
-                          <th className="p-4 font-semibold text-gray-600">رقم النداء</th>
-                          <th className="p-4 font-semibold text-gray-600">اسم المريض</th>
-                          <th className="p-4 font-semibold text-gray-600">العيادة</th>
-                          <th className="p-4 font-semibold text-gray-600">الحالة</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredQueue.slice(queueSafePage * PAGE_SIZE, queueSafePage * PAGE_SIZE + PAGE_SIZE).map((q) => (
-                          <tr key={q.id} className="border-b hover:bg-gray-50">
-                            <td className="p-4 font-bold text-lg text-emerald-600">{q.token_number}</td>
-                            <td className="p-4 font-medium">{q.patient_name}</td>
-                            <td className="p-4 text-gray-600">{q.clinics?.name || 'غير محدد'}</td>
-                            <td className="p-4">
-                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${CALL_QUEUE_STATUS_COLORS[toCallQueueStatus(q.status)]}`}>
-                                {CALL_QUEUE_STATUS_LABELS[toCallQueueStatus(q.status)]}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                        {filteredQueue.length === 0 && (
-                          <tr><td colSpan={4} className="p-8 text-center text-gray-500">لا يوجد مرضى في طابور الانتظار حالياً</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              {!loading && <Pagination page={queueSafePage} pageSize={PAGE_SIZE} total={filteredQueue.length} onPageChange={setQueuePage} isLoading={loading} />}
-              </CardContent>
-            </Card>
-          )}
+          {activeTab === 'call_queue' && <SecretaryCallQueue />}
 
           {activeTab === 'financials' && (
             <Card>

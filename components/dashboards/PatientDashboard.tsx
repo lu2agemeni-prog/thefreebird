@@ -11,11 +11,13 @@ import { PatientConsultations } from './patient/PatientConsultations';
 import { PatientComplaints } from './patient/PatientComplaints';
 import { PatientServices } from './patient/PatientServices';
 import { PatientProfile } from './patient/PatientProfile';
+import { PatientPrescriptions } from './patient/PatientPrescriptions';
 
 const patientNav: SidebarItem[] = [
   { name: 'حجز المواعيد والسجلات', id: 'appointments', icon: Calendar },
   { name: 'البيانات الطبية', id: 'medical_data', icon: FileText },
   { name: 'استشارات', id: 'consultations', icon: MessageSquare },
+  { name: 'الروشتات', id: 'prescriptions', icon: FileText },
   { name: 'الأخبار الطبية', id: 'medical_news', icon: Newspaper },
   { name: 'الخدمات والأسعار', id: 'services', icon: List },
   { name: 'حاسبات طبية', id: 'calculators', icon: Calculator },
@@ -31,6 +33,7 @@ export function PatientDashboard({ user }: { user?: any }) {
       case 'appointments': return <PatientAppointments />;
       case 'medical_data': return <PatientMedicalRecords />;
       case 'consultations': return <PatientConsultations />;
+      case 'prescriptions': return <PatientPrescriptions />;
       case 'medical_news': return <PatientMedicalNews />;
       case 'services': return <PatientServices />;
       case 'calculators': return <MedicalCalculators />;
@@ -76,4 +79,3 @@ export function PatientDashboard({ user }: { user?: any }) {
     </div>
   );
 }
-

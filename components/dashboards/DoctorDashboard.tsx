@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
-import { User, Activity, Calculator, Calendar, MessageSquare } from 'lucide-react';
+import { User, Activity, Calculator, Calendar, MessageSquare, FileText } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 
 import { DoctorAppointments } from './doctor/DoctorAppointments';
@@ -9,11 +9,13 @@ import { DoctorCallQueue } from './doctor/DoctorCallQueue';
 import { DoctorConsultations } from './doctor/DoctorConsultations';
 import { DoctorFinancials } from './doctor/DoctorFinancials';
 import { DoctorProfile } from './doctor/DoctorProfile';
+import { DoctorPrescriptions } from './doctor/DoctorPrescriptions';
 
 const doctorNav: SidebarItem[] = [
   { name: 'المواعيد', id: 'appointments', icon: Calendar },
   { name: 'النداء الآلي', id: 'call_queue', icon: Activity },
   { name: 'الاستشارات', id: 'consultations', icon: MessageSquare },
+  { name: 'الروشتات', id: 'prescriptions', icon: FileText },
   { name: 'الحسابات', id: 'financials', icon: Calculator },
   { name: 'الملف الشخصي', id: 'profile', icon: User },
 ];
@@ -26,6 +28,7 @@ export function DoctorDashboard() {
       case 'appointments': return <DoctorAppointments />;
       case 'call_queue': return <DoctorCallQueue />;
       case 'consultations': return <DoctorConsultations />;
+      case 'prescriptions': return <DoctorPrescriptions />;
       case 'financials': return <DoctorFinancials />;
       case 'profile': return <DoctorProfile />;
       default: return (
