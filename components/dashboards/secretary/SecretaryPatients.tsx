@@ -2,21 +2,32 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
-import { Users, Loader2 } from 'lucide-react';
+import { Users, Loader2, UserPlus } from 'lucide-react';
 import { ErrorState } from '@/components/ui/error-state';
 import { SearchInput } from '@/components/ui/search-input';
 import { Pagination } from '@/components/ui/pagination';
 import { getFriendlyErrorMessage } from '@/lib/errors';
+import { AddWalkInPatientModal } from './AddWalkInPatientModal';
 
 const PAGE_SIZE = 10;
 const FETCH_CAP = 2000;
 
+interface UnifiedPatient {
+  id: string;
+  name: string;
+  phone: string | null;
+  patient_code: string | null;
+  created_at: string;
+  source: 'registered' | 'walk_in';
+}
+
 export function SecretaryPatients() {
-  const [patients, setPatients] = useState<any[]>([]);
+  const [patients, setPatients] = useState<UnifiedPatient[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
     fetchPatients();
@@ -25,23 +36,46 @@ export function SecretaryPatients() {
   const fetchPatients = async () => {
     setLoadError(null);
     setLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('role', 'patient')
-      .order('created_at', { ascending: false })
-      .limit(FETCH_CAP);
 
-    if (error) {
-      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل قائمة المرضى.'));
-    } else if (data) {
-      setPatients(data);
+    const [profilesRes, walkInRes] = await Promise.all([
+      supabase.from('profiles').select('*').eq('role', 'patient').order('created_at', { ascending: false }).limit(FETCH_CAP),
+      supabase.from('walk_in_patients').select('*').order('created_at', { ascending: false }).limit(FETCH_CAP),
+    ]);
+
+    if (profilesRes.error) {
+      setLoadError(getFriendlyErrorMessage(profilesRes.error, 'تعذر تحميل قائمة المرضى.'));
+      setLoading(false);
+      return;
     }
+
+    const registered: UnifiedPatient[] = (profilesRes.data || []).map(p => ({
+      id: p.id,
+      name: `${p.first_name || ''} ${p.last_name || ''}`.trim(),
+      phone: p.phone,
+      patient_code: p.patient_code,
+      created_at: p.created_at,
+      source: 'registered' as const,
+    }));
+
+    const walkIns: UnifiedPatient[] = (walkInRes.data || []).map(p => ({
+      id: p.id,
+      name: p.name,
+      phone: p.phone,
+      patient_code: p.patient_code,
+      created_at: p.created_at,
+      source: 'walk_in' as const,
+    }));
+
+    const merged = [...registered, ...walkIns].sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    setPatients(merged);
     setLoading(false);
   };
 
   const filteredPatients = useMemo(() => patients.filter(p =>
-    (p.first_name + ' ' + p.last_name).toLowerCase().includes(search.toLowerCase()) ||
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
     (p.patient_code && p.patient_code.toLowerCase().includes(search.toLowerCase())) ||
     (p.phone && p.phone.includes(search))
   ), [patients, search]);
@@ -54,9 +88,17 @@ export function SecretaryPatients() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <Users className="w-8 h-8 text-emerald-600" />
-        <h2 className="text-3xl font-bold text-gray-800">دليل المرضى المسجلين</h2>
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <Users className="w-8 h-8 text-emerald-600" />
+          <h2 className="text-3xl font-bold text-gray-800">ملفات المرضى</h2>
+        </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="bg-emerald-600 text-white font-bold px-5 py-3 rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow-sm"
+        >
+          <UserPlus className="w-5 h-5" /> إضافة مريض
+        </button>
       </div>
 
       <div className="mb-6 max-w-md">
@@ -86,22 +128,30 @@ export function SecretaryPatients() {
                       <th className="p-4 font-semibold text-gray-600">كود المريض</th>
                       <th className="p-4 font-semibold text-gray-600">الاسم</th>
                       <th className="p-4 font-semibold text-gray-600">رقم الهاتف</th>
+                      <th className="p-4 font-semibold text-gray-600">النوع</th>
                       <th className="p-4 font-semibold text-gray-600">تاريخ التسجيل</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pageItems.map(p => (
-                      <tr key={p.id} className="border-b hover:bg-gray-50 transition-colors">
+                      <tr key={`${p.source}-${p.id}`} className="border-b hover:bg-gray-50 transition-colors">
                         <td className="p-4">
                           <span className="font-mono text-emerald-700 bg-emerald-50 px-2 py-1 rounded font-bold text-sm">
                             {p.patient_code || 'غير محدد'}
                           </span>
                         </td>
                         <td className="p-4 font-bold text-gray-800">
-                          {p.first_name} {p.last_name}
+                          {p.name || '---'}
                         </td>
                         <td className="p-4 text-gray-600" dir="ltr">
                           {p.phone || '---'}
+                        </td>
+                        <td className="p-4">
+                          {p.source === 'registered' ? (
+                            <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-1 rounded">مسجّل بالتطبيق</span>
+                          ) : (
+                            <span className="text-xs font-bold bg-orange-100 text-orange-800 px-2 py-1 rounded">زيارة مباشرة</span>
+                          )}
                         </td>
                         <td className="p-4 text-gray-500 text-sm" dir="ltr">
                           {new Date(p.created_at).toLocaleDateString('ar-EG')}
@@ -121,6 +171,16 @@ export function SecretaryPatients() {
           )}
         </CardContent>
       </Card>
+
+      {showAddModal && (
+        <AddWalkInPatientModal
+          onClose={() => setShowAddModal(false)}
+          onAdded={() => {
+            setShowAddModal(false);
+            fetchPatients();
+          }}
+        />
+      )}
     </div>
   );
 }

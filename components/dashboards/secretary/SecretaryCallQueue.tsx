@@ -11,11 +11,13 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Activity, Plus, Loader2, Users, Volume2, CheckCircle2,
-  ChevronRight, ChevronLeft, Hash, Stethoscope, ImageIcon,
+  ChevronRight, ChevronLeft, Hash, Stethoscope, ImageIcon, UserCheck, PlusCircle,
 } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { AddPatientModal } from './AddPatientModal';
+import { AddExistingPatientModal } from './AddExistingPatientModal';
+import { AddQueueServiceModal } from './AddQueueServiceModal';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
 
 export function SecretaryCallQueue() {
@@ -29,6 +31,10 @@ export function SecretaryCallQueue() {
 
   const [selectedClinicId, setSelectedClinicId] = useState<string>('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddExistingModal, setShowAddExistingModal] = useState(false);
+  const [addServiceForRow, setAddServiceForRow] = useState<any | null>(null);
+  const [completedToday, setCompletedToday] = useState<any[]>([]);
+  const [completedSearch, setCompletedSearch] = useState('');
   const [addedToast, setAddedToast] = useState<string | null>(null);
   const [calling, setCalling] = useState(false);
   const [specificToken, setSpecificToken] = useState('');
@@ -93,6 +99,20 @@ export function SecretaryCallQueue() {
     } else if (data) {
       setQueues(data);
     }
+    fetchCompletedToday();
+  };
+
+  const fetchCompletedToday = async () => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const { data } = await supabase
+      .from('call_queue')
+      .select('*, clinic:clinic_id(name)')
+      .eq('status', 'completed')
+      .gte('created_at', todayStart.toISOString())
+      .order('updated_at', { ascending: false })
+      .limit(100);
+    if (data) setCompletedToday(data);
   };
 
   const fetchDoctorsOnly = async () => {
@@ -203,12 +223,20 @@ export function SecretaryCallQueue() {
           <Activity className="w-8 h-8 text-emerald-600" />
           <h2 className="text-3xl font-bold text-gray-800">إدارة النداء الآلي</h2>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-emerald-600 text-white font-bold px-5 py-3 rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow-sm"
-        >
-          <Plus className="w-5 h-5" /> إضافة مريض جديد
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowAddExistingModal(true)}
+            className="bg-blue-600 text-white font-bold px-5 py-3 rounded-xl hover:bg-blue-700 flex items-center gap-2 shadow-sm"
+          >
+            <UserCheck className="w-5 h-5" /> مريض مسجّل
+          </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-emerald-600 text-white font-bold px-5 py-3 rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow-sm"
+          >
+            <Plus className="w-5 h-5" /> مريض جديد
+          </button>
+        </div>
       </div>
 
       {actionError && <InlineError message={actionError} />}
@@ -402,6 +430,12 @@ export function SecretaryCallQueue() {
                             {hasRemaining && <span className="text-red-500">متبقي: {q.remaining_amount} ج.م</span>}
                           </div>
                         )}
+                        <button
+                          onClick={() => setAddServiceForRow(q)}
+                          className="mt-2 text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1"
+                        >
+                          <PlusCircle className="w-3 h-3" /> ضم خدمة
+                        </button>
                       </div>
                     );
                   })}
@@ -409,8 +443,68 @@ export function SecretaryCallQueue() {
               )}
             </CardContent>
           </Card>
+
+          {/* مرضى تم الكشف عليهم اليوم — لضم خدمات إضافية (تحاليل/أشعة) */}
+          <Card>
+            <CardContent className="p-4">
+              <h3 className="font-bold text-gray-700 mb-3 text-sm flex items-center gap-2">
+                <Users className="w-4 h-4" /> مرضى مكتملين اليوم ({completedToday.length})
+              </h3>
+              <input
+                type="text"
+                value={completedSearch}
+                onChange={(e) => setCompletedSearch(e.target.value)}
+                placeholder="بحث بالاسم..."
+                className="w-full border rounded-lg p-2 text-sm mb-3"
+              />
+              <div className="max-h-64 overflow-y-auto space-y-2">
+                {completedToday
+                  .filter(q => q.patient_name?.toLowerCase().includes(completedSearch.toLowerCase()))
+                  .map(q => (
+                    <div key={q.id} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 text-sm">
+                      <div>
+                        <span className="font-bold text-gray-700">{q.patient_name}</span>
+                        <span className="text-xs text-gray-400 mr-2">{q.clinic?.name}</span>
+                      </div>
+                      <button
+                        onClick={() => setAddServiceForRow(q)}
+                        className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1"
+                      >
+                        <PlusCircle className="w-3 h-3" /> ضم خدمة
+                      </button>
+                    </div>
+                  ))}
+                {completedToday.length === 0 && (
+                  <div className="text-center text-sm text-gray-400 py-4">لا يوجد مرضى مكتملين اليوم بعد</div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
+
+      {addServiceForRow && (
+        <AddQueueServiceModal
+          queueId={addServiceForRow.id}
+          clinicId={addServiceForRow.clinic_id}
+          patientName={addServiceForRow.patient_name}
+          onClose={() => setAddServiceForRow(null)}
+          onChanged={() => { fetchQueueOnly(); }}
+        />
+      )}
+
+      {showAddExistingModal && (
+        <AddExistingPatientModal
+          onClose={() => setShowAddExistingModal(false)}
+          onAdded={(token, clinicId) => {
+            setShowAddExistingModal(false);
+            setSelectedClinicId(clinicId);
+            setAddedToast(`تم إضافة المريض للنداء برقم دور: ${token}`);
+            setTimeout(() => setAddedToast(null), 5000);
+            fetchQueueOnly();
+          }}
+        />
+      )}
 
       {showAddModal && (
         <AddPatientModal

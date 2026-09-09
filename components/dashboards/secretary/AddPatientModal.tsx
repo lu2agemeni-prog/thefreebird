@@ -12,6 +12,7 @@ import { useAuth } from '@/lib/auth';
 import { X, Loader2, UserPlus } from 'lucide-react';
 import { InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
+import { ServicePicker, EMPTY_SERVICE_VALUE, resolveServiceSelection, type ServicePickerValue } from './ServicePicker';
 
 interface AddPatientModalProps {
   onClose: () => void;
@@ -27,7 +28,7 @@ export function AddPatientModal({ onClose, onAdded }: AddPatientModalProps) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [clinicId, setClinicId] = useState('');
-  const [serviceId, setServiceId] = useState('');
+  const [serviceValue, setServiceValue] = useState<ServicePickerValue>(EMPTY_SERVICE_VALUE);
   const [doctorId, setDoctorId] = useState('');
   const [paidAmount, setPaidAmount] = useState('0');
   const [remainingAmount, setRemainingAmount] = useState('0');
@@ -58,8 +59,7 @@ export function AddPatientModal({ onClose, onAdded }: AddPatientModalProps) {
     fetchOptions();
   }, []);
 
-  // فلترة الخدمات والأطباء حسب العيادة المختارة
-  const filteredServices = services.filter(s => !clinicId || s.clinic_id === clinicId);
+  // فلترة الأطباء حسب العيادة المختارة (الخدمات بتتفلتر جوه ServicePicker)
   const filteredDoctors = doctors.filter(d => !clinicId || d.clinic_id === clinicId);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -93,7 +93,10 @@ export function AddPatientModal({ onClose, onAdded }: AddPatientModalProps) {
       return;
     }
 
-    // 3) أضفه لطابور النداء الآلي بكل التفاصيل
+    // 3) خدمة من القائمة، أو خدمة مخصّصة (تتحفظ في القائمة لو طلبت كده)
+    const resolvedService = await resolveServiceSelection(supabase, clinicId, serviceValue);
+
+    // 4) أضفه لطابور النداء الآلي بكل التفاصيل
     const { error: queueError } = await supabase.from('call_queue').insert([{
       clinic_id: clinicId,
       patient_name: name.trim(),
@@ -101,7 +104,8 @@ export function AddPatientModal({ onClose, onAdded }: AddPatientModalProps) {
       token_number: token,
       status: 'waiting',
       walk_in_patient_id: walkIn.id,
-      service_id: serviceId || null,
+      service_id: resolvedService.serviceId,
+      service_custom_name: resolvedService.customName,
       doctor_id: doctorId || null,
       paid_amount: parseFloat(paidAmount) || 0,
       remaining_amount: parseFloat(remainingAmount) || 0,
@@ -165,7 +169,7 @@ export function AddPatientModal({ onClose, onAdded }: AddPatientModalProps) {
               <select
                 required
                 value={clinicId}
-                onChange={(e) => { setClinicId(e.target.value); setServiceId(''); setDoctorId(''); }}
+                onChange={(e) => { setClinicId(e.target.value); setServiceValue(EMPTY_SERVICE_VALUE); setDoctorId(''); }}
                 className="w-full border rounded-lg p-3 bg-white"
               >
                 <option value="">-- اختر العيادة --</option>
@@ -175,17 +179,12 @@ export function AddPatientModal({ onClose, onAdded }: AddPatientModalProps) {
 
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">الخدمة</label>
-              <select
-                value={serviceId}
-                onChange={(e) => setServiceId(e.target.value)}
-                className="w-full border rounded-lg p-3 bg-white"
-                disabled={!clinicId}
-              >
-                <option value="">-- بدون تحديد --</option>
-                {filteredServices.map(s => (
-                  <option key={s.id} value={s.id}>{s.name} ({s.price} ج.م)</option>
-                ))}
-              </select>
+              <ServicePicker
+                clinicId={clinicId}
+                services={services}
+                value={serviceValue}
+                onChange={setServiceValue}
+              />
             </div>
 
             <div>
