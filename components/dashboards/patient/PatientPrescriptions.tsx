@@ -35,7 +35,8 @@ export function PatientPrescriptions() {
       .from('prescriptions')
       .select('*, doctor:doctor_id(first_name, last_name)')
       .eq('patient_id', user?.id)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(200);
 
     if (error) {
       setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل الروشتات.'));
@@ -130,12 +131,15 @@ function PrescriptionCard({ prescription: p, expanded, onToggle, onRate }: {
   };
 
   return (
-    <Card>
+    <Card className={p.cancelled_at ? 'opacity-70' : undefined}>
       <CardContent className="p-5">
         <button onClick={onToggle} className="w-full flex items-center justify-between text-right">
           <div>
-            <div className="font-bold text-gray-800">
+            <div className="font-bold text-gray-800 flex items-center gap-2">
               روشتة بتاريخ {new Date(p.created_at).toLocaleDateString('ar-EG')}
+              {p.cancelled_at && (
+                <span className="text-xs font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">ملغاة</span>
+              )}
             </div>
             <div className="text-sm text-gray-500">
               د. {p.doctor?.first_name} {p.doctor?.last_name}
@@ -219,7 +223,7 @@ function PrescriptionCard({ prescription: p, expanded, onToggle, onRate }: {
                   <span className="text-sm text-gray-500">شكرًا لتقييمك</span>
                   {p.rating_comment && <span className="text-sm text-gray-400">— {p.rating_comment}</span>}
                 </div>
-              ) : (
+              ) : p.cancelled_at ? null : (
                 <div>
                   <h4 className="font-bold text-sm text-gray-700 mb-2">قيّم الخدمة</h4>
                   <div className="flex gap-1 mb-2">

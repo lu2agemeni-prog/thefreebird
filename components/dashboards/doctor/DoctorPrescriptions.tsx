@@ -5,64 +5,91 @@
 // اختيار مريض وإصدار روشتة له + عرض الروشتات اللي أصدرها الطبيب من قبل.
 // ============================================================================
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
 import { SearchInput } from '@/components/ui/search-input';
 import { ErrorState } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
-import { FileText, Loader2, Plus, Pill, FlaskConical, ScanLine, Star } from 'lucide-react';
+import { FileText, Loader2, Plus, Pill, FlaskConical, ScanLine, Star, Pencil, Ban } from 'lucide-react';
 import { PrescriptionModal } from './PrescriptionModal';
 
 export function DoctorPrescriptions() {
   const { user } = useAuth();
-  const [patients, setPatients] = useState<any[]>([]);
   const [prescriptions, setPrescriptions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
   const [search, setSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [selectedPatient, setSelectedPatient] = useState<{ id: string; name: string } | null>(null);
-  const [savedToast, setSavedToast] = useState(false);
+  const [editingPrescription, setEditingPrescription] = useState<any | null>(null);
+  const [savedToast, setSavedToast] = useState<'created' | 'edited' | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchData();
+    fetchPrescriptions();
   }, []);
 
-  const fetchData = async () => {
+  // بحث فوري من السيرفر (بعد توقف الكتابة لـ 300ms) بدل تحميل كل المرضى دفعة واحدة
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    const q = search.trim();
+    if (!q) {
+      setSearchResults([]);
+      return;
+    }
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true);
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, patient_code, phone')
+        .eq('role', 'patient')
+        .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,patient_code.ilike.%${q}%,phone.ilike.%${q}%`)
+        .limit(8);
+      setSearchResults(data || []);
+      setSearching(false);
+    }, 300);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [search]);
+
+  const fetchPrescriptions = async () => {
     setLoadError(null);
     setLoading(true);
-    const [patientsRes, prescriptionsRes] = await Promise.all([
-      supabase.from('profiles').select('id, first_name, last_name, patient_code, phone').eq('role', 'patient'),
-      supabase.from('prescriptions').select('*, patient:patient_id(first_name, last_name)').eq('doctor_id', user?.id).order('created_at', { ascending: false }),
-    ]);
+    const { data, error } = await supabase
+      .from('prescriptions')
+      .select('*, patient:patient_id(first_name, last_name)')
+      .eq('doctor_id', user?.id)
+      .order('created_at', { ascending: false })
+      .limit(200);
 
-    if (patientsRes.error) {
-      setLoadError(getFriendlyErrorMessage(patientsRes.error, 'تعذر تحميل قائمة المرضى.'));
+    if (error) {
+      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل الروشتات السابقة.'));
       setLoading(false);
       return;
     }
-    setPatients(patientsRes.data || []);
-    if (prescriptionsRes.data) setPrescriptions(prescriptionsRes.data);
+    if (data) setPrescriptions(data);
     setLoading(false);
   };
 
-  const filteredPatients = useMemo(() => {
-    if (!search.trim()) return [];
-    const q = search.toLowerCase();
-    return patients.filter(p =>
-      `${p.first_name || ''} ${p.last_name || ''}`.toLowerCase().includes(q) ||
-      (p.patient_code || '').toLowerCase().includes(q) ||
-      (p.phone || '').includes(search)
-    ).slice(0, 8);
-  }, [patients, search]);
+  const handleCancel = async (id: string) => {
+    if (!confirm('هل أنت متأكد من إلغاء هذه الروشتة؟ سيظل المريض يرى أنها ملغاة.')) return;
+    setCancellingId(id);
+    const { error } = await supabase.from('prescriptions').update({ cancelled_at: new Date().toISOString() }).eq('id', id);
+    setCancellingId(null);
+    if (!error) fetchPrescriptions();
+  };
 
   if (loading) {
     return <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>;
   }
 
   if (loadError) {
-    return <ErrorState message={loadError} onRetry={fetchData} />;
+    return <ErrorState message={loadError} onRetry={fetchPrescriptions} />;
   }
 
   return (
@@ -74,7 +101,7 @@ export function DoctorPrescriptions() {
 
       {savedToast && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-sm font-bold">
-          تم حفظ الروشتة وإرسال إشعار للمريض بنجاح.
+          {savedToast === 'edited' ? 'تم حفظ التعديلات بنجاح.' : 'تم حفظ الروشتة وإرسال إشعار للمريض بنجاح.'}
         </div>
       )}
 
@@ -86,9 +113,14 @@ export function DoctorPrescriptions() {
             onValueChange={setSearch}
             placeholder="ابحث باسم المريض أو الكود أو رقم الهاتف..."
           />
-          {filteredPatients.length > 0 && (
+          {searching && (
+            <div className="flex items-center gap-2 text-sm text-gray-400 mt-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> جارٍ البحث...
+            </div>
+          )}
+          {searchResults.length > 0 && (
             <div className="mt-3 border rounded-xl divide-y">
-              {filteredPatients.map(p => (
+              {searchResults.map(p => (
                 <button
                   key={p.id}
                   onClick={() => {
@@ -114,16 +146,19 @@ export function DoctorPrescriptions() {
           ) : (
             <div className="space-y-3">
               {prescriptions.map(p => (
-                <div key={p.id} className="border rounded-xl p-4">
+                <div key={p.id} className={`border rounded-xl p-4 ${p.cancelled_at ? 'opacity-60 bg-gray-50' : ''}`}>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-gray-800">
+                    <span className="font-bold text-gray-800 flex items-center gap-2">
                       {p.patient?.first_name} {p.patient?.last_name}
+                      {p.cancelled_at && (
+                        <span className="text-xs font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">ملغاة</span>
+                      )}
                     </span>
                     <span className="text-xs text-gray-400" dir="ltr">
                       {new Date(p.created_at).toLocaleDateString('ar-EG')}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+                  <div className="flex flex-wrap gap-3 text-xs text-gray-500 mb-2">
                     {p.medications?.length > 0 && (
                       <span className="flex items-center gap-1"><Pill className="w-3 h-3" /> {p.medications.length} دواء</span>
                     )}
@@ -139,6 +174,23 @@ export function DoctorPrescriptions() {
                       </span>
                     )}
                   </div>
+                  {!p.cancelled_at && (
+                    <div className="flex gap-3 pt-2 border-t">
+                      <button
+                        onClick={() => setEditingPrescription(p)}
+                        className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
+                      >
+                        <Pencil className="w-3 h-3" /> تعديل
+                      </button>
+                      <button
+                        onClick={() => handleCancel(p.id)}
+                        disabled={cancellingId === p.id}
+                        className="text-xs font-bold text-red-500 hover:underline flex items-center gap-1 disabled:opacity-50"
+                      >
+                        <Ban className="w-3 h-3" /> إلغاء
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -146,15 +198,22 @@ export function DoctorPrescriptions() {
         </CardContent>
       </Card>
 
-      {selectedPatient && (
+      {(selectedPatient || editingPrescription) && (
         <PrescriptionModal
-          patient={selectedPatient}
-          onClose={() => setSelectedPatient(null)}
+          patient={
+            editingPrescription
+              ? { id: editingPrescription.patient_id, name: `${editingPrescription.patient?.first_name || ''} ${editingPrescription.patient?.last_name || ''}`.trim() }
+              : selectedPatient!
+          }
+          existing={editingPrescription || undefined}
+          onClose={() => { setSelectedPatient(null); setEditingPrescription(null); }}
           onSaved={() => {
+            const wasEditing = !!editingPrescription;
             setSelectedPatient(null);
-            setSavedToast(true);
-            setTimeout(() => setSavedToast(false), 5000);
-            fetchData();
+            setEditingPrescription(null);
+            setSavedToast(wasEditing ? 'edited' : 'created');
+            setTimeout(() => setSavedToast(null), 5000);
+            fetchPrescriptions();
           }}
         />
       )}

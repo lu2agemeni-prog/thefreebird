@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
+import { QueueMediaManager } from './manager/QueueMediaManager';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '@/lib/supabase';
 import { ErrorState, InlineError } from '../ui/error-state';
@@ -35,6 +36,7 @@ const managerNav: SidebarItem[] = [
   { name: 'صلاحيات المستخدمين', id: 'staff_management', icon: Shield },
   { name: 'الخدمات والأسعار', id: 'services', icon: List },
   { name: 'النداء الآلي', id: 'call_queue', icon: Activity },
+  { name: 'وسائط شاشة النداء', id: 'queue_media', icon: List },
   { name: 'الماليات والأرباح', id: 'financials', icon: Calculator },
   { name: 'الأخبار الطبية', id: 'medical_news', icon: Newspaper },
   { name: 'التقارير الشاملة', id: 'reports', icon: BarChart },
@@ -927,6 +929,7 @@ export function ManagerDashboard() {
           )}
           
           {activeTab === 'call_queue' && <SecretaryCallQueue />}
+          {activeTab === 'queue_media' && <QueueMediaManager />}
 
           {activeTab === 'financials' && (
             <Card>

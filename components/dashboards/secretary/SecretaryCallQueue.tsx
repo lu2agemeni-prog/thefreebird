@@ -58,6 +58,8 @@ export function SecretaryCallQueue() {
   const fetchAll = async () => {
     setLoadError(null);
     setLoading(true);
+    // امسح أي حضور من يوم سابق قبل ما نعرض القائمة
+    await supabase.rpc('reset_stale_doctor_presence');
     const [clinicsRes, doctorsRes, mediaRes] = await Promise.all([
       supabase.from('clinics').select('*').eq('is_active', true),
       supabase.from('doctors').select('profile_id, clinic_id, specialty, is_present, profiles(first_name, last_name)'),
@@ -83,7 +85,7 @@ export function SecretaryCallQueue() {
   const fetchQueueOnly = async () => {
     const { data, error } = await supabase
       .from('call_queue')
-      .select('*, clinic:clinic_id(name, audio_number)')
+      .select('*, clinic:clinic_id(name, audio_number), service:service_id(name, price), assigned_doctor:doctor_id(first_name, last_name)')
       .in('status', ['waiting', 'calling'])
       .order('token_number', { ascending: true });
     if (error) {
@@ -174,7 +176,10 @@ export function SecretaryCallQueue() {
 
   const togglePresence = async (profileId: string, current: boolean) => {
     setPresenceBusy(profileId);
-    const { error } = await supabase.from('doctors').update({ is_present: !current }).eq('profile_id', profileId);
+    const { error } = await supabase
+      .from('doctors')
+      .update({ is_present: !current, presence_updated_at: new Date().toISOString() })
+      .eq('profile_id', profileId);
     setPresenceBusy(null);
     if (error) {
       setActionError(getFriendlyErrorMessage(error, 'تعذر تحديث حالة حضور الطبيب.'));
@@ -376,12 +381,30 @@ export function SecretaryCallQueue() {
                 <div className="text-center text-sm text-gray-400 py-6">لا يوجد مرضى في الانتظار</div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {waitingList.map(q => (
-                    <div key={q.id} className="p-3 rounded-xl border bg-white border-gray-200 flex items-center justify-between">
-                      <span className="font-bold text-gray-800 truncate">{q.patient_name}</span>
-                      <span className="text-lg font-black text-gray-600">#{q.token_number}</span>
-                    </div>
-                  ))}
+                  {waitingList.map(q => {
+                    const hasRemaining = (q.remaining_amount || 0) > 0;
+                    return (
+                      <div key={q.id} className="p-3 rounded-xl border bg-white border-gray-200">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-gray-800 truncate">{q.patient_name}</span>
+                          <span className="text-lg font-black text-gray-600">#{q.token_number}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+                          {q.phone && <span dir="ltr">{q.phone}</span>}
+                          {q.service?.name && <span>{q.service.name}</span>}
+                          {q.assigned_doctor && (
+                            <span>د. {q.assigned_doctor.first_name} {q.assigned_doctor.last_name}</span>
+                          )}
+                        </div>
+                        {(q.paid_amount > 0 || hasRemaining) && (
+                          <div className="flex gap-3 mt-1 text-xs font-bold">
+                            {q.paid_amount > 0 && <span className="text-emerald-600">مدفوع: {q.paid_amount} ج.م</span>}
+                            {hasRemaining && <span className="text-red-500">متبقي: {q.remaining_amount} ج.م</span>}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

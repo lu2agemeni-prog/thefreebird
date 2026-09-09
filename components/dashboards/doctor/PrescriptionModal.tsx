@@ -15,6 +15,7 @@ import { getFriendlyErrorMessage } from '@/lib/errors';
 
 interface PrescriptionModalProps {
   patient: { id: string; name: string };
+  existing?: any; // لو موجودة، النافذة بتشتغل في وضع "تعديل" بدل "إنشاء"
   onClose: () => void;
   onSaved: () => void;
 }
@@ -22,13 +23,21 @@ interface PrescriptionModalProps {
 interface MedItem { name: string; dosage: string; instructions: string; }
 interface SimpleItem { name: string; }
 
-export function PrescriptionModal({ patient, onClose, onSaved }: PrescriptionModalProps) {
+function toLocalDatetimeInput(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function PrescriptionModal({ patient, existing, onClose, onSaved }: PrescriptionModalProps) {
   const { user } = useAuth();
-  const [medications, setMedications] = useState<MedItem[]>([]);
-  const [labTests, setLabTests] = useState<SimpleItem[]>([]);
-  const [radiology, setRadiology] = useState<SimpleItem[]>([]);
-  const [notes, setNotes] = useState('');
-  const [followUpDate, setFollowUpDate] = useState('');
+  const isEditing = !!existing;
+  const [medications, setMedications] = useState<MedItem[]>(existing?.medications || []);
+  const [labTests, setLabTests] = useState<SimpleItem[]>(existing?.lab_tests || []);
+  const [radiology, setRadiology] = useState<SimpleItem[]>(existing?.radiology || []);
+  const [notes, setNotes] = useState(existing?.notes || '');
+  const [followUpDate, setFollowUpDate] = useState(toLocalDatetimeInput(existing?.follow_up_date || null));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,20 +62,22 @@ export function PrescriptionModal({ patient, onClose, onSaved }: PrescriptionMod
     const cleanLabs = labTests.filter(l => l.name.trim());
     const cleanRadiology = radiology.filter(r => r.name.trim());
 
-    const { error: insertError } = await supabase.from('prescriptions').insert([{
-      patient_id: patient.id,
-      doctor_id: user?.id,
+    const payload = {
       medications: cleanMeds,
       lab_tests: cleanLabs,
       radiology: cleanRadiology,
       notes: notes.trim() || null,
       follow_up_date: followUpDate ? new Date(followUpDate).toISOString() : null,
-    }]);
+    };
+
+    const { error: saveError } = isEditing
+      ? await supabase.from('prescriptions').update(payload).eq('id', existing.id)
+      : await supabase.from('prescriptions').insert([{ ...payload, patient_id: patient.id, doctor_id: user?.id }]);
 
     setSubmitting(false);
 
-    if (insertError) {
-      setError(getFriendlyErrorMessage(insertError, 'تعذر حفظ الروشتة.'));
+    if (saveError) {
+      setError(getFriendlyErrorMessage(saveError, 'تعذر حفظ الروشتة.'));
       return;
     }
 
@@ -78,7 +89,7 @@ export function PrescriptionModal({ patient, onClose, onSaved }: PrescriptionMod
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white rounded-t-2xl z-10">
           <div>
-            <h3 className="text-xl font-bold text-gray-800">روشتة جديدة</h3>
+            <h3 className="text-xl font-bold text-gray-800">{isEditing ? 'تعديل الروشتة' : 'روشتة جديدة'}</h3>
             <p className="text-sm text-gray-500">المريض: {patient.name}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -218,7 +229,7 @@ export function PrescriptionModal({ patient, onClose, onSaved }: PrescriptionMod
             className="w-full bg-emerald-600 text-white font-bold py-3 rounded-lg hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
-            حفظ الروشتة وإرسال إشعار للمريض
+            {isEditing ? 'حفظ التعديلات' : 'حفظ الروشتة وإرسال إشعار للمريض'}
           </button>
         </form>
       </div>
