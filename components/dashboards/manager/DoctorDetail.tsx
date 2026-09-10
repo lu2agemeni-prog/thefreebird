@@ -131,14 +131,17 @@ export function DoctorDetail({ doctor, clinics, onBack, onChanged }: {
         supabase.from('appointments')
           .select('*, patient:patient_id(first_name, last_name), clinics(name), doctor:doctor_id(profiles(first_name, last_name))')
           .eq('doctor_id', doctor.id).order('created_at', { ascending: false }).limit(FETCH_CAP),
-        supabase.from('call_queue').select('*, clinics(name), service:service_id(name, price)').order('created_at', { ascending: false }).limit(FETCH_CAP),
+        // كان بيجيب كل صفوف call_queue (لحد FETCH_CAP) بعدين يفلتر على
+        // المتصفح — بدّلناها بفلترة .eq() على السيرفر زي باقي الاستعلامات
+        supabase.from('call_queue').select('*, clinics(name), service:service_id(name, price)')
+          .eq('doctor_id', doctor.id).order('created_at', { ascending: false }).limit(FETCH_CAP),
       ]);
       if (txRes.error) throw txRes.error;
       if (apRes.error) throw apRes.error;
       if (qRes.error) throw qRes.error;
       setTransactions(txRes.data || []);
       setAppointments(apRes.data || []);
-      setQueue((qRes.data || []).filter((q: any) => q.doctor_id === doctor.id));
+      setQueue(qRes.data || []);
     } catch (err) {
       setReportsError(getFriendlyErrorMessage(err, 'تعذر تحميل تقارير الطبيب.'));
     } finally {

@@ -29,19 +29,23 @@ export default function PublicCallQueuePage() {
         fetchQueue();
       })
       .subscribe();
+    // ملحوظة: بعد قصر RLS لـ call_queue على الأدوار الموثوقة، أحداث Realtime
+    // ممكن متوصلش لقارئ anon زي شاشة الانتظار العامة دي، فضفنا polling كل
+    // 5 ثواني كخط دفاع ثاني عشان الشاشة متفضلش واقفة.
+    const pollTimer = setInterval(fetchQueue, 5000);
 
     return () => {
+      clearInterval(pollTimer);
       supabase.removeChannel(channel);
     };
   }, []);
 
   const fetchQueue = async () => {
-    const { data, error } = await supabase
-      .from('call_queue')
-      .select('*, clinic:clinic_id(name)')
-      .in('status', ['waiting', 'calling'])
-      .order('updated_at', { ascending: false })
-      .limit(200);
+    // كانت بتقرأ call_queue مباشرة (SELECT * بما فيها الاسم والتليفون
+    // والمبالغ المدفوعة) على شاشة عامة بدون تسجيل دخول — ثغرة أمنية كان أي
+    // زائر يقدر يستغلها بـ curl بسيط. دلوقتي بتستخدم RPC آمن (get_public_queue_status)
+    // بيرجّع رقم التذكرة والحالة واسم العيادة فقط، وبدون اسم المريض.
+    const { data, error } = await supabase.rpc('get_public_queue_status');
 
     if (error) {
       setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل طابور النداء.'));
@@ -50,7 +54,7 @@ export default function PublicCallQueuePage() {
     if (data) {
       setQueue(data);
       // Auto-set current calling if there's any actively calling right now
-      const callingNow = data.find(q => q.status === 'calling');
+      const callingNow = data.find((q: any) => q.status === 'calling');
       if (callingNow && !currentCalling) {
         setCurrentCalling(callingNow);
       }
@@ -70,7 +74,7 @@ export default function PublicCallQueuePage() {
 
   // Group queue by clinic
   const groupedQueue = queue.reduce((acc, curr) => {
-    const clinicName = curr.clinic?.name || 'عام';
+    const clinicName = curr.clinic_name || 'عام';
     if (!acc[clinicName]) acc[clinicName] = [];
     acc[clinicName].push(curr);
     return acc;
@@ -102,8 +106,7 @@ export default function PublicCallQueuePage() {
                 <Volume2 className="w-8 h-8 animate-pulse" />
                 <span className="text-2xl font-bold uppercase tracking-widest">تفضل بالدخول</span>
               </div>
-              <h2 className="text-6xl font-black mb-2">{currentCalling.patient_name}</h2>
-              <p className="text-3xl font-bold text-emerald-100">الى {currentCalling.clinic?.name}</p>
+              <p className="text-3xl font-bold text-emerald-100">الى {currentCalling.clinic_name}</p>
             </div>
             <div className="text-[12rem] font-black leading-none text-white drop-shadow-2xl font-mono">
               {currentCalling.token_number}
@@ -124,7 +127,6 @@ export default function PublicCallQueuePage() {
                 <thead>
                   <tr className="text-gray-500 text-sm border-b border-gray-700/50">
                     <th className="pb-2 font-medium">الرقم</th>
-                    <th className="pb-2 font-medium">اسم المريض</th>
                     <th className="pb-2 font-medium text-left">الحالة</th>
                   </tr>
                 </thead>
@@ -132,7 +134,6 @@ export default function PublicCallQueuePage() {
                   {patients.slice(0, 10).map((p) => (
                     <tr key={p.id} className={`transition-colors ${p.status === 'calling' ? 'bg-emerald-900/40 text-emerald-200' : 'text-gray-300'}`}>
                       <td className="py-3 font-mono font-bold text-xl">{p.token_number}</td>
-                      <td className="py-3 font-bold truncate max-w-[150px]">{p.patient_name}</td>
                       <td className="py-3 text-left">
                         {p.status === 'calling' ? (
                           <span className="bg-emerald-500 text-white text-xs px-2 py-1 rounded font-bold animate-pulse">

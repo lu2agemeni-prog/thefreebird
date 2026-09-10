@@ -109,6 +109,7 @@ export function AddPatientModal({ onClose, onAdded }: AddPatientModalProps) {
       doctor_id: doctorId || null,
       paid_amount: parseFloat(paidAmount) || 0,
       remaining_amount: parseFloat(remainingAmount) || 0,
+      collected_by: user?.id || null,
     }]);
 
     setSubmitting(false);

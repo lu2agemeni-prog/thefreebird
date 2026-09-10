@@ -126,7 +126,7 @@ export function ManagerDashboard() {
   const filteredDoctors = useMemo(() => {
     const q = doctorsSearch.trim().toLowerCase();
     if (!q) return doctors;
-    return doctors.filter(d => `${d.first_name} ${d.last_name}`.toLowerCase().includes(q) || (d.email && d.email.toLowerCase().includes(q)));
+    return doctors.filter(d => `${d.first_name} ${d.last_name}`.toLowerCase().includes(q) || (d.phone && d.phone.toLowerCase().includes(q)));
   }, [doctors, doctorsSearch]);
 
   const filteredClinics = useMemo(() => {
@@ -238,6 +238,15 @@ export function ManagerDashboard() {
   const [addingDoctor, setAddingDoctor] = useState(false);
   const [addDoctorError, setAddDoctorError] = useState<string | null>(null);
   const [addDoctorOk, setAddDoctorOk] = useState<string | null>(null);
+
+  // كان حقل البحث ده موجود في نموذج "إضافة طبيب" بدون ما يستخدَم فعليًا لتصفية القائمة
+  const filteredLinkableUsers = useMemo(() => {
+    const q = linkableSearch.trim().toLowerCase();
+    if (!q) return linkableUsers;
+    return linkableUsers.filter(u =>
+      `${u.first_name} ${u.last_name}`.toLowerCase().includes(q) || (u.phone && u.phone.toLowerCase().includes(q))
+    );
+  }, [linkableUsers, linkableSearch]);
 
   // ==== ملف الطبيب / ملف العيادة (عند الضغط على الكارت) ====
   const [selectedDoctor, setSelectedDoctor] = useState<any | null>(null);
@@ -523,7 +532,10 @@ export function ManagerDashboard() {
     // كل المستخدمين غير الأطباء (patient/secretary/accountant) — يمكن ترقيتهم إلى طبيب
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, first_name, last_name, email, phone, role')
+      // ملحوظة: جدول profiles ملوش عمود email أصلاً (الإيميل موجود في
+      // auth.users فقط) — كان السيلكت ده بيكسر بخطأ "column profiles.email
+      // does not exist" في كل مرة يتفتح فيها نموذج "إضافة طبيب".
+      .select('id, first_name, last_name, phone, role')
       .neq('role', 'doctor')
       .order('created_at', { ascending: false })
       .limit(500);
@@ -771,9 +783,9 @@ export function ManagerDashboard() {
                         <label className="block text-sm font-bold text-gray-700 mb-1">الحساب المرشح للترقية</label>
                         <select value={addDoctorUserId} onChange={(e) => setAddDoctorUserId(e.target.value)} className="w-full border rounded-lg p-2.5 text-sm" required>
                           <option value="">-- اختر حساب المستخدم --</option>
-                          {linkableUsers.map(u => (
+                          {filteredLinkableUsers.map(u => (
                             <option key={u.id} value={u.id}>
-                              {u.first_name} {u.last_name} — {getRoleLabel(u.role || 'patient')} — {u.email || 'بدون بريد'}
+                              {u.first_name} {u.last_name} — {getRoleLabel(u.role || 'patient')} — {u.phone || 'بدون هاتف'}
                             </option>
                           ))}
                         </select>
@@ -785,7 +797,7 @@ export function ManagerDashboard() {
                           value={linkableSearch}
                           onChange={(e) => setLinkableSearch(e.target.value)}
                           className="w-full border rounded-lg p-2.5 text-sm"
-                          placeholder="ابحث بالاسم أو البريد..."
+                          placeholder="ابحث بالاسم أو رقم الهاتف..."
                         />
                       </div>
                     </div>
@@ -848,7 +860,7 @@ export function ManagerDashboard() {
                         )}
                         <div className="min-w-0 flex-1">
                           <h4 className="font-bold text-lg">د. {doc.first_name} {doc.last_name}</h4>
-                          <p className="text-gray-500 text-sm truncate">{doc.doctor?.specialty || doc.email}</p>
+                          <p className="text-gray-500 text-sm truncate">{doc.doctor?.specialty || doc.phone || 'بدون تخصص'}</p>
                           <span className="inline-block mt-2 text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded-full">
                             {doc.doctor ? 'ملف طبي مكتمل' : 'يلزم إكمال الملف'}
                           </span>

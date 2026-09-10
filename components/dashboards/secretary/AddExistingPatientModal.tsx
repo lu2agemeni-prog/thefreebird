@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { X, Loader2, UserCheck, Search } from 'lucide-react';
 import { InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
@@ -26,6 +27,7 @@ interface AddExistingPatientModalProps {
 }
 
 export function AddExistingPatientModal({ onClose, onAdded }: AddExistingPatientModalProps) {
+  const { user } = useAuth();
   const [clinics, setClinics] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
@@ -132,6 +134,7 @@ export function AddExistingPatientModal({ onClose, onAdded }: AddExistingPatient
       doctor_id: doctorId || null,
       paid_amount: parseFloat(paidAmount) || 0,
       remaining_amount: parseFloat(remainingAmount) || 0,
+      collected_by: user?.id || null,
     }]);
 
     setSubmitting(false);

@@ -81,9 +81,14 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
     const map = new Map<string, ClinicDoctor>();
     try {
       // المصدر 1: الجدول الجديد doctor_clinics (doctor_id يشير إلى doctors → منها للـ profile)
+      // ملحوظة: لازم نحدد اسم قيد الـ FK صراحةً (!doctors_profile_id_fkey)
+      // لأن عمود doctors.profile_id مُستهدَف بأكتر من علاقة (appointments،
+      // consultations، doctor_clinics كلها بتشاور عليه) — فلو استخدمنا
+      // الهنت "profile_id" العادي، PostgREST بيرمي خطأ "more than one
+      // relationship was found for 'doctors' and 'profile_id'".
       const { data: junction, error: jErr } = await supabase
         .from('doctor_clinics')
-        .select('doctor_id, doctor:doctor_id(specialty, profile:profile_id(first_name, last_name, phone))')
+        .select('doctor_id, doctor:doctor_id(specialty, profile:profiles!doctors_profile_id_fkey(first_name, last_name, phone))')
         .eq('clinic_id', clinic.id)
         .limit(200);
       if (jErr) {
@@ -107,7 +112,7 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
       // المصدر 2: العمود القديم doctors.clinic_id (توافقًا مع الإصدارات السابقة)
       const { data: legacy, error: lErr } = await supabase
         .from('doctors')
-        .select('profile_id, specialty, profile:profile_id(first_name, last_name, phone)')
+        .select('profile_id, specialty, profile:profiles!doctors_profile_id_fkey(first_name, last_name, phone)')
         .eq('clinic_id', clinic.id)
         .limit(200);
       if (lErr) throw lErr;

@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Monitor, User, Building2 } from 'lucide-react';
+import { Monitor, Building2 } from 'lucide-react';
 
 export default function QueueDisplay() {
   const [queue, setQueue] = useState<any[]>([]);
@@ -14,23 +14,28 @@ export default function QueueDisplay() {
     // Initial fetch
     fetchQueue();
     
-    // Realtime subscription
+    // Realtime subscription — ملحوظة: بعد قصر RLS لـ call_queue على الأدوار
+    // الموثوقة، قنوات Realtime بترشّح الأحداث حسب صلاحيات القارئ (anon)،
+    // فممكن الحدث الفوري ميوصلش لشاشة عامة زي دي. عشان الشاشة متفضلش واقفة،
+    // ضفنا polling كل 5 ثواني كخط دفاع ثاني بجانب الـ realtime.
     const sub = supabase.channel('queue_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue' }, fetchQueue)
       .subscribe();
-      
+    const pollTimer = setInterval(fetchQueue, 5000);
+
     return () => { 
       clearInterval(timer);
+      clearInterval(pollTimer);
       supabase.removeChannel(sub); 
     };
   }, []);
 
   const fetchQueue = async () => {
-    const { data } = await supabase
-      .from('call_queue')
-      .select('*, clinics(name)')
-      .in('status', ['waiting', 'calling'])
-      .order('updated_at', { ascending: false });
+    // كانت بتقرأ call_queue مباشرة (SELECT * بما فيها الاسم والتليفون
+    // والمبالغ) وهي شاشة عامة بدون تسجيل دخول — ده كان ثغرة أمنية (أي زائر
+    // يقدر يسحب بيانات المرضى بـ curl). دلوقتي بتستخدم RPC آمن بيرجّع رقم
+    // التذكرة والحالة فقط.
+    const { data } = await supabase.rpc('get_public_queue_status');
     if (data) setQueue(data);
   };
 
@@ -68,16 +73,11 @@ export default function QueueDisplay() {
                 {currentCall.token_number}
               </div>
               
-              <div className="text-6xl font-bold text-white mb-8 bg-slate-800 py-6 rounded-2xl mx-12 shadow-xl flex items-center justify-center gap-4">
-                <User className="w-12 h-12 text-slate-400" />
-                {currentCall.patient_name}
-              </div>
-              
               <div className="text-5xl text-slate-300 flex items-center justify-center gap-4">
                 تفضل بالدخول إلى: 
                 <span className="text-emerald-400 font-bold bg-emerald-950/50 px-6 py-3 rounded-xl border border-emerald-800">
                   <Building2 className="w-10 h-10 inline-block ml-3" />
-                  {currentCall.clinics?.name}
+                  {currentCall.clinic_name}
                 </span>
               </div>
             </div>
@@ -114,7 +114,7 @@ export default function QueueDisplay() {
                     <span className="bg-slate-700 text-slate-400 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">
                       {idx + 1}
                     </span>
-                    <span className="text-slate-200 text-2xl font-medium">{q.patient_name}</span>
+                    <span className="text-slate-200 text-lg font-medium">{q.clinic_name}</span>
                   </div>
                   <span className="font-bold text-orange-400 text-4xl font-mono">{q.token_number}</span>
                 </div>
