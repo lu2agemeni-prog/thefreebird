@@ -6,11 +6,14 @@ import {
   Settings, Users, Building, Calculator, 
   Stethoscope, CreditCard, Activity, QrCode, Shield,
   BarChart, FileText, Download, CheckCircle, MessageSquare, Newspaper, List,
-  Loader2, Plus, X, Send
+  Loader2, Plus, X, Send, Pencil, UserPlus, Link2, Search, Upload
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
 import { QueueMediaManager } from './manager/QueueMediaManager';
+import { DoctorDetail } from './manager/DoctorDetail';
+import { ClinicDetail } from './manager/ClinicDetail';
+import { NewsImage } from '../ui/news-image';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '@/lib/supabase';
 import { ErrorState, InlineError } from '../ui/error-state';
@@ -222,6 +225,44 @@ export function ManagerDashboard() {
   const [newsImage, setNewsImage] = useState('');
   const [newsDoctor, setNewsDoctor] = useState('');
 
+  // ==== إضافة طبيب جديد + ربطه بحساب مستخدم ====
+  // الفكرة: نختار حساب مستخدم قائم (غير طبيب) → نغيّر دوره إلى "طبيب" → نضيف سجل في جدول doctors
+  const [showAddDoctor, setShowAddDoctor] = useState(false);
+  const [linkableUsers, setLinkableUsers] = useState<any[]>([]);
+  const [linkableSearch, setLinkableSearch] = useState('');
+  const [linkUsersLoading, setLinkUsersLoading] = useState(false);
+  const [addDoctorUserId, setAddDoctorUserId] = useState('');
+  const [addDoctorSpecialty, setAddDoctorSpecialty] = useState('');
+  const [addDoctorFee, setAddDoctorFee] = useState('');
+  const [addDoctorClinicId, setAddDoctorClinicId] = useState('');
+  const [addingDoctor, setAddingDoctor] = useState(false);
+  const [addDoctorError, setAddDoctorError] = useState<string | null>(null);
+  const [addDoctorOk, setAddDoctorOk] = useState<string | null>(null);
+
+  // ==== ملف الطبيب / ملف العيادة (عند الضغط على الكارت) ====
+  const [selectedDoctor, setSelectedDoctor] = useState<any | null>(null);
+  const [selectedClinic, setSelectedClinic] = useState<any | null>(null);
+
+  // ==== تعديل الخدمات (تحرير داخلي داخل الجدول) ====
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [editServiceName, setEditServiceName] = useState('');
+  const [editServicePrice, setEditServicePrice] = useState('');
+  const [editServiceClinicId, setEditServiceClinicId] = useState('');
+  const [editServiceActive, setEditServiceActive] = useState(true);
+  const [savingService, setSavingService] = useState(false);
+  const [serviceError, setServiceError] = useState<string | null>(null);
+
+  // ==== تعديل الأخبار الطبية + رفع الصور إلى bucket اسمه news ====
+  const [editingNewsId, setEditingNewsId] = useState<string | null>(null);
+  const [editNewsTitle, setEditNewsTitle] = useState('');
+  const [editNewsContent, setEditNewsContent] = useState('');
+  const [editNewsImage, setEditNewsImage] = useState('');
+  const [editNewsDoctor, setEditNewsDoctor] = useState('');
+  const [savingNews, setSavingNews] = useState(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   useEffect(() => {
     if (activeTab === 'staff_management') fetchUsers();
     if (activeTab === 'medical_records') fetchPatients();
@@ -266,7 +307,8 @@ export function ManagerDashboard() {
   const fetchDoctors = async () => {
     setLoading(true);
     setTableError('doctors', null);
-    const { data, error } = await supabase.from('profiles').select('*').eq('role', 'doctor').limit(FETCH_CAP);
+    // join مع جدول doctors للحصول على التخصص/العيادة/سعر الكشف (مطلوب لملف الطبيب)
+    const { data, error } = await supabase.from('profiles').select('*, doctor:doctors(*)').eq('role', 'doctor').limit(FETCH_CAP);
     if (error) setTableError('doctors', getFriendlyErrorMessage(error, 'تعذر تحميل قائمة الأطباء.'));
     else setDoctors(data || []);
     setLoading(false);
@@ -473,6 +515,174 @@ export function ManagerDashboard() {
     }
   };
 
+// ===== إضافة طبيب جديد + ربطه بحساب مستخدم =====
+// الخطوات: (1) تغيير دور الحساب المحدد إلى doctor (2) إدراج سجل في doctors
+// (3) إدراج الربط في doctor_clinics (إن اختير عيادة) + مزامنة العمود القديم clinic_id
+  const fetchLinkableUsers = async () => {
+    setLinkUsersLoading(true);
+    // كل المستخدمين غير الأطباء (patient/secretary/accountant) — يمكن ترقيتهم إلى طبيب
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name, email, phone, role')
+      .neq('role', 'doctor')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    setLinkUsersLoading(false);
+    if (error) {
+      setAddDoctorError(getFriendlyErrorMessage(error, 'تعذر تحميل الحسابات المتاحة.'));
+    } else {
+      setLinkableUsers(data || []);
+    }
+  };
+
+  const openAddDoctor = () => {
+    setShowAddDoctor(true);
+    setAddDoctorError(null);
+    setAddDoctorOk(null);
+    setAddDoctorUserId('');
+    setAddDoctorSpecialty('');
+    setAddDoctorFee('');
+    setAddDoctorClinicId('');
+    fetchLinkableUsers();
+  };
+
+  const handleAddDoctor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddDoctorError(null);
+    setAddDoctorOk(null);
+    if (!addDoctorUserId) {
+      setAddDoctorError('يرجى اختيار حساب المستخدم الذي سيصبح طبيبًا.');
+      return;
+    }
+    setAddingDoctor(true);
+    try {
+      // (1) ترقية الدور إلى doctor — المدير مسموح له بتحديث أي profile
+      const { error: roleErr } = await supabase
+        .from('profiles')
+        .update({ role: 'doctor' })
+        .eq('id', addDoctorUserId);
+      if (roleErr) throw roleErr;
+
+      // (2) إدراج/تحديث سجل الطبيب (upsert لأن الحقل profile_id هو المفتاح)
+      const { error: docErr } = await supabase
+        .from('doctors')
+        .upsert([{
+          profile_id: addDoctorUserId,
+          specialty: addDoctorSpecialty.trim() || null,
+          consultation_fee: addDoctorFee && !isNaN(Number(addDoctorFee)) ? Number(addDoctorFee) : null,
+          clinic_id: addDoctorClinicId || null,
+        }]);
+      if (docErr) throw docErr;
+
+      // (3) تسجيل الربط في الجدول الجديد (إن اختير عيادة) — تجاهل إن لم تُنفَّذ الهجرة بعد
+      if (addDoctorClinicId) {
+        const { error: linkErr } = await supabase
+          .from('doctor_clinics')
+          .insert([{ doctor_id: addDoctorUserId, clinic_id: addDoctorClinicId, is_primary: true }]);
+        if (linkErr && linkErr.code !== 'PGRST106' && linkErr.code !== '42P01') {
+          // الربط في doctor_clinics فشل لكن العمود القديم clinic_id محفوظ بالفعل — نستمر
+          console.warn('doctor_clinics insert skipped:', linkErr.message);
+        }
+      }
+
+      setAddDoctorOk('تمت إضافة الطبيب وربطه بالحساب بنجاح. اضغط على كارته لملء بقية البيانات.');
+      fetchDoctors();
+    } catch (err) {
+      setAddDoctorError(getFriendlyErrorMessage(err, 'تعذر إضافة الطبيب.'));
+    } finally {
+      setAddingDoctor(false);
+    }
+  };
+
+// ===== تعديل الخدمات (تحرير داخلي) =====
+  const startEditService = (service: any) => {
+    setEditingServiceId(service.id);
+    setEditServiceName(service.name || '');
+    setEditServicePrice(String(service.price ?? ''));
+    setEditServiceClinicId(service.clinic_id || 'general');
+    setEditServiceActive(service.is_active !== false);
+    setServiceError(null);
+  };
+
+  const handleSaveService = async (id: string) => {
+    setServiceError(null);
+    if (!editServiceName.trim() || editServicePrice === '' || isNaN(Number(editServicePrice))) {
+      setServiceError('يرجى إدخال اسم الخدمة وسعر صحيح.');
+      return;
+    }
+    setSavingService(true);
+    const { error } = await supabase
+      .from('services')
+      .update({
+        name: editServiceName.trim(),
+        price: Number(editServicePrice),
+        clinic_id: editServiceClinicId === 'general' ? null : editServiceClinicId,
+        is_active: editServiceActive,
+      })
+      .eq('id', id);
+    setSavingService(false);
+    if (error) {
+      setServiceError(getFriendlyErrorMessage(error, 'تعذر حفظ تعديلات الخدمة.'));
+    } else {
+      setEditingServiceId(null);
+      fetchServices();
+    }
+  };
+
+// ===== رفع صورة خبر إلى bucket اسمه news + حفظ الرابط العام =====
+  const uploadNewsImage = async (file: File, onDone: (url: string) => void) => {
+    setUploadingImage(true);
+    setUploadError(null);
+    try {
+      const safeName = `${Date.now()}_${file.name.replace(/[^\w.-]/g, '_')}`;
+      const { error: upErr } = await supabase.storage
+        .from('news')
+        .upload(safeName, file, { cacheControl: '3600', upsert: false });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from('news').getPublicUrl(safeName);
+      onDone(data.publicUrl);
+    } catch (err) {
+      setUploadError(getFriendlyErrorMessage(err, 'تعذر رفع الصورة إلى مخزن news.'));
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+// ===== تعديل الأخبار الطبية =====
+  const startEditNews = (post: any) => {
+    setEditingNewsId(post.id);
+    setEditNewsTitle(post.title || '');
+    setEditNewsContent(post.content || '');
+    setEditNewsImage(post.image_url || '');
+    setEditNewsDoctor(post.doctor_id || '');
+    setNewsError(null);
+  };
+
+  const handleSaveNews = async (id: string) => {
+    setNewsError(null);
+    if (!editNewsTitle.trim() || !editNewsContent.trim()) {
+      setNewsError('يرجى إدخال عنوان الخبر ومحتواه.');
+      return;
+    }
+    setSavingNews(true);
+    const { error } = await supabase
+      .from('medical_news')
+      .update({
+        title: editNewsTitle.trim(),
+        content: editNewsContent.trim(),
+        image_url: editNewsImage.trim() || null,
+        doctor_id: editNewsDoctor || null,
+      })
+      .eq('id', id);
+    setSavingNews(false);
+    if (error) {
+      setNewsError(getFriendlyErrorMessage(error, 'تعذر حفظ تعديلات الخبر.'));
+    } else {
+      setEditingNewsId(null);
+      fetchNews();
+    }
+  };
+
 // ===== إضافة عيادة — نموذج داخلي بدل prompt() =====
   const [newClinicName, setNewClinicName] = useState('');
   const [newClinicDesc, setNewClinicDesc] = useState('');
@@ -515,22 +725,120 @@ export function ManagerDashboard() {
           )}
 
           {activeTab === 'doctors' && (
+            selectedDoctor ? (
+              <DoctorDetail
+                doctor={selectedDoctor}
+                clinics={clinics}
+                onBack={() => setSelectedDoctor(null)}
+                onChanged={fetchDoctors}
+              />
+            ) : (
             <Card>
               <CardHeader>
-                <CardTitle>أطباء المركز</CardTitle>
-                <CardDescription>قائمة بجميع الأطباء المسجلين في النظام</CardDescription>
-                <div className="mt-3 max-w-md">
-                  <SearchInput value={doctorsSearch} onValueChange={setDoctorsSearch} placeholder="ابحث باسم الطبيب أو البريد..." />
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <CardTitle>أطباء المركز</CardTitle>
+                    <CardDescription>اضغط على كارت الطبيب لتعديل بياناته وتخصيص عياداته وعرض تقاريره</CardDescription>
+                  </div>
+                  <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+                    <div className="w-full md:w-64">
+                      <SearchInput value={doctorsSearch} onValueChange={setDoctorsSearch} placeholder="ابحث باسم الطبيب أو البريد..." />
+                    </div>
+                    <button onClick={openAddDoctor} className="bg-emerald-600 text-white font-bold px-5 py-2.5 rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 whitespace-nowrap">
+                      <UserPlus className="w-5 h-5" />
+                      إضافة طبيب + ربط حساب
+                    </button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
                 {tableError('doctors') && <ErrorState message={tableError('doctors')!} onRetry={fetchDoctors} compact />}
+
+                {/* نموذج إضافة طبيب جديد + ربطه بحساب مستخدم قائم */}
+                {showAddDoctor && (
+                  <form onSubmit={handleAddDoctor} className="mb-6 bg-emerald-50/60 border border-emerald-100 p-4 rounded-xl space-y-4">
+                    <h4 className="font-bold text-emerald-800 flex items-center gap-2">
+                      <UserPlus className="w-5 h-5" />
+                      إضافة طبيب جديد وربطه بحساب مستخدم
+                    </h4>
+                    <p className="text-xs text-gray-500">
+                      اختر حسابًا قائمًا (مريض / سكرتارية / محاسب) وسيتمت ترقيته إلى دور "طبيب" وإنشاء ملفه الطبي.
+                      لإنشاء حساب جديد تمامًا: أنشئه من صفحة الدخول ثم عُد هنا لربطه.
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">الحساب المرشح للترقية</label>
+                        <select value={addDoctorUserId} onChange={(e) => setAddDoctorUserId(e.target.value)} className="w-full border rounded-lg p-2.5 text-sm" required>
+                          <option value="">-- اختر حساب المستخدم --</option>
+                          {linkableUsers.map(u => (
+                            <option key={u.id} value={u.id}>
+                              {u.first_name} {u.last_name} — {getRoleLabel(u.role || 'patient')} — {u.email || 'بدون بريد'}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">بحث سريع (تصفية القائمة)</label>
+                        <input
+                          type="text"
+                          value={linkableSearch}
+                          onChange={(e) => setLinkableSearch(e.target.value)}
+                          className="w-full border rounded-lg p-2.5 text-sm"
+                          placeholder="ابحث بالاسم أو البريد..."
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">التخصص</label>
+                        <input type="text" value={addDoctorSpecialty} onChange={(e) => setAddDoctorSpecialty(e.target.value)} className="w-full border rounded-lg p-2.5 text-sm" placeholder="مثال: باطنة" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">سعر الكشف (ج.م)</label>
+                        <input type="number" min="0" value={addDoctorFee} onChange={(e) => setAddDoctorFee(e.target.value)} className="w-full border rounded-lg p-2.5 text-sm" placeholder="250" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">العيادة الأساسية (اختياري)</label>
+                        <select value={addDoctorClinicId} onChange={(e) => setAddDoctorClinicId(e.target.value)} className="w-full border rounded-lg p-2.5 text-sm">
+                          <option value="">-- بدون عيادة --</option>
+                          {clinics.map(clinic => (
+                            <option key={clinic.id} value={clinic.id}>{clinic.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {linkUsersLoading && <p className="text-sm text-gray-500">جاري تحميل الحسابات...</p>}
+                    {addDoctorError && <InlineError message={addDoctorError} />}
+                    {addDoctorOk && (
+                      <p className="text-sm text-emerald-700 bg-emerald-100 border border-emerald-200 rounded-lg px-3 py-2">
+                        {addDoctorOk}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button type="submit" disabled={addingDoctor} className="bg-emerald-600 text-white font-bold px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 disabled:opacity-50">
+                        {addingDoctor ? <Loader2 className="w-5 h-5 animate-spin" /> : <Link2 className="w-5 h-5" />}
+                        إضافة وربط
+                      </button>
+                      <button type="button" onClick={() => setShowAddDoctor(false)} className="border border-gray-200 text-gray-600 font-bold px-6 py-2 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
+                        <X className="w-5 h-5" /> إلغاء
+                      </button>
+                    </div>
+                  </form>
+                )}
+
                 {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredDoctors.length === 0 ? (
-                      <p className="text-gray-500">لا يوجد أطباء مسجلين. قم بتغيير صلاحية أحد المستخدمين إلى "طبيب" من شاشة الصلاحيات.</p>
+                      <p className="text-gray-500">لا يوجد أطباء مسجلين. استخدم زر "إضافة طبيب + ربط حساب" بالأعلى.</p>
                     ) : filteredDoctors.slice(doctorsSafePage * PAGE_SIZE, doctorsSafePage * PAGE_SIZE + PAGE_SIZE).map((doc) => (
-                      <div key={doc.id} className="border p-4 rounded-xl flex items-center gap-4 bg-white shadow-sm">
+                      <button
+                        key={doc.id}
+                        onClick={() => setSelectedDoctor(doc)}
+                        className="text-right border p-4 rounded-xl flex items-center gap-4 bg-white shadow-sm hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer"
+                      >
                         {doc.avatar_url ? (
                           <Image src={doc.avatar_url} alt="" width={64} height={64} className="w-16 h-16 rounded-full object-cover" unoptimized={false} />
                         ) : (
@@ -538,26 +846,36 @@ export function ManagerDashboard() {
                             {doc.first_name?.[0]}
                           </div>
                         )}
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <h4 className="font-bold text-lg">د. {doc.first_name} {doc.last_name}</h4>
-                          <p className="text-gray-500 text-sm">{doc.email}</p>
-                          <span className="inline-block mt-2 text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded-full">طبيب مفعل</span>
+                          <p className="text-gray-500 text-sm truncate">{doc.doctor?.specialty || doc.email}</p>
+                          <span className="inline-block mt-2 text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded-full">
+                            {doc.doctor ? 'ملف طبي مكتمل' : 'يلزم إكمال الملف'}
+                          </span>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 )}
               {!loading && <Pagination page={doctorsSafePage} pageSize={PAGE_SIZE} total={filteredDoctors.length} onPageChange={setDoctorsPage} isLoading={loading} />}
               </CardContent>
             </Card>
+            )
           )}
 
           {activeTab === 'clinics' && (
+            selectedClinic ? (
+              <ClinicDetail
+                clinic={selectedClinic}
+                onBack={() => setSelectedClinic(null)}
+                onChanged={fetchClinics}
+              />
+            ) : (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>العيادات والتخصصات</CardTitle>
-                  <CardDescription>إدارة العيادات المتاحة في المركز</CardDescription>
+                  <CardDescription>اضغط على كارت العيادة لعرض تقاريرها وأطبائها وتعديل بياناتها</CardDescription>
                 </div>
                 
                 <div className="mt-3 max-w-md">
@@ -601,7 +919,11 @@ export function ManagerDashboard() {
                     {filteredClinics.length === 0 ? (
                       <p className="text-gray-500">لا توجد عيادات. اضغط على الزر أعلاه لإضافة عيادة.</p>
                     ) : filteredClinics.slice(clinicsSafePage * PAGE_SIZE, clinicsSafePage * PAGE_SIZE + PAGE_SIZE).map((clinic) => (
-                      <div key={clinic.id} className="border p-4 rounded-xl flex items-center justify-between bg-white shadow-sm hover:border-emerald-200 transition-colors">
+                      <button
+                        key={clinic.id}
+                        onClick={() => setSelectedClinic(clinic)}
+                        className="text-right border p-4 rounded-xl flex items-center justify-between bg-white shadow-sm hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer w-full"
+                      >
                         <div className="flex items-center gap-3">
                           <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
                             <Building className="w-6 h-6" />
@@ -612,15 +934,16 @@ export function ManagerDashboard() {
                           </div>
                         </div>
                         <span className={`text-xs px-2 py-1 rounded-full ${clinic.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                          {clinic.is_active ? 'نشط' : 'غير نشط'}
+                          {clinic.is_active ? 'نشطة' : 'غير نشطة'}
                         </span>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 )}
               {!loading && <Pagination page={clinicsSafePage} pageSize={PAGE_SIZE} total={filteredClinics.length} onPageChange={setClinicsPage} isLoading={loading} />}
               </CardContent>
             </Card>
+            )
           )}
 
           {activeTab === 'staff_management' && (
@@ -831,23 +1154,70 @@ export function ManagerDashboard() {
                             <th className="p-3 font-semibold text-gray-600">اسم الخدمة</th>
                             <th className="p-3 font-semibold text-gray-600">العيادة</th>
                             <th className="p-3 font-semibold text-gray-600">السعر</th>
+                            <th className="p-3 font-semibold text-gray-600">الحالة</th>
                             <th className="p-3 font-semibold text-gray-600">إجراءات</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {services.length === 0 ? (
-                            <tr><td colSpan={4} className="text-center p-4 text-gray-500">لا توجد خدمات مسجلة.</td></tr>
+{services.length === 0 ? (
+                            <tr><td colSpan={5} className="text-center p-4 text-gray-500">لا توجد خدمات مسجلة.</td></tr>
                           ) : services.map(service => (
-                            <tr key={service.id} className="border-b">
-                              <td className="p-3 font-bold text-gray-800">{service.name}</td>
-                              <td className="p-3 text-gray-600">{service.clinic?.name || 'غير محدد'}</td>
-                              <td className="p-3 font-bold text-emerald-600">{service.price} ج.م</td>
-                              <td className="p-3">
-                                <button onClick={() => handleDeleteService(service.id)} className="text-red-500 hover:text-red-700 text-sm font-bold">حذف</button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
+                            editingServiceId === service.id ? (
+                              /* صف التحرير: حقول قابلة للتعديل + حفظ/إلغاء */
+                              <tr key={service.id} className="border-b bg-emerald-50/50">
+                                <td className="p-2">
+                                  <input type="text" value={editServiceName} onChange={(e) => setEditServiceName(e.target.value)} className="w-full border rounded-lg p-2 text-sm" />
+                                </td>
+                                <td className="p-2">
+                                  <select value={editServiceClinicId} onChange={(e) => setEditServiceClinicId(e.target.value)} className="w-full border rounded-lg p-2 text-sm">
+                                    <option value="general">خدمة عامة (بدون عيادة)</option>
+                                    {clinics.map(c => (
+                                      <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="p-2">
+                                  <input type="number" min="0" value={editServicePrice} onChange={(e) => setEditServicePrice(e.target.value)} className="w-24 border rounded-lg p-2 text-sm" />
+                                </td>
+                                <td className="p-2">
+                                  <label className="flex items-center gap-1 text-xs font-bold text-gray-700 cursor-pointer select-none">
+                                    <input type="checkbox" checked={editServiceActive} onChange={(e) => setEditServiceActive(e.target.checked)} className="w-4 h-4 accent-emerald-600" />
+                                    {editServiceActive ? 'مفعلة' : 'معطلة'}
+                                  </label>
+                                </td>
+                                <td className="p-2">
+                                  <div className="flex items-center gap-2">
+                                    <button onClick={() => handleSaveService(service.id)} disabled={savingService} className="text-emerald-600 hover:text-emerald-800 text-sm font-bold flex items-center gap-1 disabled:opacity-50">
+                                      {savingService ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} حفظ
+                                    </button>
+                                    <button onClick={() => setEditingServiceId(null)} className="text-gray-500 hover:text-gray-700 text-sm font-bold flex items-center gap-1">
+                                      <X className="w-4 h-4" /> إلغاء
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ) : (
+                              /* صف العرض العادي + زر تعديل */
+                              <tr key={service.id} className="border-b hover:bg-gray-50">
+                                <td className="p-3 font-bold text-gray-800">{service.name}</td>
+                                <td className="p-3 text-gray-600">{service.clinic?.name || 'غير محدد'}</td>
+                                <td className="p-3 font-bold text-emerald-600" dir="ltr">{service.price} ج.م</td>
+                                <td className="p-3">
+                                  <span className={`text-xs px-2 py-1 rounded-full ${service.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {service.is_active ? 'مفعلة' : 'معطلة'}
+                                  </span>
+                                </td>
+                                <td className="p-3">
+                                  <div className="flex items-center gap-3">
+                                    <button onClick={() => startEditService(service)} className="text-blue-600 hover:text-blue-800 text-sm font-bold flex items-center gap-1">
+                                      <Pencil className="w-4 h-4" /> تعديل
+                                    </button>
+                                    <button onClick={() => handleDeleteService(service.id)} className="text-red-500 hover:text-red-700 text-sm font-bold">حذف</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          ))}</tbody>
                       </table>
                     </div>
                   )}
@@ -875,8 +1245,26 @@ export function ManagerDashboard() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-1">رابط صورة (اختياري)</label>
-                        <input type="url" value={newsImage} onChange={(e) => setNewsImage(e.target.value)} className="w-full border rounded-lg p-2" placeholder="https://example.com/image.jpg" />
+                        <label className="block text-sm font-bold text-gray-700 mb-1">صورة الخبر (اختياري)</label>
+                        <div className="space-y-2">
+                          <input type="url" value={newsImage} onChange={(e) => setNewsImage(e.target.value)} className="w-full border rounded-lg p-2" placeholder="https://example.com/image.jpg أو ارفع من جهازك" />
+                          <label className="flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 cursor-pointer hover:bg-emerald-100 transition-colors w-fit">
+                            <Upload className="w-4 h-4" />
+                            {uploadingImage ? 'جاري الرفع إلى مخزن news...' : 'رفع صورة من الجهاز إلى مخزن news'}
+                            <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) uploadNewsImage(file, setNewsImage);
+                              e.currentTarget.value = '';
+                            }} />
+                          </label>
+                          {uploadError && <p className="text-xs text-red-600">{uploadError}</p>}
+                          {newsImage && (
+                            <div className="flex items-center gap-2">
+                              <NewsImage url={newsImage} alt="" width={64} height={64} className="w-16 h-16 object-cover rounded-lg border" />
+                              <button type="button" onClick={() => setNewsImage('')} className="text-xs text-red-500 font-bold">إزالة الصورة</button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <div>
                         <label className="block text-sm font-bold text-gray-700 mb-1">الطبيب المقدم للمقال (اختياري)</label>
@@ -904,22 +1292,86 @@ export function ManagerDashboard() {
                       {news.length === 0 ? (
                         <p className="text-gray-500 text-center py-4">لا توجد أخبار منشورة بعد.</p>
                       ) : news.map((post) => (
-                        <div key={post.id} className="border rounded-xl p-4 flex gap-4 bg-white">
-                          {post.image_url && (
-                            <Image src={post.image_url} alt="" width={128} height={128} className="w-32 h-32 object-cover rounded-lg" />
-                          )}
-                          <div className="flex-1">
-                            <h4 className="font-bold text-lg text-emerald-900">{post.title}</h4>
-                            {post.doctor && (
-                              <p className="text-xs text-gray-500 mb-2">بواسطة: د. {post.doctor.first_name} {post.doctor.last_name}</p>
-                            )}
-                            <p className="text-gray-700 text-sm line-clamp-2">{post.content}</p>
-                            <div className="mt-4 flex justify-between items-center">
-                              <span className="text-xs text-gray-400">{new Date(post.created_at).toLocaleDateString('ar-EG')}</span>
-                              <button onClick={() => handleDeleteNews(post.id)} className="text-red-500 text-sm font-bold hover:text-red-700">حذف الخبر</button>
+                        editingNewsId === post.id ? (
+                          /* نموذج تعديل الخبر — يظهر مكان الكارت */
+                          <form key={post.id} onSubmit={(e) => { e.preventDefault(); handleSaveNews(post.id); }} className="border-2 border-emerald-200 rounded-xl p-4 bg-emerald-50/40 space-y-3">
+                            <h4 className="font-bold text-emerald-800 flex items-center gap-2">
+                              <Pencil className="w-5 h-5" />
+                              تعديل الخبر
+                            </h4>
+                            <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-1">العنوان</label>
+                              <input type="text" value={editNewsTitle} onChange={(e) => setEditNewsTitle(e.target.value)} className="w-full border rounded-lg p-2" required />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-1">المحتوى</label>
+                              <textarea value={editNewsContent} onChange={(e) => setEditNewsContent(e.target.value)} rows={4} className="w-full border rounded-lg p-2 resize-none" required />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">صورة الخبر</label>
+                                <div className="space-y-2">
+                                  <input type="url" value={editNewsImage} onChange={(e) => setEditNewsImage(e.target.value)} className="w-full border rounded-lg p-2" placeholder="رابط الصورة أو ارفع من جهازك" />
+                                  <label className="flex items-center gap-2 text-xs font-bold text-emerald-700 bg-white border border-emerald-100 rounded-lg px-3 py-2 cursor-pointer hover:bg-emerald-50 transition-colors w-fit">
+                                    <Upload className="w-4 h-4" />
+                                    {uploadingImage ? 'جاري الرفع...' : 'رفع صورة من مخزن news'}
+                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) uploadNewsImage(file, setEditNewsImage);
+                                      e.currentTarget.value = '';
+                                    }} />
+                                  </label>
+                                  {editNewsImage && (
+                                    <div className="flex items-center gap-2">
+                                      <NewsImage url={editNewsImage} alt="" width={64} height={64} className="w-16 h-16 object-cover rounded-lg border" />
+                                      <button type="button" onClick={() => setEditNewsImage('')} className="text-xs text-red-500 font-bold">إزالة الصورة</button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">الطبيب المقدم للمقال</label>
+                                <select value={editNewsDoctor} onChange={(e) => setEditNewsDoctor(e.target.value)} className="w-full border rounded-lg p-2">
+                                  <option value="">-- بدون تحديد طبيب --</option>
+                                  {doctors.map(doc => (
+                                    <option key={doc.id} value={doc.id}>د. {doc.first_name} {doc.last_name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                            {newsError && <InlineError message={newsError} />}
+                            <div className="flex gap-2">
+                              <button type="submit" disabled={savingNews} className="bg-emerald-600 text-white font-bold px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 disabled:opacity-50">
+                                {savingNews ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                                حفظ التعديلات
+                              </button>
+                              <button type="button" onClick={() => setEditingNewsId(null)} className="border border-gray-200 text-gray-600 font-bold px-6 py-2 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
+                                <X className="w-5 h-5" /> إلغاء
+                              </button>
+                            </div>
+                          </form>
+                        ) : (
+                          /* كارت الخبر العادي */
+                          <div key={post.id} className="border rounded-xl p-4 flex flex-col md:flex-row gap-4 bg-white">
+                            <NewsImage url={post.image_url} alt="" width={128} height={128} className="w-32 h-32 object-cover rounded-lg shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-bold text-lg text-emerald-900">{post.title}</h4>
+                              {post.doctor && (
+                                <p className="text-xs text-gray-500 mb-2">بواسطة: د. {post.doctor.first_name} {post.doctor.last_name}</p>
+                              )}
+                              <p className="text-gray-700 text-sm line-clamp-2">{post.content}</p>
+                              <div className="mt-4 flex justify-between items-center">
+                                <span className="text-xs text-gray-400">{new Date(post.created_at).toLocaleDateString('ar-EG')}</span>
+                                <div className="flex gap-3">
+                                  <button onClick={() => startEditNews(post)} className="text-blue-600 text-sm font-bold hover:text-blue-800 flex items-center gap-1">
+                                    <Pencil className="w-4 h-4" /> تعديل
+                                  </button>
+                                  <button onClick={() => handleDeleteNews(post.id)} className="text-red-500 text-sm font-bold hover:text-red-700">حذف الخبر</button>
+                                </div>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        )
                       ))}
                     </div>
                   )}

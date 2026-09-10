@@ -1,9 +1,9 @@
 'use client';
-import Image from 'next/image';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Newspaper, ChevronDown, User, Calendar, Heart } from 'lucide-react';
+import { NewsImage } from '@/components/ui/news-image';
 
 export function MedicalNewsViewer() {
   const { user, loginWithGoogle } = useAuth();
@@ -88,15 +88,15 @@ export function MedicalNewsViewer() {
             const isLiked = item.news_likes?.some((like: any) => like.user_id === user?.id);
             return (
               <div key={item.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group">
-                {item.image_url ? (
-                  <div className="h-56 overflow-hidden">
-                    <Image src={item.image_url} alt={item.title} fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover group-hover:scale-105 transition-transform duration-500" />
-                  </div>
-                ) : (
-                  <div className="h-56 bg-emerald-50 flex items-center justify-center">
-                    <Newspaper className="w-16 h-16 text-emerald-200" />
-                  </div>
-                )}
+                <div className="h-56 overflow-hidden relative">
+                  <NewsImage
+                    url={item.image_url}
+                    alt={item.title || 'صورة مقال'}
+                    fill
+                    sizes="(max-width: 768px) 100vw, 33vw"
+                    className="object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                </div>
                 <div className="p-6 flex-1 flex flex-col">
                   <h3 className="text-xl font-bold text-gray-900 mb-3">{item.title}</h3>
                   <p className="text-gray-600 mb-6 line-clamp-3 leading-relaxed flex-1">{item.content}</p>

@@ -3,10 +3,10 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Newspaper, Heart, Loader2 } from 'lucide-react';
+import { NewsImage } from '@/components/ui/news-image';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
-import Image from 'next/image';
 
 export function PatientMedicalNews() {
   const { user } = useAuth();
@@ -76,18 +76,15 @@ export function PatientMedicalNews() {
 
                 return (
                   <div key={post.id} className="border rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col md:flex-row hover:shadow-md transition-shadow">
-                    {post.image_url && (
-                      <div className="md:w-1/3 bg-gray-100 flex-shrink-0">
-                        <Image
-                          src={post.image_url}
-                          alt={post.title || 'صورة خبر'}
-                          width={480}
-                          height={320}
-                          className="w-full h-48 md:h-full object-cover"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                        />
-                      </div>
-                    )}
+                    <div className="md:w-1/3 bg-gray-100 flex-shrink-0">
+                      <NewsImage
+                        url={post.image_url}
+                        alt={post.title || 'صورة خبر'}
+                        width={480}
+                        height={320}
+                        className="w-full h-48 md:h-full object-cover rounded-2xl md:rounded-none"
+                      />
+                    </div>
                     <div className="p-6 flex-1 flex flex-col">
                       <h3 className="text-xl font-bold text-gray-900 mb-2">{post.title}</h3>
                      {post.doctor && (

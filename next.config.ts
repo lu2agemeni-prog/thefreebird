@@ -1,5 +1,7 @@
 import type {NextConfig} from 'next';
 
+const supabaseHost = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://toxtgjiigsyqetpffjyc.supabase.co').hostname;
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   typescript: {
@@ -24,6 +26,20 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'images.unsplash.com',
+        port: '',
+        pathname: '/**',
+      },
+      // ★ صور Supabase Storage — bucket الـ news — كانت مفقودة تمامًا فتكسر كل صور المقالات
+      {
+        protocol: 'https',
+        hostname: supabaseHost,
+        port: '',
+        pathname: '/**',
+      },
+      // نطاق عام لكل مشاريع Supabase (احتياط لو تغيّر NEXT_PUBLIC_SUPABASE_URL في .env.local)
+      {
+        protocol: 'https',
+        hostname: '*.supabase.co',
         port: '',
         pathname: '/**',
       },
