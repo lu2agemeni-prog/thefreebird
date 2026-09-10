@@ -199,7 +199,7 @@ export function AccountantReports() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(value: number) => `${value.toLocaleString()} EGP`} />
+                  <Tooltip formatter={(value) => `${Number(value ?? 0).toLocaleString()} EGP`} />
                   <Legend formatter={(value) => (value === 'income' ? 'إيرادات' : 'مصروفات')} />
                   <Bar dataKey="income" name="income" fill="#10b981" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="expense" name="expense" fill="#ef4444" radius={[4, 4, 0, 0]} />
