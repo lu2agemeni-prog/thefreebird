@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
-import { User, Calendar, FileText, MessageSquare, AlertCircle, List, Calculator, Newspaper } from 'lucide-react';
+import { User, Calendar, FileText, MessageSquare, AlertCircle, List, Calculator, Newspaper, FlaskConical } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { MedicalCalculators } from './patient/MedicalCalculators';
 import { PatientMedicalNews } from './patient/PatientMedicalNews';
@@ -12,12 +12,14 @@ import { PatientComplaints } from './patient/PatientComplaints';
 import { PatientServices } from './patient/PatientServices';
 import { PatientProfile } from './patient/PatientProfile';
 import { PatientPrescriptions } from './patient/PatientPrescriptions';
+import { PatientLabResults } from './patient/PatientLabResults';
 
 const patientNav: SidebarItem[] = [
   { name: 'حجز المواعيد والسجلات', id: 'appointments', icon: Calendar },
   { name: 'البيانات الطبية', id: 'medical_data', icon: FileText },
   { name: 'استشارات', id: 'consultations', icon: MessageSquare },
   { name: 'الروشتات', id: 'prescriptions', icon: FileText },
+  { name: 'سجل التحاليل', id: 'lab_results', icon: FlaskConical },
   { name: 'الأخبار الطبية', id: 'medical_news', icon: Newspaper },
   { name: 'الخدمات والأسعار', id: 'services', icon: List },
   { name: 'حاسبات طبية', id: 'calculators', icon: Calculator },
@@ -34,6 +36,7 @@ export function PatientDashboard({ user }: { user?: any }) {
       case 'medical_data': return <PatientMedicalRecords />;
       case 'consultations': return <PatientConsultations />;
       case 'prescriptions': return <PatientPrescriptions />;
+      case 'lab_results': return <PatientLabResults />;
       case 'medical_news': return <PatientMedicalNews />;
       case 'services': return <PatientServices />;
       case 'calculators': return <MedicalCalculators />;

@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Bell, Check, Trash2, X, AlertTriangle } from 'lucide-react';
@@ -7,6 +8,7 @@ import { getFriendlyErrorMessage } from '@/lib/errors';
 
 export function NotificationBell() {
   const { user } = useAuth();
+  const router = useRouter();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
@@ -156,6 +158,14 @@ export function NotificationBell() {
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
+  const handleNotificationClick = (notif: any) => {
+    if (!notif.is_read) markAsRead(notif.id);
+    if (notif.link) {
+      setIsOpen(false);
+      router.push(notif.link);
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -206,8 +216,8 @@ export function NotificationBell() {
                 {notifications.map(notif => (
                   <div 
                     key={notif.id} 
-                    onClick={() => !notif.is_read && markAsRead(notif.id)}
-                    className={`p-4 transition-colors relative group ${notif.is_read ? 'bg-white text-gray-500' : 'bg-blue-50/50 cursor-pointer text-gray-800'}`}
+                    onClick={() => handleNotificationClick(notif)}
+                    className={`p-4 transition-colors relative group ${notif.is_read ? 'bg-white text-gray-500' : 'bg-blue-50/50 cursor-pointer text-gray-800'} ${notif.link ? 'cursor-pointer' : ''}`}
                   >
                     {!notif.is_read && (
                       <div className="absolute right-2 top-4 w-2 h-2 bg-blue-500 rounded-full"></div>
