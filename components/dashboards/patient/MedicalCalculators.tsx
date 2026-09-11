@@ -30,20 +30,23 @@ export function MedicalCalculators() {
             <p className="text-gray-500 text-lg">اختر نوع الحاسبة أو الدليل الطبي. جميع البيانات مبنية على أحدث الأدلة العلمية.</p>
           </CardHeader>
           <CardContent className="px-0 mt-2">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="space-y-3">
               {calculatorCategories.map((category) => {
                 const Icon = category.icon;
                 return (
                   <button
                     key={category.id}
                     onClick={() => setActiveTab(category.id)}
-                    className={`flex flex-col items-center text-center p-8 rounded-3xl border-2 bg-white ${category.border} hover:shadow-lg transition-all duration-300 group`}
+                    className={`w-full flex items-center gap-5 text-right p-5 rounded-2xl border-2 bg-white ${category.border} hover:shadow-md transition-all duration-300 group`}
                   >
-                    <div className={`p-5 rounded-full ${category.color} mb-5 group-hover:scale-110 group-hover:-translate-y-1 transition-transform duration-300`}>
-                      <Icon className="w-10 h-10" />
+                    <div className={`p-4 rounded-full ${category.color} shrink-0 group-hover:scale-110 transition-transform duration-300`}>
+                      <Icon className="w-7 h-7" />
                     </div>
-                    <h3 className="font-bold text-xl text-gray-900 mb-3">{category.name}</h3>
-                    <p className="text-gray-500 leading-relaxed text-sm">{category.desc}</p>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold text-lg text-gray-900 mb-1">{category.name}</h3>
+                      <p className="text-gray-500 leading-relaxed text-sm">{category.desc}</p>
+                    </div>
+                    <ArrowRight className="w-5 h-5 text-gray-300 group-hover:text-emerald-500 rotate-180 shrink-0 transition-colors" />
                   </button>
                 );
               })}
