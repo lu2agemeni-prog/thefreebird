@@ -2,12 +2,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
-import { Users, Loader2, UserPlus } from 'lucide-react';
+import { Users, Loader2, UserPlus, FileSpreadsheet } from 'lucide-react';
 import { ErrorState } from '@/components/ui/error-state';
 import { SearchInput } from '@/components/ui/search-input';
 import { Pagination } from '@/components/ui/pagination';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { AddWalkInPatientModal } from './AddWalkInPatientModal';
+import { BulkPatientImportModal } from '../shared/BulkPatientImportModal';
 
 const PAGE_SIZE = 10;
 const FETCH_CAP = 2000;
@@ -28,6 +29,7 @@ export function SecretaryPatients() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   useEffect(() => {
     fetchPatients();
@@ -98,6 +100,12 @@ export function SecretaryPatients() {
           className="bg-emerald-600 text-white font-bold px-5 py-3 rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow-sm"
         >
           <UserPlus className="w-5 h-5" /> إضافة مريض
+        </button>
+        <button
+          onClick={() => setShowImportModal(true)}
+          className="bg-white border border-emerald-200 text-emerald-700 font-bold px-5 py-3 rounded-xl hover:bg-emerald-50 flex items-center gap-2 shadow-sm"
+        >
+          <FileSpreadsheet className="w-5 h-5" /> استيراد من إكسيل
         </button>
       </div>
 
@@ -179,6 +187,13 @@ export function SecretaryPatients() {
             setShowAddModal(false);
             fetchPatients();
           }}
+        />
+      )}
+
+      {showImportModal && (
+        <BulkPatientImportModal
+          onClose={() => setShowImportModal(false)}
+          onImported={fetchPatients}
         />
       )}
     </div>

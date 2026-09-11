@@ -20,6 +20,8 @@ export function AccountantExpenses() {
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
+  const [doctorId, setDoctorId] = useState('');
+  const [doctors, setDoctors] = useState<any[]>([]);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [addedOk, setAddedOk] = useState<string | null>(null);
@@ -29,6 +31,11 @@ export function AccountantExpenses() {
 
   useEffect(() => {
     fetchTransactions();
+    // لازم قائمة الأطباء عشان نقدر نربط معاملة "راتب طبيب" بطبيب محدد
+    // (user_id) — من غيرها الطبيب معنديش أي وسيلة يشوف مستحقاته لاحقًا.
+    supabase.from('profiles').select('id, first_name, last_name').eq('role', 'doctor').then(({ data }) => {
+      setDoctors(data || []);
+    });
   }, []);
 
   useEffect(() => { setPage(0); }, [search]);
@@ -38,7 +45,7 @@ export function AccountantExpenses() {
     setLoading(true);
     const { data, error } = await supabase
       .from('transactions')
-      .select('*')
+      .select('*, profiles(first_name, last_name)')
       .order('created_at', { ascending: false })
       .limit(FETCH_CAP);
 
@@ -59,6 +66,10 @@ export function AccountantExpenses() {
       setAddError('يرجى إدخال المبلغ والتصنيف.');
       return;
     }
+    if (type === 'salary' && !doctorId) {
+      setAddError('يرجى اختيار الطبيب المستحق للمبلغ حتى يظهر له في حساباته.');
+      return;
+    }
     const amt = Number(amount);
     if (isNaN(amt) || amt <= 0) {
       setAddError('المبلغ يجب أن يكون رقمًا أكبر من صفر.');
@@ -71,6 +82,7 @@ export function AccountantExpenses() {
       type,
       category: category.trim(),
       description: description.trim(),
+      user_id: type === 'salary' ? doctorId : null,
     }]);
 
     setAdding(false);
@@ -78,6 +90,7 @@ export function AccountantExpenses() {
       setAmount('');
       setCategory('');
       setDescription('');
+      setDoctorId('');
       fetchTransactions();
       setAddedOk('تم تسجيل المعاملة المالية بنجاح.');
     } else {
@@ -159,6 +172,23 @@ export function AccountantExpenses() {
                 />
               </div>
             </div>
+            {type === 'salary' && (
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">الطبيب المستحق</label>
+                <select
+                  value={doctorId}
+                  onChange={(e) => setDoctorId(e.target.value)}
+                  className="w-full md:w-1/2 border rounded-lg p-3 bg-white"
+                  required
+                >
+                  <option value="">-- اختر الطبيب --</option>
+                  {doctors.map(d => (
+                    <option key={d.id} value={d.id}>د. {d.first_name} {d.last_name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">لازم تحديد الطبيب عشان يظهر له المبلغ في تبويب "الحسابات والرواتب" الخاص به.</p>
+              </div>
+            )}
             {addError && <InlineError message={addError} />}
             {addedOk && (
               <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-sm font-bold">
@@ -211,6 +241,7 @@ export function AccountantExpenses() {
                     <th className="p-4 font-semibold text-gray-600">التاريخ</th>
                     <th className="p-4 font-semibold text-gray-600">النوع</th>
                     <th className="p-4 font-semibold text-gray-600">التصنيف</th>
+                    <th className="p-4 font-semibold text-gray-600">المستفيد</th>
                     <th className="p-4 font-semibold text-gray-600">البيان</th>
                     <th className="p-4 font-semibold text-gray-600 text-left">المبلغ</th>
                   </tr>
@@ -231,6 +262,7 @@ export function AccountantExpenses() {
                           </span>
                         </td>
                         <td className="p-4 font-bold text-gray-800">{t.category}</td>
+                        <td className="p-4 text-gray-600 text-sm">{t.profiles ? `د. ${t.profiles.first_name} ${t.profiles.last_name}` : '---'}</td>
                         <td className="p-4 text-gray-600">{t.description || '---'}</td>
                         <td className={`p-4 text-left font-bold ${isExpense ? 'text-red-600' : 'text-emerald-600'}`} dir="ltr">
                           {isExpense ? '-' : '+'}{Number(t.amount).toLocaleString()} EGP
