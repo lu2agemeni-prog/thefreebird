@@ -8,9 +8,12 @@ import { SecretaryDashboard } from '@/components/dashboards/SecretaryDashboard';
 import { AccountantDashboard } from '@/components/dashboards/AccountantDashboard';
 import { HeartPulse, LogIn, Loader2, Calculator } from 'lucide-react';
 import { MedicalNewsViewer } from '@/components/MedicalNewsViewer';
+import { DeleteAccountModal } from '@/components/DeleteAccountModal';
+import { useState } from 'react';
 
 export default function HomePage() {
   const { user, loading, loginWithGoogle, logout } = useAuth();
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
 
   if (loading) {
     return (
@@ -194,11 +197,18 @@ export default function HomePage() {
             <LogIn className="w-4 h-4" />
             خروج
           </button>
+          <button
+            onClick={() => setShowDeleteAccount(true)}
+            className="text-xs text-gray-400 hover:text-red-600 transition-colors underline decoration-dotted"
+          >
+            حذف الحساب
+          </button>
         </div>
       </header>
       <main className="flex-1 flex overflow-hidden">
         {renderDashboard()}
       </main>
+      {showDeleteAccount && <DeleteAccountModal onClose={() => setShowDeleteAccount(false)} />}
     </div>
   );
 }
