@@ -3,6 +3,7 @@ import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { LucideIcon, Menu, X } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
+import { PushNotificationToggle } from '../PushNotificationToggle';
 
 export interface SidebarItem {
   name: string;
@@ -31,8 +32,9 @@ export function Sidebar({ items, activeItem, setActiveItem }: SidebarProps) {
       </button>
 
       {/* Floating Notification Bell for all screens */}
-      <div className="fixed bottom-6 left-6 md:top-4 md:left-4 md:bottom-auto z-50">
+      <div className="fixed bottom-6 left-6 md:top-4 md:left-4 md:bottom-auto z-50 flex items-center gap-1 bg-white md:bg-transparent rounded-xl shadow-lg md:shadow-none p-1 md:p-0">
         <NotificationBell />
+        <PushNotificationToggle />
       </div>
 
       {/* Overlay for mobile */}
