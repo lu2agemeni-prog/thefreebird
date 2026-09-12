@@ -20,6 +20,7 @@ import {
   toComplaintType, COMPLAINT_TYPE_LABELS,
   toTransactionType, TRANSACTION_TYPE_LABELS,
 } from '@/lib/types';
+import { DoctorReportsPanel } from './DoctorReportsPanel';
 
 const FETCH_CAP = 2000;
 const PAGE_SIZE = 10;
@@ -187,11 +188,14 @@ export function ReportsTab() {
         <button onClick={() => setReportTab('financials')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${reportTab === 'financials' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>الحسابات والماليات</button>
         <button onClick={() => setReportTab('complaints')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${reportTab === 'complaints' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>الشكاوى والمقترحات</button>
         <button onClick={() => setReportTab('consultations')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${reportTab === 'consultations' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>الاستشارات الطبية</button>
+        <button onClick={() => setReportTab('doctors')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${reportTab === 'doctors' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>تقارير الأطباء</button>
       </div>
 
-      <div className="max-w-md mb-2">
-        <SearchInput value={search} onValueChange={setSearch} placeholder="ابحث داخل نتائج التقرير..." />
-      </div>
+      {reportTab !== 'doctors' && (
+        <div className="max-w-md mb-2">
+          <SearchInput value={search} onValueChange={setSearch} placeholder="ابحث داخل نتائج التقرير..." />
+        </div>
+      )}
 
       {reportTab === 'clinics' && (
         <Card>
@@ -418,6 +422,8 @@ export function ReportsTab() {
           </CardContent>
         </Card>
       )}
+
+      {reportTab === 'doctors' && <DoctorReportsPanel />}
     </div>
   );
 }
