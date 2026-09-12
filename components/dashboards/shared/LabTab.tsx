@@ -30,6 +30,10 @@ interface CatalogTest {
   unit: string | null;
   normal_min: number | null;
   normal_max: number | null;
+  price?: number | null;
+  clinic_share_percent?: number | null;
+  doctor_share_percent?: number | null;
+  lab_owner_share_percent?: number | null;
 }
 
 function computeStatus(value: number, range: { normal_min: number | null; normal_max: number | null } | undefined): 'low' | 'normal' | 'high' | null {
@@ -57,6 +61,8 @@ export function LabTab() {
   const [testId, setTestId] = useState('');
   const [value, setValue] = useState('');
   const [notes, setNotes] = useState('');
+  const [referringDoctorId, setReferringDoctorId] = useState('');
+  const [doctors, setDoctors] = useState<{ id: string; name: string }[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [sessionResults, setSessionResults] = useState<any[]>([]);
@@ -70,6 +76,9 @@ export function LabTab() {
     supabase.from('lab_test_catalog').select('*').order('display_order', { ascending: true }).then(({ data, error }) => {
       if (error) setCatalogError(getFriendlyErrorMessage(error, 'تعذر تحميل قائمة التحاليل.'));
       else setCatalog(data || []);
+    });
+    supabase.from('profiles').select('id, first_name, last_name').eq('role', 'doctor').then(({ data }) => {
+      setDoctors((data || []).map(d => ({ id: d.id, name: `د. ${d.first_name} ${d.last_name}` })));
     });
   }, []);
 
@@ -126,12 +135,22 @@ export function LabTab() {
     }
 
     setSubmitting(true);
+    const price = Number(selectedTest?.price || 0);
+    const clinicPct = Number(selectedTest?.clinic_share_percent || 0);
+    const doctorPct = Number(selectedTest?.doctor_share_percent || 0);
+    const ownerPct = Number(selectedTest?.lab_owner_share_percent || 0);
+
     const { data, error } = await supabase.from('lab_results').insert([{
       patient_id: selectedPatient.id,
       test_id: testId,
       value: numValue,
       notes: notes.trim() || null,
       entered_by: user?.id || null,
+      doctor_id: referringDoctorId || null,
+      price,
+      clinic_share: Math.round((price * clinicPct / 100) * 100) / 100,
+      doctor_share: Math.round((price * doctorPct / 100) * 100) / 100,
+      lab_owner_share: Math.round((price * ownerPct / 100) * 100) / 100,
     }]).select('*, test:test_id(name, unit, normal_min, normal_max)').single();
 
     setSubmitting(false);
@@ -144,6 +163,7 @@ export function LabTab() {
     setTestId('');
     setValue('');
     setNotes('');
+    setReferringDoctorId('');
     fetchRecent();
   };
 
@@ -252,10 +272,30 @@ export function LabTab() {
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">ملاحظات (اختياري)</label>
-                <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full border rounded-lg p-2.5" placeholder="أي ملاحظات إضافية عن العينة أو الفحص..." />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">ملاحظات (اختياري)</label>
+                  <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full border rounded-lg p-2.5" placeholder="أي ملاحظات إضافية عن العينة أو الفحص..." />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">الطبيب المحوِّل (اختياري)</label>
+                  <select value={referringDoctorId} onChange={(e) => setReferringDoctorId(e.target.value)} className="w-full border rounded-lg p-2.5">
+                    <option value="">-- بدون تحديد --</option>
+                    {doctors.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">يُستخدم لحساب نصيب الطبيب من سعر التحليل في حسابات المعمل.</p>
+                </div>
               </div>
+              {selectedTest && Number(selectedTest.price) > 0 && (
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-700 flex flex-wrap gap-x-4 gap-y-1">
+                  <span>سعر التحليل: <b dir="ltr">{selectedTest.price} ج.م</b></span>
+                  <span>نصيب المركز: <b dir="ltr">{(Number(selectedTest.price) * Number(selectedTest.clinic_share_percent || 0) / 100).toFixed(2)} ج.م</b></span>
+                  <span>نصيب الطبيب: <b dir="ltr">{(Number(selectedTest.price) * Number(selectedTest.doctor_share_percent || 0) / 100).toFixed(2)} ج.م</b></span>
+                  <span>نصيب صاحب المعمل: <b dir="ltr">{(Number(selectedTest.price) * Number(selectedTest.lab_owner_share_percent || 0) / 100).toFixed(2)} ج.م</b></span>
+                </div>
+              )}
               {submitError && <InlineError message={submitError} />}
               <button type="submit" disabled={submitting} className="bg-emerald-600 text-white font-bold px-6 py-2.5 rounded-lg hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50">
                 {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}

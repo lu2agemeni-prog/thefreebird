@@ -13,7 +13,7 @@ import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
 import {
   Building, Calculator, Stethoscope, Activity, QrCode, Shield,
-  BarChart, FileText, Newspaper, List, FlaskConical,
+  BarChart, FileText, Newspaper, List, FlaskConical, Wallet,
 } from 'lucide-react';
 import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
 import { QueueMediaManager } from './manager/QueueMediaManager';
@@ -28,6 +28,8 @@ import { MedicalNewsTab } from './manager/tabs/MedicalNewsTab';
 import { FinancialsTab } from './manager/tabs/FinancialsTab';
 import { ReportsTab } from './manager/tabs/ReportsTab';
 import { LabTab } from './shared/LabTab';
+import { LabAccountsTab } from './manager/tabs/LabAccountsTab';
+import { AdditionalAccountsTab } from './manager/tabs/AdditionalAccountsTab';
 
 const managerNav: SidebarItem[] = [
   { name: 'لوحة القيادة', id: 'dashboard', icon: Activity },
@@ -39,6 +41,8 @@ const managerNav: SidebarItem[] = [
   { name: 'النداء الآلي', id: 'call_queue', icon: Activity },
   { name: 'وسائط شاشة النداء', id: 'queue_media', icon: List },
   { name: 'المعمل', id: 'lab', icon: FlaskConical },
+  { name: 'حسابات المعمل', id: 'lab_accounts', icon: FlaskConical },
+  { name: 'الحسابات الإضافية', id: 'additional_accounts', icon: Wallet },
   { name: 'الماليات والأرباح', id: 'financials', icon: Calculator },
   { name: 'الأخبار الطبية', id: 'medical_news', icon: Newspaper },
   { name: 'التقارير الشاملة', id: 'reports', icon: BarChart },
@@ -66,6 +70,8 @@ export function ManagerDashboard() {
           {activeTab === 'call_queue' && <SecretaryCallQueue />}
           {activeTab === 'queue_media' && <QueueMediaManager />}
           {activeTab === 'lab' && <LabTab />}
+          {activeTab === 'lab_accounts' && <LabAccountsTab />}
+          {activeTab === 'additional_accounts' && <AdditionalAccountsTab />}
           {activeTab === 'financials' && <FinancialsTab />}
           {activeTab === 'reports' && <ReportsTab />}
         </div>
