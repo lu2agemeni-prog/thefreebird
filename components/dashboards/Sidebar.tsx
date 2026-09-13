@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
-import { LucideIcon, Menu, X } from 'lucide-react';
+import { LucideIcon, Menu, X, Share2, LogOut, Check } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
 import { PushNotificationToggle } from '../PushNotificationToggle';
+import { useAuth } from '@/lib/auth';
 
 export interface SidebarItem {
   name: string;
@@ -19,6 +20,27 @@ interface SidebarProps {
 
 export function Sidebar({ items, activeItem, setActiveItem }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const { logout } = useAuth();
+
+  const handleShare = async () => {
+    const shareData = {
+      title: 'الطائر الحر',
+      text: 'تطبيق عيادات الطائر الحر',
+      url: typeof window !== 'undefined' ? window.location.origin : '',
+    };
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch {
+        // المستخدم لغى المشاركة — تجاهل
+      }
+    } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      await navigator.clipboard.writeText(shareData.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
     <>
@@ -76,6 +98,22 @@ export function Sidebar({ items, activeItem, setActiveItem }: SidebarProps) {
             )
           })}
         </nav>
+        <div className="p-4 border-t space-y-1">
+          <button
+            onClick={handleShare}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-right transition-all text-gray-600 hover:bg-gray-50 hover:text-gray-900 font-medium"
+          >
+            {copied ? <Check className="w-5 h-5 text-emerald-500" /> : <Share2 className="w-5 h-5 text-gray-400" />}
+            <span>{copied ? 'تم نسخ الرابط' : 'مشاركة التطبيق'}</span>
+          </button>
+          <button
+            onClick={logout}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-right transition-all text-red-600 hover:bg-red-50 font-medium"
+          >
+            <LogOut className="w-5 h-5" />
+            <span>تسجيل الخروج</span>
+          </button>
+        </div>
       </aside>
     </>
   );

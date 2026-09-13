@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { User, Save, Loader2, CheckCircle2 } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
+import { AccountDangerZone } from '@/components/AccountDangerZone';
 
 export function PatientProfile() {
   const { user } = useAuth();
@@ -144,6 +145,8 @@ export function PatientProfile() {
           </form>
         </CardContent>
       </Card>
+
+      <AccountDangerZone />
     </div>
   );
 }

@@ -13,7 +13,7 @@ import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
 import {
   Building, Calculator, Stethoscope, Activity, QrCode, Shield,
-  BarChart, FileText, Newspaper, List, FlaskConical, Wallet, Megaphone,
+  BarChart, FileText, Newspaper, List, FlaskConical, Wallet, Megaphone, User,
 } from 'lucide-react';
 import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
 import { QueueMediaManager } from './manager/QueueMediaManager';
@@ -31,6 +31,7 @@ import { LabTab } from './shared/LabTab';
 import { LabAccountsTab } from './manager/tabs/LabAccountsTab';
 import { AdditionalAccountsTab } from './manager/tabs/AdditionalAccountsTab';
 import { BroadcastNotificationsTab } from './manager/tabs/BroadcastNotificationsTab';
+import { AccountProfileTab } from './shared/AccountProfileTab';
 
 const managerNav: SidebarItem[] = [
   { name: 'لوحة القيادة', id: 'dashboard', icon: Activity },
@@ -45,6 +46,7 @@ const managerNav: SidebarItem[] = [
   { name: 'حسابات المعمل', id: 'lab_accounts', icon: FlaskConical },
   { name: 'الحسابات الإضافية', id: 'additional_accounts', icon: Wallet },
   { name: 'الإشعارات', id: 'notifications_broadcast', icon: Megaphone },
+  { name: 'الملف الشخصي', id: 'profile', icon: User },
   { name: 'الماليات والأرباح', id: 'financials', icon: Calculator },
   { name: 'الأخبار الطبية', id: 'medical_news', icon: Newspaper },
   { name: 'التقارير الشاملة', id: 'reports', icon: BarChart },
@@ -75,6 +77,7 @@ export function ManagerDashboard() {
           {activeTab === 'lab_accounts' && <LabAccountsTab />}
           {activeTab === 'additional_accounts' && <AdditionalAccountsTab />}
           {activeTab === 'notifications_broadcast' && <BroadcastNotificationsTab />}
+          {activeTab === 'profile' && <AccountProfileTab />}
           {activeTab === 'financials' && <FinancialsTab />}
           {activeTab === 'reports' && <ReportsTab />}
         </div>

@@ -7,6 +7,7 @@ import { User, Save, Loader2, CheckCircle2, CalendarDays } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { WEEK_DAYS, workingDaysLabel } from '@/lib/types';
+import { AccountDangerZone } from '@/components/AccountDangerZone';
 
 export function DoctorProfile() {
   const { user } = useAuth();
@@ -235,6 +236,8 @@ export function DoctorProfile() {
           </form>
         </CardContent>
       </Card>
+
+      <AccountDangerZone />
     </div>
   );
 }
