@@ -31,10 +31,6 @@ export function SecretaryPatients() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
 
-  useEffect(() => {
-    fetchPatients();
-  }, []);
-
   const fetchPatients = async () => {
     setLoadError(null);
     setLoading(true);
@@ -76,13 +72,15 @@ export function SecretaryPatients() {
     setLoading(false);
   };
 
+  useEffect(() => {
+    fetchPatients();
+  }, []);
+
   const filteredPatients = useMemo(() => patients.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     (p.patient_code && p.patient_code.toLowerCase().includes(search.toLowerCase())) ||
     (p.phone && p.phone.includes(search))
   ), [patients, search]);
-
-  useEffect(() => { setPage(0); }, [search]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPatients.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -112,7 +110,10 @@ export function SecretaryPatients() {
       <div className="mb-6 max-w-md">
         <SearchInput
           value={search}
-          onValueChange={setSearch}
+          onValueChange={(val) => {
+            setSearch(val);
+            setPage(0);
+          }}
           placeholder="بحث بالاسم، الكود، أو رقم الهاتف..."
         />
       </div>

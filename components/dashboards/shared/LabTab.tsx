@@ -95,12 +95,18 @@ export function LabTab() {
     setRecentLoading(false);
   }, []);
 
-  useEffect(() => { fetchRecent(); }, [fetchRecent]);
+  useEffect(() => {
+    const t = setTimeout(fetchRecent, 0);
+    return () => clearTimeout(t);
+  }, [fetchRecent]);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     const q = search.trim();
-    if (!q) { setResults([]); return; }
+    if (!q) {
+      if (results.length > 0) setTimeout(() => setResults([]), 0);
+      return;
+    }
     searchTimer.current = setTimeout(async () => {
       setSearching(true);
       const { data } = await supabase

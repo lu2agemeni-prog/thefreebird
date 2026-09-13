@@ -62,8 +62,13 @@ export function NewsImage({ url, alt, fill = false, width, height, sizes, classN
     return list;
   }, [url]);
 
+  const [prevUrl, setPrevUrl] = useState(url);
   const [idx, setIdx] = useState(0);
-  useEffect(() => { setIdx(0); }, [url]);
+
+  if (url !== prevUrl) {
+    setPrevUrl(url);
+    setIdx(0);
+  }
 
   // لا صورة أو فشل كل المرشحين → بديل أنيق
   if (!url || idx >= candidates.length) {
