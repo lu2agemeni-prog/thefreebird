@@ -9,6 +9,7 @@ import { AccountantDashboard } from '@/components/dashboards/AccountantDashboard
 import { HeartPulse, LogIn, Loader2, Calculator } from 'lucide-react';
 import { MedicalNewsViewer } from '@/components/MedicalNewsViewer';
 import { DeleteAccountModal } from '@/components/DeleteAccountModal';
+import { PushNotificationBanner } from '@/components/PushNotificationBanner';
 import { useState } from 'react';
 
 export default function HomePage() {
@@ -205,6 +206,7 @@ export default function HomePage() {
           </button>
         </div>
       </header>
+      <PushNotificationBanner />
       <main className="flex-1 flex overflow-hidden">
         {renderDashboard()}
       </main>
