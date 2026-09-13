@@ -162,6 +162,7 @@ export function BroadcastNotificationsTab() {
             {target === 'user' && (
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">اختر المستخدم</label>
+                <p className="text-xs text-gray-400 mb-2">ابحث بأي جزء من الاسم الأول أو الأخير أو رقم الهاتف — البحث يشمل كل المستخدمين (مرضى، أطباء، موظفين).</p>
                 {selectedUser ? (
                   <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl p-3">
                     <span className="font-bold text-gray-800">{selectedUser.name} <span className="text-xs text-gray-500">({getRoleLabel(selectedUser.role)})</span></span>
@@ -192,6 +193,9 @@ export function BroadcastNotificationsTab() {
                           </button>
                         ))}
                       </div>
+                    )}
+                    {userSearch.trim() && !searching && userResults.length === 0 && (
+                      <p className="text-sm text-gray-400 mt-2">لا يوجد مستخدم مطابق لهذا الاسم/الرقم.</p>
                     )}
                   </div>
                 )}
