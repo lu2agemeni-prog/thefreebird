@@ -3,11 +3,12 @@
 // ============================================================================
 // components/dashboards/manager/tabs/DoctorReportsPanel.tsx
 // "تقارير الأطباء" داخل التقارير الشاملة — يومي/أسبوعي/شهري، عدد الكشوفات
-// والمبلغ المحصّل من call_queue الفعلية، تسديد الحساب (مع إشعار تلقائي
-// للطبيب)، وطباعة.
+// والمبلغ المحصّل من call_queue الفعلية، تسديد الحساب (بنسبة % أو مبلغ
+// محدد — الطبيب مش بياخد المبلغ المحصّل كامل)، مع إشعار تلقائي للطبيب،
+// وطباعة.
 // ============================================================================
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Printer, CheckCircle2, Clock, Loader2, User } from 'lucide-react';
+import { Printer, CheckCircle2, Clock, Loader2, User, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { supabase } from '@/lib/supabase';
@@ -42,9 +43,84 @@ function getPeriodBounds(dateStr: string, type: PeriodType) {
 
 const PERIOD_LABELS: Record<PeriodType, string> = { daily: 'يومي', weekly: 'أسبوعي', monthly: 'شهري' };
 
+function SettlementModal({
+  totalAmount, checkupsCount, defaultPercent, onClose, onConfirm, saving, error,
+}: {
+  totalAmount: number;
+  checkupsCount: number;
+  defaultPercent: number;
+  onClose: () => void;
+  onConfirm: (payload: { sharePercent: number | null; doctorShareAmount: number }) => void;
+  saving: boolean;
+  error: string | null;
+}) {
+  const [mode, setMode] = useState<'percent' | 'fixed'>('percent');
+  const [percent, setPercent] = useState(String(defaultPercent));
+  const [fixedAmount, setFixedAmount] = useState(String(totalAmount));
+
+  const computedAmount = mode === 'percent'
+    ? Math.round((totalAmount * (Number(percent) || 0) / 100) * 100) / 100
+    : Number(fixedAmount) || 0;
+
+  const handleConfirm = () => {
+    onConfirm({
+      sharePercent: mode === 'percent' ? (Number(percent) || 0) : null,
+      doctorShareAmount: computedAmount,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir="rtl">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between p-5 border-b">
+          <h3 className="text-xl font-bold text-gray-800">تحديد مستحقات الطبيب</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-gray-500">
+            إجمالي المحصّل من المرضى: <span className="font-bold text-gray-800" dir="ltr">{totalAmount.toLocaleString()} ج.م</span> ({checkupsCount} كشف)
+          </p>
+
+          <div className="flex gap-2 bg-gray-100 rounded-lg p-1 w-fit">
+            <button onClick={() => setMode('percent')} className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${mode === 'percent' ? 'bg-white shadow text-emerald-700' : 'text-gray-500'}`}>نسبة %</button>
+            <button onClick={() => setMode('fixed')} className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${mode === 'fixed' ? 'bg-white shadow text-emerald-700' : 'text-gray-500'}`}>مبلغ محدد</button>
+          </div>
+
+          {mode === 'percent' ? (
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">نسبة الطبيب %</label>
+              <input type="number" min="0" max="100" step="0.01" value={percent} onChange={(e) => setPercent(e.target.value)} className="w-full border rounded-lg p-2.5" autoFocus />
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">المبلغ المحدد (ج.م)</label>
+              <input type="number" min="0" step="0.01" value={fixedAmount} onChange={(e) => setFixedAmount(e.target.value)} className="w-full border rounded-lg p-2.5" autoFocus />
+            </div>
+          )}
+
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+            <p className="text-xs text-emerald-700 mb-1">المبلغ المستحق للطبيب</p>
+            <p className="text-2xl font-black text-emerald-700" dir="ltr">{computedAmount.toLocaleString()} ج.م</p>
+          </div>
+
+          {error && <InlineError message={error} />}
+
+          <div className="flex gap-2">
+            <button onClick={handleConfirm} disabled={saving} className="flex-1 bg-emerald-600 text-white font-bold py-3 rounded-lg hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50">
+              {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+              تأكيد التسديد
+            </button>
+            <button onClick={onClose} disabled={saving} className="px-5 border border-gray-200 text-gray-600 font-bold rounded-lg hover:bg-gray-50">إلغاء</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DoctorReportsPanel() {
   const { user } = useAuth();
-  const [doctors, setDoctors] = useState<{ id: string; name: string }[]>([]);
+  const [doctors, setDoctors] = useState<{ id: string; name: string; defaultPercent: number }[]>([]);
   const [doctorId, setDoctorId] = useState('');
   const [periodType, setPeriodType] = useState<PeriodType>('daily');
   const [dateStr, setDateStr] = useState(() => toDateInputValue(new Date()));
@@ -53,6 +129,7 @@ export function DoctorReportsPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settlement, setSettlement] = useState<any | null>(null);
+  const [showModal, setShowModal] = useState(false);
   const [settling, setSettling] = useState(false);
   const [settleError, setSettleError] = useState<string | null>(null);
 
@@ -61,8 +138,12 @@ export function DoctorReportsPanel() {
   const endStr = toDateInputValue(end);
 
   useEffect(() => {
-    supabase.from('profiles').select('id, first_name, last_name').eq('role', 'doctor').then(({ data }) => {
-      const list = (data || []).map(d => ({ id: d.id, name: `د. ${d.first_name} ${d.last_name}` }));
+    supabase.from('profiles').select('id, first_name, last_name, doctor:doctors(default_share_percent)').eq('role', 'doctor').then(({ data }) => {
+      const list = (data || []).map((d: any) => ({
+        id: d.id,
+        name: `د. ${d.first_name} ${d.last_name}`,
+        defaultPercent: Number(d.doctor?.default_share_percent ?? 50),
+      }));
       setDoctors(list);
       if (list.length > 0) setDoctorId(prev => prev || list[0].id);
     });
@@ -99,9 +180,9 @@ export function DoctorReportsPanel() {
   useEffect(() => { fetchReport(); }, [fetchReport]);
 
   const totalAmount = checkups.reduce((sum, c) => sum + Number(c.paid_amount || 0), 0);
-  const doctorName = doctors.find(d => d.id === doctorId)?.name || '';
+  const currentDoctor = doctors.find(d => d.id === doctorId);
 
-  const handleSettle = async () => {
+  const handleConfirmSettle = async ({ sharePercent, doctorShareAmount }: { sharePercent: number | null; doctorShareAmount: number }) => {
     if (!doctorId) return;
     setSettling(true);
     setSettleError(null);
@@ -112,6 +193,8 @@ export function DoctorReportsPanel() {
       period_end: endStr,
       checkups_count: checkups.length,
       total_amount: totalAmount,
+      share_percent: sharePercent,
+      doctor_share_amount: doctorShareAmount,
       settled_by: user?.id || null,
     }]).select().single();
     setSettling(false);
@@ -120,6 +203,7 @@ export function DoctorReportsPanel() {
       return;
     }
     setSettlement(data);
+    setShowModal(false);
   };
 
   return (
@@ -154,27 +238,32 @@ export function DoctorReportsPanel() {
           <div className="flex flex-wrap items-start justify-between gap-4 mb-6 pb-4 border-b">
             <div>
               <div className="flex items-center gap-2 text-lg font-bold text-gray-900">
-                <User className="w-5 h-5 text-emerald-600" /> {doctorName}
+                <User className="w-5 h-5 text-emerald-600" /> {currentDoctor?.name}
               </div>
               <p className="text-sm text-gray-500 mt-1">
                 تقرير {PERIOD_LABELS[periodType]} — من {startStr} إلى {endStr}
               </p>
             </div>
             {loading ? null : settlement ? (
-              <span className="flex items-center gap-2 bg-emerald-100 text-emerald-700 font-bold px-4 py-2 rounded-full text-sm">
-                <CheckCircle2 className="w-4 h-4" /> تم التسديد بتاريخ {new Date(settlement.settled_at).toLocaleDateString('ar-EG')}
+              <span className="flex flex-col items-end gap-1">
+                <span className="flex items-center gap-2 bg-emerald-100 text-emerald-700 font-bold px-4 py-2 rounded-full text-sm">
+                  <CheckCircle2 className="w-4 h-4" /> تم التسديد بتاريخ {new Date(settlement.settled_at).toLocaleDateString('ar-EG')}
+                </span>
+                <span className="text-xs text-gray-500">
+                  المبلغ المدفوع: <b dir="ltr">{settlement.doctor_share_amount} ج.م</b>
+                  {settlement.share_percent !== null && ` (نسبة ${settlement.share_percent}%)`}
+                </span>
               </span>
             ) : (
               <div className="flex flex-col items-end gap-2 print:hidden">
                 <button
-                  onClick={handleSettle}
-                  disabled={settling || checkups.length === 0}
+                  onClick={() => setShowModal(true)}
+                  disabled={checkups.length === 0}
                   className="flex items-center gap-2 bg-amber-500 text-white font-bold px-4 py-2 rounded-full text-sm hover:bg-amber-600 disabled:opacity-50"
                 >
-                  {settling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
+                  <Clock className="w-4 h-4" />
                   تسديد الحساب
                 </button>
-                {settleError && <InlineError message={settleError} />}
               </div>
             )}
           </div>
@@ -185,7 +274,7 @@ export function DoctorReportsPanel() {
               <p className="text-2xl font-black text-gray-900">{checkups.length}</p>
             </div>
             <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-xs text-gray-500 mb-1">إجمالي المحصّل</p>
+              <p className="text-xs text-gray-500 mb-1">إجمالي المحصّل من المرضى</p>
               <p className="text-2xl font-black text-emerald-600" dir="ltr">{totalAmount.toLocaleString()} ج.م</p>
             </div>
           </div>
@@ -221,6 +310,18 @@ export function DoctorReportsPanel() {
           )}
         </CardContent>
       </Card>
+
+      {showModal && currentDoctor && (
+        <SettlementModal
+          totalAmount={totalAmount}
+          checkupsCount={checkups.length}
+          defaultPercent={currentDoctor.defaultPercent}
+          onClose={() => setShowModal(false)}
+          onConfirm={handleConfirmSettle}
+          saving={settling}
+          error={settleError}
+        />
+      )}
     </div>
   );
 }

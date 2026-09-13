@@ -12,10 +12,12 @@ import { Pagination } from '@/components/ui/pagination';
 import { SearchInput } from '@/components/ui/search-input';
 import { authFetchJson } from '@/lib/api-client';
 import { toTransactionType, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPE_COLORS } from '@/lib/types';
+import { ProfitReportPanel } from './ProfitReportPanel';
 
 const PAGE_SIZE = 10;
 
 export function FinancialsTab() {
+  const [view, setView] = useState<'list' | 'profit_report'>('list');
   const [transactions, setTransactions] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -43,6 +45,13 @@ export function FinancialsTab() {
   useEffect(() => { setPage(0); }, [search, typeFilter]);
 
   return (
+    <div className="space-y-6">
+      <div className="flex gap-2">
+        <button onClick={() => setView('list')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${view === 'list' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>سجل الحركات</button>
+        <button onClick={() => setView('profit_report')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${view === 'profit_report' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>تقرير الأرباح المفصّل</button>
+      </div>
+
+      {view === 'profit_report' ? <ProfitReportPanel /> : (
     <Card>
       <CardHeader>
         <CardTitle>الماليات والأرباح</CardTitle>
@@ -103,5 +112,7 @@ export function FinancialsTab() {
         {!loading && <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} isLoading={loading} />}
       </CardContent>
     </Card>
+      )}
+    </div>
   );
 }
