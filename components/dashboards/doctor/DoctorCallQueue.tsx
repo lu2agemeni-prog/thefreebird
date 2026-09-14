@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
-import { Activity, Volume2, Users, Loader2, Hash } from 'lucide-react';
+import { Activity, Volume2, Users, Loader2, Hash, Lock } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
@@ -14,6 +14,7 @@ export function DoctorCallQueue() {
   const [clinic, setClinic] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [doctorClinicId, setDoctorClinicId] = useState<string | null>(null);
+  const [isPresent, setIsPresent] = useState(false);
   const [clinicLoadError, setClinicLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [queueLoadError, setQueueLoadError] = useState<string | null>(null);
@@ -23,6 +24,16 @@ export function DoctorCallQueue() {
   useEffect(() => {
     if (user) {
       fetchDoctorClinic();
+      // متابعة تغيّر حالة "التواجد" فور ما السكرتارية تفعّلها/توقفها
+      const presenceChannel = supabase
+        .channel('doctor_presence_changes')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'doctors', filter: `profile_id=eq.${user.id}` }, () => {
+          fetchDoctorClinic();
+        })
+        .subscribe();
+      return () => {
+        supabase.removeChannel(presenceChannel);
+      };
     }
   }, [user]);
 
@@ -45,7 +56,7 @@ export function DoctorCallQueue() {
 
   const fetchDoctorClinic = async () => {
     setClinicLoadError(null);
-    const { data, error } = await supabase.from('doctors').select('clinic_id').eq('profile_id', user?.id).single();
+    const { data, error } = await supabase.from('doctors').select('clinic_id, is_present').eq('profile_id', user?.id).single();
     if (error) {
       // PGRST116: لم يُنشأ صف طبيب بعد — حالة طبيعية (غير مرتبط بعيادة)
       if (error.code === 'PGRST116') {
@@ -55,6 +66,7 @@ export function DoctorCallQueue() {
       }
     } else if (data) {
       setDoctorClinicId(data.clinic_id);
+      setIsPresent(!!data.is_present);
       const { data: clinicData } = await supabase.from('clinics').select('*').eq('id', data.clinic_id).single();
       if (clinicData) setClinic(clinicData);
     }
@@ -165,6 +177,26 @@ export function DoctorCallQueue() {
           <h2 className="text-3xl font-bold text-gray-800">النداء الآلي</h2>
         </div>
         <div className="p-8 text-center text-gray-500 font-bold bg-white rounded-xl border border-gray-200">أنت غير مسجل في أي عيادة حاليًا. يرجى مراجعة الإدارة لربط حسابك بعيادة.</div>
+      </div>
+    );
+  }
+
+  if (!isPresent) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3 mb-6">
+          <Activity className="w-8 h-8 text-emerald-600" />
+          <h2 className="text-3xl font-bold text-gray-800">النداء الآلي</h2>
+        </div>
+        <div className="p-10 text-center bg-white rounded-2xl border border-amber-200 flex flex-col items-center gap-4">
+          <div className="p-4 bg-amber-100 text-amber-600 rounded-full">
+            <Lock className="w-8 h-8" />
+          </div>
+          <p className="text-xl font-bold text-gray-800">النداء الآلي غير مفعّل حاليًا</p>
+          <p className="text-gray-500 max-w-md">
+            لتفعيل النداء يجب التواجد بالمركز والتفعيل من خلال السكرتارية — بمجرد ما تسجّل السكرتارية حضورك، هتقدر تستخدم شاشة النداء فورًا.
+          </p>
+        </div>
       </div>
     );
   }

@@ -1,18 +1,26 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
-import { MessageSquare, CheckCircle2, Clock, Send, Loader2 } from 'lucide-react';
+import { MessageSquare, CheckCircle2, Clock, Send, Loader2, Calendar } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
+import { Pagination } from '@/components/ui/pagination';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { toConsultationStatus, CONSULTATION_STATUS_LABELS, CONSULTATION_STATUS_COLORS } from '@/lib/types';
+
+const PAGE_SIZE = 10;
 
 export function DoctorConsultations() {
   const { user } = useAuth();
   const [consultations, setConsultations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [statusFilter, setStatusFilter] = useState<'all' | 'answered' | 'pending'>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [page, setPage] = useState(0);
 
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyMessage, setReplyMessage] = useState('');
@@ -67,6 +75,24 @@ export function DoctorConsultations() {
     }
   };
 
+  const filteredConsultations = useMemo(() => {
+    return consultations.filter(c => {
+      const cStatus = toConsultationStatus(c.status);
+      if (statusFilter === 'answered' && cStatus !== 'answered') return false;
+      if (statusFilter === 'pending' && cStatus === 'answered') return false;
+      const dateStr = new Date(c.created_at).toISOString().slice(0, 10);
+      if (dateFrom && dateStr < dateFrom) return false;
+      if (dateTo && dateStr > dateTo) return false;
+      return true;
+    });
+  }, [consultations, statusFilter, dateFrom, dateTo]);
+
+  useEffect(() => { setPage(0); }, [statusFilter, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredConsultations.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageItems = filteredConsultations.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3 mb-6">
@@ -74,18 +100,36 @@ export function DoctorConsultations() {
         <h2 className="text-3xl font-bold text-gray-800">استشارات المرضى</h2>
       </div>
 
+      <Card>
+        <CardContent className="p-4 flex flex-col md:flex-row items-stretch md:items-center gap-3">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="border rounded-lg p-2.5 text-sm bg-white">
+            <option value="all">كل الحالات</option>
+            <option value="answered">تم الرد عليها</option>
+            <option value="pending">لم يتم الرد بعد</option>
+          </select>
+          <div className="flex items-center gap-2 text-gray-500 text-sm font-bold">
+            <Calendar className="w-4 h-4" /> من
+          </div>
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border rounded-lg p-2 text-sm" />
+          <span className="text-gray-400 text-sm">إلى</span>
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border rounded-lg p-2 text-sm" />
+        </CardContent>
+      </Card>
+
       <div className="space-y-4">
         {loading ? (
           <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>
         ) : loadError ? (
           <ErrorState message={loadError} onRetry={fetchConsultations} />
-        ) : consultations.length === 0 ? (
+        ) : filteredConsultations.length === 0 ? (
           <div className="bg-white rounded-xl p-12 text-center flex flex-col items-center border border-gray-100">
             <MessageSquare className="w-16 h-16 text-gray-300 mb-4" />
-            <p className="text-xl text-gray-500 font-bold mb-2">لا توجد استشارات موجهة إليك حالياً.</p>
+            <p className="text-xl text-gray-500 font-bold mb-2">
+              {consultations.length === 0 ? 'لا توجد استشارات موجهة إليك حالياً.' : 'لا توجد استشارات مطابقة للفلتر المحدد.'}
+            </p>
           </div>
         ) : (
-          consultations.map(c => {
+          pageItems.map(c => {
             const cStatus = toConsultationStatus(c.status);
             return (
               <Card key={c.id} className="overflow-hidden">
@@ -169,6 +213,9 @@ export function DoctorConsultations() {
           })
         )}
       </div>
+      {!loading && filteredConsultations.length > 0 && (
+        <Pagination page={safePage} pageSize={PAGE_SIZE} total={filteredConsultations.length} onPageChange={setPage} />
+      )}
     </div>
   );
 }
