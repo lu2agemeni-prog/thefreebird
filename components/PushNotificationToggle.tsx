@@ -16,13 +16,14 @@ export function PushNotificationToggle() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!isPushSupported()) { setStatus('unsupported'); return; }
+    if (!isPushSupported()) { setTimeout(() => setStatus('unsupported'), 0); return; }
     getPushSubscriptionStatus().then(setStatus);
   }, []);
 
   if (status === 'loading' || status === 'unsupported' || !user) return null;
 
-  const handleClick = async () => {
+  async function handleClick() {
+    if (!user) return;
     setBusy(true);
     if (status === 'subscribed') {
       await disablePushNotifications();

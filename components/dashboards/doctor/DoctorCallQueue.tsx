@@ -54,7 +54,7 @@ export function DoctorCallQueue() {
     }
   }, [doctorClinicId]);
 
-  const fetchDoctorClinic = async () => {
+  async function fetchDoctorClinic() {
     setClinicLoadError(null);
     const { data, error } = await supabase.from('doctors').select('clinic_id, is_present').eq('profile_id', user?.id).single();
     if (error) {
@@ -73,7 +73,7 @@ export function DoctorCallQueue() {
     setLoading(false);
   };
 
-  const fetchQueue = async () => {
+  async function fetchQueue() {
     setQueueLoadError(null);
     const { data, error } = await supabase
       .from('call_queue')
@@ -126,7 +126,7 @@ export function DoctorCallQueue() {
     updateStatus(id, 'completed');
   };
 
-  const handleCallNext = async () => {
+  async function handleCallNext() {
     if (!doctorClinicId) return;
     setCallInProgress(true);
     setActionError(null);
@@ -144,7 +144,7 @@ export function DoctorCallQueue() {
     if (clinic) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
   };
 
-  const handleCallPrevious = async () => {
+  async function handleCallPrevious() {
     if (!doctorClinicId) return;
     setCallInProgress(true);
     setActionError(null);

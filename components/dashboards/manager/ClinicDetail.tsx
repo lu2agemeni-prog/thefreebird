@@ -72,10 +72,10 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [reportSearch, setReportSearch] = useState('');
   const [reportPage, setReportPage] = useState(0);
-  useEffect(() => { setReportPage(0); }, [reportSearch]);
+  useEffect(() => { const t = setTimeout(() => setReportPage(0), 0); return () => clearTimeout(t); }, [reportSearch]);
 
   // ---- تحميل أطباء العيادة (الجدول الجديد + fallback للعمود القديم) ----
-  const fetchDoctors = async () => {
+  async function fetchDoctors() {
     setDoctorsLoading(true);
     setDoctorsError(null);
     const map = new Map<string, ClinicDoctor>();
@@ -139,10 +139,10 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
     }
   };
 
-  useEffect(() => { fetchDoctors(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [clinic.id]);
+  useEffect(() => { setTimeout(fetchDoctors, 0);   }, [clinic.id]);
 
   // ---- تحميل تقارير العيادة ----
-  const fetchReports = async () => {
+  async function fetchReports() {
     setReportsLoading(true);
     setReportsError(null);
     try {
@@ -176,7 +176,7 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
     }
   };
 
-  useEffect(() => { fetchReports(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [clinic.id]);
+  useEffect(() => { setTimeout(fetchReports, 0);   }, [clinic.id]);
 
   // ---- حفظ تعديل بيانات العيادة ----
   const handleSaveClinic = async (e: React.FormEvent) => {

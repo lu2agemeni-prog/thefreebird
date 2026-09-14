@@ -51,8 +51,8 @@ export function StaffManagementTab() {
     setLoading(false);
   }, [page, search]);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
-  useEffect(() => { setPage(0); }, [search]);
+  useEffect(() => { const t = setTimeout(fetchUsers, 0); return () => clearTimeout(t); }, [fetchUsers]);
+  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [search]);
 
   const handleRoleChange = async (userId: string, newRole: string) => {
     const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);

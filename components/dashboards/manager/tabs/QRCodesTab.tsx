@@ -105,7 +105,7 @@ export function QRCodesTab() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchCustomCodes(); }, [fetchCustomCodes]);
+  useEffect(() => { const t = setTimeout(fetchCustomCodes, 0); return () => clearTimeout(t); }, [fetchCustomCodes]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();

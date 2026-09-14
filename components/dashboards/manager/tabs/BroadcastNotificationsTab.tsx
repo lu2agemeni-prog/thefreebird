@@ -70,12 +70,12 @@ export function BroadcastNotificationsTab() {
     setHistoryLoading(false);
   }, []);
 
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+  useEffect(() => { const t = setTimeout(fetchHistory, 0); return () => clearTimeout(t); }, [fetchHistory]);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     const q = userSearch.trim();
-    if (!q) { setUserResults([]); return; }
+    if (!q) { setTimeout(() => setUserResults([]), 0); return; }
     searchTimer.current = setTimeout(async () => {
       setSearching(true);
       const { data } = await supabase
@@ -185,7 +185,7 @@ export function BroadcastNotificationsTab() {
                           <button
                             key={u.id}
                             type="button"
-                            onClick={() => { setSelectedUser(u); setUserResults([]); }}
+                            onClick={() => { setSelectedUser(u); setTimeout(() => setUserResults([]), 0); }}
                             className="w-full text-right p-3 hover:bg-emerald-50 transition-colors flex items-center justify-between"
                           >
                             <span className="font-bold text-gray-800">{u.name}</span>

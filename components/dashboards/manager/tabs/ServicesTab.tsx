@@ -47,7 +47,7 @@ export function ServicesTab() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchClinics(); fetchServices(); }, [fetchClinics, fetchServices]);
+  useEffect(() => { const t1 = setTimeout(fetchClinics, 0); const t2 = setTimeout(fetchServices, 0); return () => { clearTimeout(t1); clearTimeout(t2); }; }, [fetchClinics, fetchServices]);
 
   const handleCreateService = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -41,27 +41,41 @@ export function SecretaryCallQueue() {
   const [presenceBusy, setPresenceBusy] = useState<string | null>(null);
   const [mediaIndex, setMediaIndex] = useState(0);
 
-  useEffect(() => {
-    fetchAll();
-    const channel = supabase
-      .channel('secretary_queue_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue' }, () => fetchQueueOnly())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctors' }, () => fetchDoctorsOnly())
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+  const fetchDoctorsOnly = useCallback(async () => {
+    const { data } = await supabase
+      .from('doctors')
+      .select('profile_id, clinic_id, specialty, is_present, profiles(first_name, last_name)');
+    if (data) setDoctors(data);
   }, []);
 
-  // دوران بسيط للوسائط كل 8 ثواني للصور (الفيديو بيكمل لوحده)
-  useEffect(() => {
-    if (media.length < 2) return;
-    const timer = setInterval(() => setMediaIndex(i => (i + 1) % media.length), 8000);
-    return () => clearInterval(timer);
-  }, [media.length]);
+  const fetchCompletedToday = useCallback(async () => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const { data } = await supabase
+      .from('call_queue')
+      .select('*, clinic:clinic_id(name)')
+      .eq('status', 'completed')
+      .gte('created_at', todayStart.toISOString())
+      .order('updated_at', { ascending: false })
+      .limit(100);
+    if (data) setCompletedToday(data);
+  }, []);
 
-  const fetchAll = async () => {
+  const fetchQueueOnly = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('call_queue')
+      .select('*, clinic:clinic_id(name, audio_number), service:service_id(name, price), assigned_doctor:doctor_id(first_name, last_name)')
+      .in('status', ['waiting', 'calling'])
+      .order('token_number', { ascending: true });
+    if (error) {
+      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل حالة النداء الآلي.'));
+    } else if (data) {
+      setQueues(data);
+    }
+    fetchCompletedToday();
+  }, [fetchCompletedToday]);
+
+  const fetchAll = useCallback(async () => {
     setLoadError(null);
     setLoading(true);
     // امسح أي حضور من يوم سابق قبل ما نعرض القائمة
@@ -86,41 +100,30 @@ export function SecretaryCallQueue() {
 
     await fetchQueueOnly();
     setLoading(false);
-  };
+  }, [selectedClinicId, fetchQueueOnly]);
 
-  const fetchQueueOnly = async () => {
-    const { data, error } = await supabase
-      .from('call_queue')
-      .select('*, clinic:clinic_id(name, audio_number), service:service_id(name, price), assigned_doctor:doctor_id(first_name, last_name)')
-      .in('status', ['waiting', 'calling'])
-      .order('token_number', { ascending: true });
-    if (error) {
-      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل حالة النداء الآلي.'));
-    } else if (data) {
-      setQueues(data);
-    }
-    fetchCompletedToday();
-  };
+  useEffect(() => {
+    const t = setTimeout(() => {
+      fetchAll();
+    }, 0);
+    const channel = supabase
+      .channel('secretary_queue_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue' }, () => fetchQueueOnly())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctors' }, () => fetchDoctorsOnly())
+      .subscribe();
 
-  const fetchCompletedToday = async () => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const { data } = await supabase
-      .from('call_queue')
-      .select('*, clinic:clinic_id(name)')
-      .eq('status', 'completed')
-      .gte('created_at', todayStart.toISOString())
-      .order('updated_at', { ascending: false })
-      .limit(100);
-    if (data) setCompletedToday(data);
-  };
+    return () => {
+      clearTimeout(t);
+      supabase.removeChannel(channel);
+    };
+  }, [fetchAll, fetchQueueOnly, fetchDoctorsOnly]);
 
-  const fetchDoctorsOnly = async () => {
-    const { data } = await supabase
-      .from('doctors')
-      .select('profile_id, clinic_id, specialty, is_present, profiles(first_name, last_name)');
-    if (data) setDoctors(data);
-  };
+  // دوران بسيط للوسائط كل 8 ثواني للصور (الفيديو بيكمل لوحده)
+  useEffect(() => {
+    if (media.length < 2) return;
+    const timer = setInterval(() => setMediaIndex(i => (i + 1) % media.length), 8000);
+    return () => clearInterval(timer);
+  }, [media.length]);
 
   const selectedClinic = clinics.find(c => c.id === selectedClinicId);
   const clinicQueue = queues.filter(q => q.clinic_id === selectedClinicId);
@@ -135,9 +138,9 @@ export function SecretaryCallQueue() {
     } catch {
       // النداء المرئي على الشاشة يفضل شغال حتى لو الصوت فشل
     }
-  }, [selectedClinic]);
+  }, [selectedClinic, fetchQueueOnly]);
 
-  const handleCallNext = async () => {
+  async function handleCallNext() {
     if (!selectedClinicId) return;
     setCalling(true);
     setActionError(null);
@@ -154,7 +157,7 @@ export function SecretaryCallQueue() {
     announceAndRefresh(data);
   };
 
-  const handleCallPrevious = async () => {
+  async function handleCallPrevious() {
     if (!selectedClinicId) return;
     setCalling(true);
     setActionError(null);

@@ -100,7 +100,7 @@ export function BulkPatientImportModal({ onClose, onImported }: BulkPatientImpor
     }
   };
 
-  const handleSubmit = async () => {
+  async function handleSubmit() {
     if (rows.length === 0) return;
     setSubmitting(true);
     setSubmitError(null);

@@ -24,10 +24,10 @@ export function PatientMedicalRecords() {
   const [height, setHeight] = useState('');
 
   useEffect(() => {
-    if (user) fetchRecord();
+    if (user) setTimeout(fetchRecord, 0);
   }, [user]);
 
-  const fetchRecord = async () => {
+  async function fetchRecord() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase
@@ -90,7 +90,7 @@ export function PatientMedicalRecords() {
     setSaving(false);
     if (!error) {
       setSuccessMsg('تم تحديث بياناتك الطبية بنجاح.');
-      fetchRecord();
+      setTimeout(fetchRecord, 0);
     } else {
       setSaveError(getFriendlyErrorMessage(error, 'حدث خطأ أثناء الحفظ. برجاء المحاولة مرة أخرى.'));
     }

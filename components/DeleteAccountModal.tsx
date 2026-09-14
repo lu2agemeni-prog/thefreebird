@@ -37,7 +37,7 @@ export function DeleteAccountModal({ onClose }: { onClose: () => void }) {
 
   const canConfirm = confirmText.trim() === CONFIRM_PHRASE;
 
-  const handleDelete = async () => {
+  async function handleDelete() {
     if (!canConfirm) return;
     setDeleting(true);
     setError(null);

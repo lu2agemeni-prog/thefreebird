@@ -17,14 +17,14 @@ export function PushNotificationBanner() {
   const [enabling, setEnabling] = useState(false);
 
   useEffect(() => {
-    if (!isPushSupported()) { setStatus('unsupported'); return; }
+    if (!isPushSupported()) { setTimeout(() => setStatus('unsupported'), 0); return; }
     getPushSubscriptionStatus().then(setStatus);
   }, []);
 
   const shouldShow = user && !dismissed && (status === 'default' || status === 'granted');
   if (!shouldShow) return null;
 
-  const handleEnable = async () => {
+  async function handleEnable() {
     if (!user) return;
     setEnabling(true);
     const res = await enablePushNotifications(user.id);

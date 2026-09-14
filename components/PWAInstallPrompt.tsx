@@ -12,12 +12,12 @@ export const PWAInstallPrompt: React.FC = () => {
     // Optional: check if user previously dismissed it
     const dismissed = localStorage.getItem('pwa-prompt-dismissed');
     if (dismissed) {
-      setIsDismissed(true);
+      setTimeout(() => setIsDismissed(true), 0);
     }
   }, []);
 
   const handleDismiss = () => {
-    setIsDismissed(true);
+    setTimeout(() => setIsDismissed(true), 0);
     localStorage.setItem('pwa-prompt-dismissed', 'true');
   };
 
@@ -95,7 +95,7 @@ export const PWAInstallPrompt: React.FC = () => {
                 </p>
                 <p className="flex items-start gap-2">
                   <span className="bg-emerald-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">2</span>
-                  <span>اسحب للأسفل واضغط على <strong>"إضافة للشاشة الرئيسية" (Add to Home Screen)</strong>.</span>
+                  <span>اسحب للأسفل واضغط على <strong>&quot;إضافة للشاشة الرئيسية&quot; (Add to Home Screen)</strong>.</span>
                 </p>
               </div>
               <button

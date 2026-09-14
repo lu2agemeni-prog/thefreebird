@@ -39,8 +39,8 @@ export function ClinicsTab() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchClinics(); }, [fetchClinics]);
-  useEffect(() => { setPage(0); }, [search]);
+  useEffect(() => { const t = setTimeout(fetchClinics, 0); return () => clearTimeout(t); }, [fetchClinics]);
+  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [search]);
 
   const filteredClinics = useMemo(() => {
     const q = search.trim().toLowerCase();

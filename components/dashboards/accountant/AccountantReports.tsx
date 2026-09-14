@@ -33,24 +33,23 @@ export function AccountantReports() {
   const [dateTo, setDateTo] = useState(() => toDateInputValue(new Date()));
 
   useEffect(() => {
-    fetchTransactions();
+    setTimeout(fetchTransactions, 0);
 
     // تحديث Realtime — كانت التقارير المالية بتتحدث يدويًا فقط رغم إن
     // التطبيق بيستخدم Realtime في 5 ملفات تانية لطابور النداء
     const channel = supabase
       .channel('accountant_reports_transactions')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
-        fetchTransactions();
+        setTimeout(fetchTransactions, 0);
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    }, []);
 
-  const fetchTransactions = async () => {
+  async function fetchTransactions() {
     setLoading(true);
     // ملحوظة: كان الاستعلام القديم user:user_id(profiles(first_name, last_name))
     // خطأ — transactions.user_id بيشاور مباشرة على profiles.id، مفيش جدول

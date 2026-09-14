@@ -11,11 +11,9 @@ export function AccountantOverview() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [stats, setStats] = useState({ income: 0, expense: 0, net: 0 });
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
+  useEffect(() => { const t = setTimeout(fetchStats, 0); return () => clearTimeout(t); }, []);
 
-  const fetchStats = async () => {
+  async function fetchStats() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase.from('transactions').select('amount, type');

@@ -42,7 +42,7 @@ export function NotificationBell() {
 
   // Dynamic check for upcoming appointments (Patient only)
   useEffect(() => {
-    const checkUpcomingAppointments = async () => {
+    async function checkUpcomingAppointments() {
       if (user?.role === 'patient') {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
@@ -97,7 +97,7 @@ export function NotificationBell() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const fetchNotifications = async () => {
+  async function fetchNotifications() {
     setLoading(true);
     const { data, error } = await supabase
       .from('notifications')
@@ -139,7 +139,7 @@ export function NotificationBell() {
     }
   };
 
-  const markAllAsRead = async () => {
+  async function markAllAsRead() {
     const dbIds = notifications.filter(n => !n.is_read && !n.id.startsWith('upcoming-')).map(n => n.id);
     if (dbIds.length > 0) {
       await supabase.from('notifications').update({ is_read: true }).in('id', dbIds);

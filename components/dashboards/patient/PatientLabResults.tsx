@@ -60,7 +60,7 @@ export function PatientLabResults() {
     setLoading(false);
   }, [user]);
 
-  useEffect(() => { fetchResults(); }, [fetchResults]);
+  useEffect(() => { const t = setTimeout(fetchResults, 0); return () => clearTimeout(t); }, [fetchResults]);
 
   return (
     <div className="space-y-6">

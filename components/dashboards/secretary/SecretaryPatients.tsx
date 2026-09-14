@@ -31,7 +31,7 @@ export function SecretaryPatients() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
 
-  const fetchPatients = async () => {
+  async function fetchPatients() {
     setLoadError(null);
     setLoading(true);
 
@@ -73,7 +73,8 @@ export function SecretaryPatients() {
   };
 
   useEffect(() => {
-    fetchPatients();
+    const t = setTimeout(fetchPatients, 0);
+    return () => clearTimeout(t);
   }, []);
 
   const filteredPatients = useMemo(() => patients.filter(p =>

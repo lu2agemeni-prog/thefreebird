@@ -42,7 +42,7 @@ export function PatientMedicalNews() {
     setLoading(false);
   }, [page]);
 
-  useEffect(() => { fetchNews(); }, [fetchNews]);
+  useEffect(() => { const t = setTimeout(fetchNews, 0); return () => clearTimeout(t); }, [fetchNews]);
 
   return (
     <div className="space-y-6">

@@ -49,7 +49,7 @@ export function MedicalNewsTab() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchDoctors(); fetchNews(); }, [fetchDoctors, fetchNews]);
+  useEffect(() => { const t1 = setTimeout(fetchDoctors, 0); const t2 = setTimeout(fetchNews, 0); return () => { clearTimeout(t1); clearTimeout(t2); }; }, [fetchDoctors, fetchNews]);
 
   const uploadNewsImage = async (file: File, onDone: (url: string) => void) => {
     setUploadingImage(true);

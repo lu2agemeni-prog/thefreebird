@@ -34,7 +34,7 @@ export function DoctorConsultations() {
     }
   }, [user]);
 
-  const fetchConsultations = async () => {
+  async function fetchConsultations() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase
@@ -87,7 +87,7 @@ export function DoctorConsultations() {
     });
   }, [consultations, statusFilter, dateFrom, dateTo]);
 
-  useEffect(() => { setPage(0); }, [statusFilter, dateFrom, dateTo]);
+  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [statusFilter, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(filteredConsultations.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);

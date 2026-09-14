@@ -26,14 +26,14 @@ export function DoctorProfile() {
 
   useEffect(() => {
     if (user) {
-      setFirstName(user.first_name || '');
-      setLastName(user.last_name || '');
-      setPhone(user.phone || '');
+      setTimeout(() => setFirstName(user.first_name || ''), 0);
+      setTimeout(() => setLastName(user.last_name || ''), 0);
+      setTimeout(() => setPhone(user.phone || ''), 0);
       fetchDoctorDetails();
     }
   }, [user]);
 
-  const fetchDoctorDetails = async () => {
+  async function fetchDoctorDetails() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase.from('doctors').select('*').eq('profile_id', user?.id).single();

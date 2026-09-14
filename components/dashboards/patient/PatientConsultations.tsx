@@ -30,7 +30,7 @@ export function PatientConsultations() {
     }
   }, [user]);
 
-  const fetchConsultations = async () => {
+  async function fetchConsultations() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase
@@ -47,7 +47,7 @@ export function PatientConsultations() {
     setLoading(false);
   };
 
-  const fetchDoctors = async () => {
+  async function fetchDoctors() {
     setDoctorsError(null);
     const { data, error } = await supabase
       .from('doctors')

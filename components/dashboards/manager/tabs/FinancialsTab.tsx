@@ -41,8 +41,8 @@ export function FinancialsTab() {
     setLoading(false);
   }, [page, search, typeFilter]);
 
-  useEffect(() => { fetchTransactions(); }, [fetchTransactions]);
-  useEffect(() => { setPage(0); }, [search, typeFilter]);
+  useEffect(() => { const t = setTimeout(fetchTransactions, 0); return () => clearTimeout(t); }, [fetchTransactions]);
+  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [search, typeFilter]);
 
   return (
     <div className="space-y-6">

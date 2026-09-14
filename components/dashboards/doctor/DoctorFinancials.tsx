@@ -62,8 +62,8 @@ export function DoctorFinancials() {
     setLoading(false);
   }, [user, dateFrom, dateTo]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => { setPage(0); }, [statusFilter, dateFrom, dateTo]);
+  useEffect(() => { const t = setTimeout(fetchData, 0); return () => clearTimeout(t); }, [fetchData]);
+  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [statusFilter, dateFrom, dateTo]);
 
   const isDateSettled = useMemo(() => {
     return (dateStr: string) => settlements.some(s => dateStr >= s.period_start && dateStr <= s.period_end);

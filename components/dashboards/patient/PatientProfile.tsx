@@ -26,7 +26,7 @@ export function PatientProfile() {
     fetchProfile();
   }, [user]);
 
-  const fetchProfile = async () => {
+  async function fetchProfile() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase

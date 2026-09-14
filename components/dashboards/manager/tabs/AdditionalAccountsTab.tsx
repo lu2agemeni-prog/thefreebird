@@ -103,7 +103,7 @@ function ExpenseGroupPanel({ group }: { group: GroupConfig }) {
   }, [group.key]);
 
   useEffect(() => {
-    fetchRows();
+    setTimeout(fetchRows, 0);
     if (group.needsClinic) {
       supabase.from('clinics').select('id, name').then(({ data }) => setClinics(data || []));
     }
@@ -173,7 +173,7 @@ function ExpenseGroupPanel({ group }: { group: GroupConfig }) {
     }
     setShowForm(false);
     resetForm();
-    fetchRows();
+    setTimeout(fetchRows, 0);
   };
 
   const handleDelete = async (id: string) => {

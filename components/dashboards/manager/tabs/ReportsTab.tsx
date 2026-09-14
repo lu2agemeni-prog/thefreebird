@@ -93,13 +93,13 @@ export function ReportsTab() {
   }, []);
 
   useEffect(() => {
-    if (reportTab === 'clinics') fetchAppointments();
-    if (reportTab === 'financials') fetchTransactions();
-    if (reportTab === 'complaints') fetchComplaints();
-    if (reportTab === 'consultations') fetchConsultations();
+    if (reportTab === 'clinics') { const t = setTimeout(fetchAppointments, 0); }
+    if (reportTab === 'financials') { const t = setTimeout(fetchTransactions, 0); }
+    if (reportTab === 'complaints') { const t = setTimeout(fetchComplaints, 0); }
+    if (reportTab === 'consultations') { const t = setTimeout(fetchConsultations, 0); }
   }, [reportTab, fetchAppointments, fetchTransactions, fetchComplaints, fetchConsultations]);
 
-  useEffect(() => { setPage(0); }, [search, reportTab]);
+  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [search, reportTab]);
 
   const filteredAppointments = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -159,7 +159,7 @@ export function ReportsTab() {
     setReplyError(null);
   };
 
-  const submitReply = async () => {
+  async function submitReply() {
     if (!replyComplaintId) return;
     if (!replyText.trim() || replyText.trim().length < 5) {
       setReplyError('يرجى كتابة رد لا يقل عن 5 أحرف.');

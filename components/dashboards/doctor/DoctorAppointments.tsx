@@ -32,7 +32,7 @@ export function DoctorAppointments() {
     }
   }, [user]);
 
-  const fetchAppointments = async () => {
+  async function fetchAppointments() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase

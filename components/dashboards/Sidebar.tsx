@@ -23,7 +23,7 @@ export function Sidebar({ items, activeItem, setActiveItem }: SidebarProps) {
   const [copied, setCopied] = useState(false);
   const { logout } = useAuth();
 
-  const handleShare = async () => {
+  async function handleShare() {
     const shareData = {
       title: 'الطائر الحر',
       text: 'تطبيق عيادات الطائر الحر',

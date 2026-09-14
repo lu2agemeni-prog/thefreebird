@@ -27,10 +27,11 @@ export function SecretaryAppointments() {
   const [statusError, setStatusError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAppointments();
+    const t = setTimeout(fetchAppointments, 0);
+    return () => clearTimeout(t);
   }, []);
 
-  const fetchAppointments = async () => {
+  async function fetchAppointments() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase
@@ -81,7 +82,7 @@ export function SecretaryAppointments() {
   }, [appointments, search]);
 
   // إعادة الصفحة للبداية عند تغيير البحث
-  useEffect(() => { setPage(0); }, [search]);
+  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [search]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);

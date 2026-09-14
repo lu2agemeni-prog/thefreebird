@@ -31,16 +31,14 @@ export function DoctorPrescriptions() {
   const [savedToast, setSavedToast] = useState<'created' | 'edited' | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchPrescriptions();
-  }, []);
+  useEffect(() => { const t = setTimeout(fetchPrescriptions, 0); return () => clearTimeout(t); }, []);
 
   // بحث فوري من السيرفر (بعد توقف الكتابة لـ 300ms) بدل تحميل كل المرضى دفعة واحدة
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     const q = search.trim();
     if (!q) {
-      setSearchResults([]);
+      setTimeout(() => setSearchResults([]), 0);
       return;
     }
     searchTimer.current = setTimeout(async () => {
@@ -57,7 +55,7 @@ export function DoctorPrescriptions() {
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [search]);
 
-  const fetchPrescriptions = async () => {
+  async function fetchPrescriptions() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase

@@ -49,7 +49,7 @@ function PricingSettings() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchCatalog(); }, [fetchCatalog]);
+  useEffect(() => { const t = setTimeout(fetchCatalog, 0); return () => clearTimeout(t); }, [fetchCatalog]);
 
   const handleSave = async (id: string) => {
     const row = editing[id];
@@ -150,7 +150,7 @@ function LabReport() {
     setLoading(false);
   }, [dateFrom, dateTo]);
 
-  useEffect(() => { fetchReport(); }, [fetchReport]);
+  useEffect(() => { const t = setTimeout(fetchReport, 0); return () => clearTimeout(t); }, [fetchReport]);
 
   const totals = useMemo(() => rows.reduce((acc, r) => ({
     price: acc.price + Number(r.price || 0),

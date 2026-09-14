@@ -90,12 +90,12 @@ export function DoctorDetail({ doctor, clinics, onBack, onChanged }: {
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [reportSearch, setReportSearch] = useState('');
   const [reportPage, setReportPage] = useState(0);
-  useEffect(() => { setReportPage(0); }, [reportSearch, reportTab]);
+  useEffect(() => { const t = setTimeout(() => setReportPage(0), 0); return () => clearTimeout(t); }, [reportSearch, reportTab]);
 
   const doctorName = `د. ${doctor.first_name} ${doctor.last_name}`;
 
   // ---- تحميل العيادات المسندة (doctor_clinics + fallback للعمود القديم) ----
-  const fetchAssignments = async () => {
+  async function fetchAssignments() {
     setAssignmentsLoading(true);
     setAssignmentsError(null);
     const ids = new Set<string>();
@@ -119,10 +119,10 @@ export function DoctorDetail({ doctor, clinics, onBack, onChanged }: {
     setAssignmentsLoading(false);
   };
 
-  useEffect(() => { fetchAssignments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [doctor.id]);
+  useEffect(() => { setTimeout(fetchAssignments, 0);   }, [doctor.id]);
 
   // ---- تحميل التقارير ----
-  const fetchReports = async () => {
+  async function fetchReports() {
     setReportsLoading(true);
     setReportsError(null);
     try {
@@ -149,7 +149,7 @@ export function DoctorDetail({ doctor, clinics, onBack, onChanged }: {
     }
   };
 
-  useEffect(() => { fetchReports(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [doctor.id]);
+  useEffect(() => { setTimeout(fetchReports, 0);   }, [doctor.id]);
 
   // ---- حفظ تعديلات الملف ----
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -202,7 +202,7 @@ export function DoctorDetail({ doctor, clinics, onBack, onChanged }: {
   };
 
   // ---- حفظ العيادات المسندة (سحب ثم إدراج) ----
-  const handleSaveClinics = async () => {
+  async function handleSaveClinics() {
     setSavingClinics(true);
     setClinicsError(null);
     setClinicsOk(null);
@@ -228,7 +228,7 @@ export function DoctorDetail({ doctor, clinics, onBack, onChanged }: {
 
       setClinicsOk(`تم حفظ العيادات (${assignedClinicIds.length}).`);
       onChanged();
-      fetchAssignments();
+      setTimeout(fetchAssignments, 0);
     } catch (err) {
       setClinicsError(getFriendlyErrorMessage(err, 'تعذر حفظ عيادات الطبيب.'));
     } finally {

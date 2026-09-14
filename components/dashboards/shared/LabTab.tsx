@@ -104,7 +104,7 @@ export function LabTab() {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     const q = search.trim();
     if (!q) {
-      if (results.length > 0) setTimeout(() => setResults([]), 0);
+      setTimeout(() => setResults(prev => prev.length > 0 ? [] : prev), 0);
       return;
     }
     searchTimer.current = setTimeout(async () => {

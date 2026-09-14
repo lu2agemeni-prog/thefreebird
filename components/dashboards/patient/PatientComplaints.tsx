@@ -31,10 +31,10 @@ export function PatientComplaints() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user) fetchComplaints();
+    if (user) setTimeout(fetchComplaints, 0);
   }, [user]);
 
-  const fetchComplaints = async () => {
+  async function fetchComplaints() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase
@@ -73,7 +73,7 @@ export function PatientComplaints() {
     if (!error) {
       setSuccessMsg(`تم إرسال ${type === 'complaint' ? 'الشكوى' : 'المقترح'} بنجاح وسيتواصل معك فريق الإدارة قريبًا.`);
       setMessage('');
-      fetchComplaints();
+      setTimeout(fetchComplaints, 0);
     } else {
       setSubmitError(getFriendlyErrorMessage(error, 'حدث خطأ أثناء الإرسال. برجاء المحاولة مرة أخرى.'));
     }

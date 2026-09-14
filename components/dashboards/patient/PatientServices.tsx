@@ -21,10 +21,11 @@ export function PatientServices() {
   const [activeClinic, setActiveClinic] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchServices();
+    const t = setTimeout(fetchServices, 0);
+    return () => clearTimeout(t);
   }, []);
 
-  const fetchServices = async () => {
+  async function fetchServices() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase
@@ -60,7 +61,7 @@ export function PatientServices() {
 
   useEffect(() => {
     if (!activeClinic && clinicGroups.length > 0) {
-      setActiveClinic(clinicGroups[0].id);
+      setTimeout(() => setActiveClinic(clinicGroups[0].id), 0);
     }
   }, [clinicGroups, activeClinic]);
 

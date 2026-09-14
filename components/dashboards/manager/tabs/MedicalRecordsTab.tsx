@@ -36,8 +36,8 @@ export function MedicalRecordsTab() {
     setLoading(false);
   }, [page, search]);
 
-  useEffect(() => { fetchPatients(); }, [fetchPatients]);
-  useEffect(() => { setPage(0); }, [search]);
+  useEffect(() => { const t = setTimeout(fetchPatients, 0); return () => clearTimeout(t); }, [fetchPatients]);
+  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [search]);
 
   return (
     <Card>

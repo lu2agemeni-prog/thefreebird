@@ -10,8 +10,8 @@ import { DoctorConsultations } from './doctor/DoctorConsultations';
 import { DoctorFinancials } from './doctor/DoctorFinancials';
 import { DoctorProfile } from './doctor/DoctorProfile';
 import { DoctorPrescriptions } from './doctor/DoctorPrescriptions';
-import { MedicalCalculators } from './patient/MedicalCalculators';
 import { PatientMedicalNews } from './patient/PatientMedicalNews';
+import { DoctorMedicalCalculators } from './doctor/DoctorMedicalCalculators';
 
 const doctorNav: SidebarItem[] = [
   { name: 'المواعيد', id: 'appointments', icon: Calendar },
@@ -34,7 +34,7 @@ export function DoctorDashboard() {
       case 'consultations': return <DoctorConsultations />;
       case 'prescriptions': return <DoctorPrescriptions />;
       case 'financials': return <DoctorFinancials />;
-      case 'calculators': return <MedicalCalculators />;
+      case 'calculators': return <DoctorMedicalCalculators />;
       case 'medical_news': return <PatientMedicalNews />;
       case 'profile': return <DoctorProfile />;
       default: return (

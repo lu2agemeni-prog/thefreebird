@@ -46,7 +46,7 @@ export function ProfitReportPanel() {
     setLoading(false);
   }, [dateFrom, dateTo]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { const t = setTimeout(fetchData, 0); return () => clearTimeout(t); }, [fetchData]);
 
   const center = useMemo(() => {
     const income = rows.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
@@ -154,7 +154,7 @@ export function ProfitReportPanel() {
                 </table>
               </div>
               <p className="text-xs text-gray-400 mt-3">
-                "غير مخصص لعيادة معينة": مصروفات عامة للمركز (إيجار، رواتب غير مرتبطة بعيادة محددة...) بتدخل في ربح المركز ككل لكن مش موزّعة على عيادة بعينها.
+                &quot;غير مخصص لعيادة معينة&quot;: مصروفات عامة للمركز (إيجار، رواتب غير مرتبطة بعيادة محددة...) بتدخل في ربح المركز ككل لكن مش موزّعة على عيادة بعينها.
               </p>
             </CardContent>
           </Card>

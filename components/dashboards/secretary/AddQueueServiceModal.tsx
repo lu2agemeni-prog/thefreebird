@@ -33,10 +33,11 @@ export function AddQueueServiceModal({ queueId, clinicId, patientName, onClose, 
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchData();
+    const t = setTimeout(fetchData, 0);
+    return () => clearTimeout(t);
   }, []);
 
-  const fetchData = async () => {
+  async function fetchData() {
     setLoadError(null);
     setLoading(true);
     const [servicesRes, linesRes] = await Promise.all([

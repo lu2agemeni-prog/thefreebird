@@ -23,11 +23,9 @@ export function QueueMediaManager() {
   const [displayOrder, setDisplayOrder] = useState('0');
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    fetchMedia();
-  }, []);
+  useEffect(() => { const t = setTimeout(fetchMedia, 0); return () => clearTimeout(t); }, []);
 
-  const fetchMedia = async () => {
+  async function fetchMedia() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase.from('queue_media').select('*').order('display_order', { ascending: true });

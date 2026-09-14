@@ -1,0 +1,434 @@
+
+> ai-studio-applet@0.1.0 lint
+> eslint .
+
+
+/app/applet/app/book/page.tsx
+  29:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/app/applet/app/book/page.tsx:29:7
+  27 |   useEffect(() => {
+  28 |     if (user) {
+> 29 |       setName(`${user.first_name || ''} ${user.last_name || ''}`.trim());
+     |       ^^^^^^^ Avoid calling setState() directly within an effect
+  30 |       setPhone(user.phone || '');
+  31 |     }
+  32 |   }, [user]);  react-hooks/set-state-in-effect
+
+/app/applet/app/doctors/page.tsx
+  19:5  error  Error: Cannot access variable before it is declared
+
+`fetchDoctors` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+/app/applet/app/doctors/page.tsx:19:5
+  17 |
+  18 |   useEffect(() => {
+> 19 |     fetchDoctors();
+     |     ^^^^^^^^^^^^ `fetchDoctors` accessed before it is declared
+  20 |   }, []);
+  21 |
+  22 |   const fetchDoctors = async () => {
+
+/app/applet/app/doctors/page.tsx:22:3
+  20 |   }, []);
+  21 |
+> 22 |   const fetchDoctors = async () => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 23 |     setLoading(true);
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 24 |     setLoadError(null);
+     …
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 37 |     setLoading(false);
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 38 |   };
+     | ^^^^^ `fetchDoctors` is declared here
+  39 |
+  40 |   return (
+  41 |     <div className="min-h-screen bg-gray-50" dir="rtl">  react-hooks/immutability
+
+/app/applet/app/news/[id]/page.tsx
+  38:21  error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/app/applet/app/news/[id]/page.tsx:38:21
+  36 |   };
+  37 |
+> 38 |   useEffect(() => { fetchArticle(); }, [id]);
+     |                     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  39 |
+  40 |   const toggleLike = async () => {
+  41 |     if (!article) return;  react-hooks/set-state-in-effect
+  38:40  warning  React Hook useEffect has a missing dependency: 'fetchArticle'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   react-hooks/exhaustive-deps
+
+/app/applet/app/news/page.tsx
+  43:21  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/app/applet/app/news/page.tsx:43:21
+  41 |   }, [page]);
+  42 |
+> 43 |   useEffect(() => { fetchNews(); window.scrollTo({ top: 0, behavior: 'smooth' }); }, [fetchNews]);
+     |                     ^^^^^^^^^ Avoid calling setState() directly within an effect
+  44 |
+  45 |   return (
+  46 |     <div className="min-h-screen bg-gray-50" dir="rtl">  react-hooks/set-state-in-effect
+
+/app/applet/app/page.tsx
+   34:16  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+   43:13  warning  Do not use an `<a>` element to navigate to `/`. Use `<Link />` from `next/link` instead. See: https://nextjs.org/docs/messages/no-html-link-for-pages                                                                                                                                    @next/next/no-html-link-for-pages
+   73:16  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+   92:19  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  134:11  warning  Do not use an `<a>` element to navigate to `/`. Use `<Link />` from `next/link` instead. See: https://nextjs.org/docs/messages/no-html-link-for-pages                                                                                                                                    @next/next/no-html-link-for-pages
+  186:13  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/app/applet/app/prices/page.tsx
+  12:5  error  Error: Cannot access variable before it is declared
+
+`fetchServices` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+/app/applet/app/prices/page.tsx:12:5
+  10 |
+  11 |   useEffect(() => {
+> 12 |     fetchServices();
+     |     ^^^^^^^^^^^^^ `fetchServices` accessed before it is declared
+  13 |   }, []);
+  14 |
+  15 |   const fetchServices = async () => {
+
+/app/applet/app/prices/page.tsx:15:3
+  13 |   }, []);
+  14 |
+> 15 |   const fetchServices = async () => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 16 |     setLoading(true);
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 17 |     const { data, error } = await supabase
+     …
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 26 |     setLoading(false);
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 27 |   };
+     | ^^^^^ `fetchServices` is declared here
+  28 |
+  29 |   // Group services by clinic
+  30 |   const groupedServices = services.reduce((acc, service) => {  react-hooks/immutability
+
+/app/applet/app/public/complaints/page.tsx
+  83:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/app/applet/app/public/complaints/page.tsx:83:5
+  81 |   // عند التحميل: اقرأ الحد من القاعدة (مع تحقق بديل محلي إن فشلت القراءة)
+  82 |   useEffect(() => {
+> 83 |     setSentToday(todayCount());
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  84 |     (async () => {
+  85 |       const { data, error } = await supabase.rpc('get_complaint_limits');
+  86 |       if (!error && data) {  react-hooks/set-state-in-effect
+
+/app/applet/app/public/prices/page.tsx
+  16:5  error  Error: Cannot access variable before it is declared
+
+`fetchServices` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+/app/applet/app/public/prices/page.tsx:16:5
+  14 |
+  15 |   useEffect(() => {
+> 16 |     fetchServices();
+     |     ^^^^^^^^^^^^^ `fetchServices` accessed before it is declared
+  17 |   }, []);
+  18 |
+  19 |   const fetchServices = async () => {
+
+/app/applet/app/public/prices/page.tsx:19:3
+  17 |   }, []);
+  18 |
+> 19 |   const fetchServices = async () => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 20 |     setLoading(true);
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 21 |     setLoadError(null);
+     …
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 41 |     setLoading(false);
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 42 |   };
+     | ^^^^^ `fetchServices` is declared here
+  43 |
+  44 |   return (
+  45 |     <div className="min-h-screen bg-gray-50 flex flex-col items-center py-12 px-4 sm:px-6">  react-hooks/immutability
+
+/app/applet/app/public/queue/page.tsx
+  15:5   error    Error: Cannot access variable before it is declared
+
+`fetchQueue` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+/app/applet/app/public/queue/page.tsx:15:5
+  13 |
+  14 |   useEffect(() => {
+> 15 |     fetchQueue();
+     |     ^^^^^^^^^^ `fetchQueue` accessed before it is declared
+  16 |
+  17 |     const channel = supabase
+  18 |       .channel('public_queue_changes')
+
+/app/applet/app/public/queue/page.tsx:43:3
+  41 |   }, []);
+  42 |
+> 43 |   const fetchQueue = async () => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 44 |     // كانت بتقرأ call_queue مباشرة (SELECT * بما فيها الاسم والتليفون
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 45 |     // والمبالغ المدفوعة) على شاشة عامة بدون تسجيل دخول — ثغرة أمنية كان أي
+     …
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 61 |     }
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 62 |   };
+     | ^^^^^ `fetchQueue` is declared here
+  63 |
+  64 |   const playAudioAlert = () => {
+  65 |     try {                                                                                                                                                                                                                                                                                                                                                                                                                   react-hooks/immutability
+  21:11  error    Error: Cannot access variable before it is declared
+
+`playAudioAlert` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+/app/applet/app/public/queue/page.tsx:21:11
+  19 |       .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue' }, (payload) => {
+  20 |         if (payload.eventType === 'UPDATE' && payload.new.status === 'calling') {
+> 21 |           playAudioAlert();
+     |           ^^^^^^^^^^^^^^ `playAudioAlert` accessed before it is declared
+  22 |           setCurrentCalling(payload.new);
+  23 |           
+  24 |           // Clear current calling highlight after 10 seconds
+
+/app/applet/app/public/queue/page.tsx:64:3
+  62 |   };
+  63 |
+> 64 |   const playAudioAlert = () => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 65 |     try {
+     | ^^^^^^^^^
+> 66 |       // Trying to play a generic bell sound, requires user interaction first usually, 
+     | ^^^^^^^^^
+> 67 |       // but on some TV screens auto-play policies are relaxed.
+     | ^^^^^^^^^
+> 68 |       const audio = new Audio('/bell.mp3'); 
+     | ^^^^^^^^^
+> 69 |       audio.play().catch(e => console.log('Audio autoplay blocked', e));
+     | ^^^^^^^^^
+> 70 |     } catch (error) {
+     | ^^^^^^^^^
+> 71 |       console.log('Audio play error', error);
+     | ^^^^^^^^^
+> 72 |     }
+     | ^^^^^^^^^
+> 73 |   };
+     | ^^^^^ `playAudioAlert` is declared here
+  74 |
+  75 |   // Group queue by clinic
+  76 |   const groupedQueue = queue.reduce((acc, curr) => {  react-hooks/immutability
+  41:6   warning  React Hook useEffect has a missing dependency: 'fetchQueue'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             react-hooks/exhaustive-deps
+
+/app/applet/app/queue/page.tsx
+  15:5  error  Error: Cannot access variable before it is declared
+
+`fetchQueue` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+/app/applet/app/queue/page.tsx:15:5
+  13 |     
+  14 |     // Initial fetch
+> 15 |     fetchQueue();
+     |     ^^^^^^^^^^ `fetchQueue` accessed before it is declared
+  16 |     
+  17 |     // Realtime subscription — ملحوظة: بعد قصر RLS لـ call_queue على الأدوار
+  18 |     // الموثوقة، قنوات Realtime بترشّح الأحداث حسب صلاحيات القارئ (anon)،
+
+/app/applet/app/queue/page.tsx:33:3
+  31 |   }, []);
+  32 |
+> 33 |   const fetchQueue = async () => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 34 |     // كانت بتقرأ call_queue مباشرة (SELECT * بما فيها الاسم والتليفون
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 35 |     // والمبالغ) وهي شاشة عامة بدون تسجيل دخول — ده كان ثغرة أمنية (أي زائر
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 36 |     // يقدر يسحب بيانات المرضى بـ curl). دلوقتي بتستخدم RPC آمن بيرجّع رقم
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 37 |     // التذكرة والحالة فقط.
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 38 |     const { data } = await supabase.rpc('get_public_queue_status');
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 39 |     if (data) setQueue(data);
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 40 |   };
+     | ^^^^^ `fetchQueue` is declared here
+  41 |
+  42 |   const currentCall = queue.find(q => q.status === 'calling');
+  43 |   const waitingList = queue.filter(q => q.status === 'waiting').slice(0, 8); // Show up to 8 waiting  react-hooks/immutability
+
+/app/applet/components/DeleteAccountModal.tsx
+  54:5  warning  Do not use `window.location.href` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination  @next/next/no-location-assign-relative-destination
+
+/app/applet/components/MedicalNewsViewer.tsx
+  17:5  error  Error: Cannot access variable before it is declared
+
+`fetchNews` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+/app/applet/components/MedicalNewsViewer.tsx:17:5
+  15 |
+  16 |   useEffect(() => {
+> 17 |     fetchNews(0);
+     |     ^^^^^^^^^ `fetchNews` accessed before it is declared
+  18 |   }, []);
+  19 |
+  20 |   const fetchNews = async (pageIndex: number) => {
+
+/app/applet/components/MedicalNewsViewer.tsx:20:3
+  18 |   }, []);
+  19 |
+> 20 |   const fetchNews = async (pageIndex: number) => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 21 |     setLoading(true);
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 22 |     const { data, error, count } = await supabase
+     …
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 38 |     setLoading(false);
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 39 |   };
+     | ^^^^^ `fetchNews` is declared here
+  40 |
+  41 |   const loadMore = () => {
+  42 |     const nextPage = page + 1;  react-hooks/immutability
+
+/app/applet/components/PWAInstallPrompt.tsx
+  15:7   error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/app/applet/components/PWAInstallPrompt.tsx:15:7
+  13 |     const dismissed = localStorage.getItem('pwa-prompt-dismissed');
+  14 |     if (dismissed) {
+> 15 |       setIsDismissed(true);
+     |       ^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  16 |     }
+  17 |   }, []);
+  18 |  react-hooks/set-state-in-effect
+  98:55  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    react/no-unescaped-entities
+  98:77  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    react/no-unescaped-entities
+
+/app/applet/components/dashboards/NotificationBell.tsx
+  41:6  warning  React Hook useEffect has a missing dependency: 'fetchNotifications'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/accountant/AccountantReports.tsx
+  36:16  error  Error: Cannot access variable before it is declared
+
+`fetchTransactions` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+/app/applet/components/dashboards/accountant/AccountantReports.tsx:36:16
+  34 |
+  35 |   useEffect(() => {
+> 36 |     setTimeout(fetchTransactions, 0);
+     |                ^^^^^^^^^^^^^^^^^ `fetchTransactions` accessed before it is declared
+  37 |
+  38 |     // تحديث Realtime — كانت التقارير المالية بتتحدث يدويًا فقط رغم إن
+  39 |     // التطبيق بيستخدم Realtime في 5 ملفات تانية لطابور النداء
+
+/app/applet/components/dashboards/accountant/AccountantReports.tsx:52:3
+  50 |     }, []);
+  51 |
+> 52 |   async function fetchTransactions() {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 53 |     setLoading(true);
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 54 |     // ملحوظة: كان الاستعلام القديم user:user_id(profiles(first_name, last_name))
+     …
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 64 |     setLoading(false);
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 65 |   };
+     | ^^^^ `fetchTransactions` is declared here
+  66 |
+  67 |   const filteredTransactions = useMemo(() => {
+  68 |     const fromTime = dateFrom ? new Date(dateFrom + 'T00:00:00').getTime() : null;  react-hooks/immutability
+
+/app/applet/components/dashboards/doctor/DoctorAppointments.tsx
+  33:6  warning  React Hook useEffect has a missing dependency: 'fetchAppointments'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/doctor/DoctorCallQueue.tsx
+  38:6  warning  React Hook useEffect has a missing dependency: 'fetchDoctorClinic'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  55:6  warning  React Hook useEffect has a missing dependency: 'fetchQueue'. Either include it or remove the dependency array         react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/doctor/DoctorConsultations.tsx
+  35:6  warning  React Hook useEffect has a missing dependency: 'fetchConsultations'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/doctor/DoctorPrescriptions.tsx
+  34:99  warning  React Hook useEffect has a missing dependency: 'fetchPrescriptions'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/doctor/DoctorProfile.tsx
+  34:6  warning  React Hook useEffect has a missing dependency: 'fetchDoctorDetails'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/manager/ClinicDetail.tsx
+  142:55  warning  React Hook useEffect has a missing dependency: 'fetchDoctors'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  179:55  warning  React Hook useEffect has a missing dependency: 'fetchReports'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/manager/DoctorDetail.tsx
+  122:59  warning  React Hook useEffect has a missing dependency: 'fetchAssignments'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  152:55  warning  React Hook useEffect has a missing dependency: 'fetchReports'. Either include it or remove the dependency array      react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/manager/QueueMediaManager.tsx
+  151:23  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/app/applet/components/dashboards/patient/PatientAppointments.tsx
+  46:6  warning  React Hook useEffect has missing dependencies: 'fetchAppointments' and 'fetchClinicsAndDoctors'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/patient/PatientComplaints.tsx
+  35:6  warning  React Hook useEffect has a missing dependency: 'fetchComplaints'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/patient/PatientConsultations.tsx
+  31:6  warning  React Hook useEffect has a missing dependency: 'fetchConsultations'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/patient/PatientMedicalRecords.tsx
+  28:6  warning  React Hook useEffect has a missing dependency: 'fetchRecord'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/patient/PatientPrescriptions.tsx
+  29:6  warning  React Hook useEffect has a missing dependency: 'fetchPrescriptions'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/patient/PatientProfile.tsx
+  27:6  warning  React Hook useEffect has a missing dependency: 'fetchProfile'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/secretary/AddQueueServiceModal.tsx
+  38:6  warning  React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/dashboards/secretary/SecretaryCallQueue.tsx
+  340:17  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+✖ 44 problems (15 errors, 29 warnings)
+

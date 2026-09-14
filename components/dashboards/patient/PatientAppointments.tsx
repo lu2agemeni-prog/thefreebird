@@ -40,12 +40,12 @@ export function PatientAppointments() {
 
   useEffect(() => {
     if (user) {
-      fetchAppointments();
-      fetchClinicsAndDoctors();
+      setTimeout(fetchAppointments, 0);
+      setTimeout(fetchClinicsAndDoctors, 0);
     }
   }, [user]);
 
-  const fetchAppointments = async () => {
+  async function fetchAppointments() {
     setLoadError(false);
     setLoading(true);
     const { data, error } = await supabase
@@ -62,7 +62,7 @@ export function PatientAppointments() {
     setLoading(false);
   };
 
-  const fetchClinicsAndDoctors = async () => {
+  async function fetchClinicsAndDoctors() {
     const { data: clinicsData, error: clinicsErr } = await supabase.from('clinics').select('*');
     if (clinicsErr) {
       // نعرض الخطأ فقط إذا لم تُحمّل العيادات مسبقًا (النموذج سيخبر المستخدم)
@@ -104,7 +104,7 @@ export function PatientAppointments() {
       setSelectedDoctor('');
       setAppointmentDate('');
       setAppointmentTime('');
-      fetchAppointments();
+      setTimeout(fetchAppointments, 0);
     } else {
       // أخطاء ودّية: تعارض موعد / خارج أيام عمل الطبيب / غيرها
       setBookingError(getFriendlyErrorMessage(error));

@@ -25,10 +25,10 @@ export function PatientPrescriptions() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user) fetchPrescriptions();
+    if (user) setTimeout(fetchPrescriptions, 0);
   }, [user]);
 
-  const fetchPrescriptions = async () => {
+  async function fetchPrescriptions() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase
@@ -48,7 +48,7 @@ export function PatientPrescriptions() {
 
   const submitRating = async (id: string, rating: number, comment: string) => {
     const { error } = await supabase.from('prescriptions').update({ rating, rating_comment: comment || null }).eq('id', id);
-    if (!error) fetchPrescriptions();
+    if (!error) setTimeout(fetchPrescriptions, 0);
   };
 
   if (loading) {

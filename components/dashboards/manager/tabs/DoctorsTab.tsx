@@ -54,8 +54,8 @@ export function DoctorsTab() {
     setClinics(data || []);
   }, []);
 
-  useEffect(() => { fetchDoctors(); fetchClinics(); }, [fetchDoctors, fetchClinics]);
-  useEffect(() => { setPage(0); }, [search]);
+  useEffect(() => { const t1 = setTimeout(fetchDoctors, 0); const t2 = setTimeout(fetchClinics, 0); return () => { clearTimeout(t1); clearTimeout(t2); }; }, [fetchDoctors, fetchClinics]);
+  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [search]);
 
   const filteredDoctors = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -86,7 +86,7 @@ export function DoctorsTab() {
     );
   }, [linkableUsers, linkableSearch]);
 
-  const fetchLinkableUsers = async () => {
+  async function fetchLinkableUsers() {
     setLinkUsersLoading(true);
     const { data, error } = await supabase
       .from('profiles')
@@ -189,7 +189,7 @@ export function DoctorsTab() {
               إضافة طبيب جديد وربطه بحساب مستخدم
             </h4>
             <p className="text-xs text-gray-500">
-              اختر حسابًا قائمًا (مريض / سكرتارية / محاسب) وسيتمت ترقيته إلى دور "طبيب" وإنشاء ملفه الطبي.
+              اختر حسابًا قائمًا (مريض / سكرتارية / محاسب) وسيتمت ترقيته إلى دور &quot;طبيب&quot; وإنشاء ملفه الطبي.
               لإنشاء حساب جديد تمامًا: أنشئه من صفحة الدخول ثم عُد هنا لربطه.
             </p>
 
@@ -259,7 +259,7 @@ export function DoctorsTab() {
         {loading ? <p className="text-gray-500 py-4">جاري تحميل البيانات...</p> : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredDoctors.length === 0 ? (
-              <p className="text-gray-500">لا يوجد أطباء مسجلين. استخدم زر "إضافة طبيب + ربط حساب" بالأعلى.</p>
+              <p className="text-gray-500">لا يوجد أطباء مسجلين. استخدم زر &quot;إضافة طبيب + ربط حساب&quot; بالأعلى.</p>
             ) : filteredDoctors.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE).map((doc) => (
               <button
                 key={doc.id}

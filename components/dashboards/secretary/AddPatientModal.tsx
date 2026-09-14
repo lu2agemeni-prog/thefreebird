@@ -39,7 +39,7 @@ export function AddPatientModal({ onClose, onAdded }: AddPatientModalProps) {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchOptions = async () => {
+    async function fetchOptions() {
       setLoadError(null);
       const [clinicsRes, servicesRes, doctorsRes] = await Promise.all([
         supabase.from('clinics').select('*').eq('is_active', true),

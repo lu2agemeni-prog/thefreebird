@@ -177,7 +177,7 @@ export function DoctorReportsPanel() {
     setLoading(false);
   }, [doctorId, startStr, endStr, periodType]);
 
-  useEffect(() => { fetchReport(); }, [fetchReport]);
+  useEffect(() => { const t = setTimeout(fetchReport, 0); return () => clearTimeout(t); }, [fetchReport]);
 
   const totalAmount = checkups.reduce((sum, c) => sum + Number(c.paid_amount || 0), 0);
   const currentDoctor = doctors.find(d => d.id === doctorId);

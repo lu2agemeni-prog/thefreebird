@@ -38,9 +38,9 @@ export function AccountantExpenses() {
     });
   }, []);
 
-  useEffect(() => { setPage(0); }, [search]);
+  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [search]);
 
-  const fetchTransactions = async () => {
+  async function fetchTransactions() {
     setLoadError(null);
     setLoading(true);
     const { data, error } = await supabase
@@ -186,7 +186,7 @@ export function AccountantExpenses() {
                     <option key={d.id} value={d.id}>د. {d.first_name} {d.last_name}</option>
                   ))}
                 </select>
-                <p className="text-xs text-gray-400 mt-1">لازم تحديد الطبيب عشان يظهر له المبلغ في تبويب "الحسابات والرواتب" الخاص به.</p>
+                <p className="text-xs text-gray-400 mt-1">لازم تحديد الطبيب عشان يظهر له المبلغ في تبويب &quot;الحسابات والرواتب&quot; الخاص به.</p>
               </div>
             )}
             {addError && <InlineError message={addError} />}
