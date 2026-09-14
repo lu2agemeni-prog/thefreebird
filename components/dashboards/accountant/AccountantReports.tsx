@@ -32,6 +32,21 @@ export function AccountantReports() {
   });
   const [dateTo, setDateTo] = useState(() => toDateInputValue(new Date()));
 
+  async function fetchTransactions() {
+    setLoading(true);
+    // ملحوظة: كان الاستعلام القديم user:user_id(profiles(first_name, last_name))
+    // خطأ — transactions.user_id بيشاور مباشرة على profiles.id، مفيش جدول
+    // وسيط اسمه profiles تاني جوه العلاقة، فكانت t.user.profiles دايمًا
+    // undefined وكل الحركات بتتعرض باسم "المركز" حتى لو ليها مستخدم فعلي.
+    const { data } = await supabase
+      .from('transactions')
+      .select('*, user:user_id(first_name, last_name)')
+      .order('created_at', { ascending: false });
+
+    if (data) setTransactions(data);
+    setLoading(false);
+  };
+
   useEffect(() => {
     setTimeout(fetchTransactions, 0);
 
@@ -49,20 +64,7 @@ export function AccountantReports() {
     };
     }, []);
 
-  async function fetchTransactions() {
-    setLoading(true);
-    // ملحوظة: كان الاستعلام القديم user:user_id(profiles(first_name, last_name))
-    // خطأ — transactions.user_id بيشاور مباشرة على profiles.id، مفيش جدول
-    // وسيط اسمه profiles تاني جوه العلاقة، فكانت t.user.profiles دايمًا
-    // undefined وكل الحركات بتتعرض باسم "المركز" حتى لو ليها مستخدم فعلي.
-    const { data } = await supabase
-      .from('transactions')
-      .select('*, user:user_id(first_name, last_name)')
-      .order('created_at', { ascending: false });
-
-    if (data) setTransactions(data);
-    setLoading(false);
-  };
+  
 
   const filteredTransactions = useMemo(() => {
     const fromTime = dateFrom ? new Date(dateFrom + 'T00:00:00').getTime() : null;

@@ -17,7 +17,7 @@ export function MedicalNewsViewer() {
     fetchNews(0);
   }, []);
 
-  const fetchNews = async (pageIndex: number) => {
+  async function fetchNews(pageIndex: number) {
     setLoading(true);
     const { data, error, count } = await supabase
       .from('medical_news')
