@@ -2,29 +2,35 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
-  Monitor, Building2, Stethoscope, Maximize, Minimize, Sun, Moon,
-  ZoomIn, ZoomOut, LayoutGrid, ChevronDown, Image as ImageIcon, Volume2, VolumeX,
+  Monitor, Maximize, Minimize, Sun, Moon,
+  ZoomIn, ZoomOut, LayoutGrid, ChevronDown, Image as ImageIcon, Volume2, VolumeX, Stethoscope,
 } from 'lucide-react';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
 
-type ViewMode = 'clinics' | 'doctors' | 'clinics_doctors' | 'media_clinics';
+// أوضاع العرض المتاحة — دايمًا تركيبة من (عيادات/أطباء) + إمكانية إضافة ميديا
+type ViewMode = 'clinics_doctors' | 'clinics_doctors_media' | 'doctors_media' | 'clinics_media';
 
 const VIEW_MODE_LABELS: Record<ViewMode, string> = {
-  clinics: 'عرض العيادات فقط',
-  doctors: 'عرض الأطباء فقط',
-  clinics_doctors: 'عرض العيادات والأطباء',
-  media_clinics: 'عرض الميديا والعيادات',
+  clinics_doctors: 'عيادات + أطباء',
+  clinics_doctors_media: 'عيادات + أطباء + ميديا',
+  doctors_media: 'أطباء + ميديا',
+  clinics_media: 'عيادات + ميديا',
 };
+
+function modeHasClinics(m: ViewMode) { return m === 'clinics_doctors' || m === 'clinics_doctors_media' || m === 'clinics_media'; }
+function modeHasDoctors(m: ViewMode) { return m === 'clinics_doctors' || m === 'clinics_doctors_media' || m === 'doctors_media'; }
+function modeHasMedia(m: ViewMode) { return m === 'clinics_doctors_media' || m === 'doctors_media' || m === 'clinics_media'; }
 
 export default function QueueDisplay() {
   const [queue, setQueue] = useState<any[]>([]);
+  const [presentDoctors, setPresentDoctors] = useState<any[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [media, setMedia] = useState<any[]>([]);
   const [mediaIndex, setMediaIndex] = useState(0);
 
   // ==== إعدادات الشاشة ====
   const [showBar, setShowBar] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('clinics');
+  const [viewMode, setViewMode] = useState<ViewMode>('clinics_doctors_media');
   const [showModeMenu, setShowModeMenu] = useState(false);
   const [isDark, setIsDark] = useState(true);
   const [zoom, setZoom] = useState(1);
@@ -34,13 +40,15 @@ export default function QueueDisplay() {
   const lastAnnouncedIdRef = useRef<string | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ==== إشعار النداء المنبثق ====
+  const [dropNotice, setDropNotice] = useState<{ token: number; clinicName: string } | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
 
   const enableSound = () => {
-    // تشغيل صامت لكسر قيد المتصفح على التشغيل التلقائي بدون تفاعل مستخدم —
-    // بعد الضغطة دي، أي تشغيل صوت برمجي لاحق في نفس الجلسة هيشتغل عادي.
     const unlock = new Audio('/audio/ding.mp3');
     unlock.volume = 0;
     unlock.play().catch(() => {});
@@ -50,21 +58,28 @@ export default function QueueDisplay() {
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     fetchQueue();
+    fetchPresentDoctors();
 
     const sub = supabase.channel('queue_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue' }, fetchQueue)
       .subscribe();
+    const presenceSub = supabase.channel('doctor_presence_changes_display')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctors' }, fetchPresentDoctors)
+      .subscribe();
     const pollTimer = setInterval(fetchQueue, 5000);
+    const presencePoll = setInterval(fetchPresentDoctors, 30000);
 
     return () => {
       clearInterval(timer);
       clearInterval(pollTimer);
+      clearInterval(presencePoll);
       supabase.removeChannel(sub);
+      supabase.removeChannel(presenceSub);
     };
   }, []);
 
   useEffect(() => {
-    if (viewMode !== 'media_clinics') return;
+    if (!modeHasMedia(viewMode)) return;
     supabase.from('queue_media').select('*').eq('is_active', true).order('display_order', { ascending: true })
       .then(({ data }) => setMedia(data || []));
   }, [viewMode]);
@@ -88,11 +103,24 @@ export default function QueueDisplay() {
       const calling = data.find((q: any) => q.status === 'calling');
       if (calling && calling.id !== lastAnnouncedIdRef.current) {
         lastAnnouncedIdRef.current = calling.id;
+
         if (soundEnabledRef.current) {
           playQueueAnnouncement(calling.token_number, calling.clinic_name || '', calling.clinic_audio_number);
         }
+
+        setDropNotice({ token: calling.token_number, clinicName: calling.clinic_name || 'العيادة' });
+        if (noticeTimer.current) clearTimeout(noticeTimer.current);
+        noticeTimer.current = setTimeout(() => setDropNotice(null), 10000);
       }
     }
+  };
+
+  const fetchPresentDoctors = async () => {
+    const { data } = await supabase
+      .from('doctors')
+      .select('profile_id, clinic_id, is_present, profiles(first_name, last_name), clinics(name)')
+      .eq('is_present', true);
+    if (data) setPresentDoctors(data);
   };
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -114,18 +142,48 @@ export default function QueueDisplay() {
   const waitingList = queue.filter(q => q.status === 'waiting').slice(0, 8);
 
   const destinationLabel = (q: any) => {
-    if (viewMode === 'doctors') return q.doctor_name || q.clinic_name || 'غير محدد';
-    if (viewMode === 'clinics_doctors') return [q.clinic_name, q.doctor_name].filter(Boolean).join(' — ') || 'غير محدد';
-    return q.clinic_name || 'غير محدد';
+    const clinic = modeHasClinics(viewMode) ? q.clinic_name : null;
+    const doctor = modeHasDoctors(viewMode) ? q.doctor_name : null;
+    return [clinic, doctor].filter(Boolean).join(' — ') || q.clinic_name || 'غير محدد';
   };
+
+  // مربعات العيادات الشغالة (فيها طبيب متواجد) — عيادة واحدة تظهر مرة واحدة
+  const activeClinicBoxes = Array.from(
+    new Map(
+      presentDoctors
+        .filter(d => d.clinic_id)
+        .map(d => [d.clinic_id, { clinicId: d.clinic_id, clinicName: d.clinics?.name || 'عيادة' }])
+    ).values()
+  ).map(box => {
+    const calling = queue.find(q => q.status === 'calling' && q.clinic_id === box.clinicId);
+    return { ...box, currentToken: calling?.token_number ?? null };
+  });
 
   const bg = isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900';
   const panelBg = isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200';
   const rowBg = isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200';
   const mutedText = isDark ? 'text-slate-300' : 'text-gray-600';
 
+  const showMedia = modeHasMedia(viewMode);
+
   return (
     <div className={`h-screen ${bg} flex flex-col font-sans overflow-hidden relative transition-colors duration-300`} dir="rtl" onMouseMove={handleMouseMove}>
+      <style>{`
+        @keyframes drop-notice-fall {
+          0% { transform: translateY(-120%); opacity: 0; }
+          55% { transform: translateY(8%); opacity: 1; }
+          70% { transform: translateY(-3%); }
+          100% { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes drop-notice-flash {
+          0%, 100% { box-shadow: 0 0 40px 10px rgba(220,38,38,0.9); background-color: rgb(220 38 38); }
+          50% { box-shadow: 0 0 60px 20px rgba(239,68,68,0.6); background-color: rgb(185 28 28); }
+        }
+        .drop-notice {
+          animation: drop-notice-fall 0.7s cubic-bezier(0.34,1.56,0.64,1) both, drop-notice-flash 1s ease-in-out infinite;
+        }
+      `}</style>
+
       {/* شريط الإعدادات — يظهر عند تحريك الماوس أعلى الشاشة */}
       <div
         className={`fixed top-0 inset-x-0 z-50 flex items-center justify-center gap-2 bg-black/80 backdrop-blur-sm py-3 transition-transform duration-300 ${showBar ? 'translate-y-0' : '-translate-y-full'}`}
@@ -178,101 +236,119 @@ export default function QueueDisplay() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col overflow-hidden" style={{ transform: `scale(${zoom})`, transformOrigin: 'top center', transition: 'transform 0.2s ease' }}>
-        {/* Top Header */}
-        <header className={`${panelBg} px-8 py-5 flex justify-between items-center shadow-xl border-b`}>
-          <div className="flex items-center gap-4">
-            <Monitor className="w-10 h-10 text-emerald-500" />
-            <div>
-              <h1 className="text-3xl font-bold">مركز الطائر الحر الطبي</h1>
-              <p className="text-emerald-500 text-sm mt-1">شاشة النداء الآلي</p>
-            </div>
+      {/* المحتوى — الزووم بيكبّر حجم الخط والمسافات بدل ما يعمل scale للتصميم كله،
+          عشان نسب الـ 60/40/30/100% متتكسرش أو تتقص من حواف الشاشة */}
+      <div className="flex-1 flex flex-col overflow-hidden" style={{ fontSize: `${zoom}rem` }}>
+        {/* Top Header (شريط علوي رفيع، مش من ضمن نسب الأقسام التلاتة) */}
+        <header className={`${panelBg} px-8 py-3 flex justify-between items-center shadow-xl border-b shrink-0`} style={{ fontSize: '1rem' }}>
+          <div className="flex items-center gap-3">
+            <Monitor className="w-8 h-8 text-emerald-500" />
+            <h1 className="text-xl font-bold">مركز الطائر الحر الطبي</h1>
           </div>
-          <div className={`text-3xl font-bold font-mono tracking-wider ${mutedText}`} dir="ltr">
+          <div className={`text-xl font-bold font-mono tracking-wider ${mutedText}`} dir="ltr">
             {currentTime.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
           </div>
         </header>
 
-        {/* Main Content */}
-        <div className="flex-1 flex">
-          {/* النداء الحالي */}
-          <div className={`flex-[2] flex flex-col items-center justify-center p-12 border-l ${isDark ? 'border-slate-800' : 'border-gray-200'} relative overflow-hidden`}>
-            {currentCall ? (
-              <div className="text-center z-10 w-full animate-in fade-in zoom-in duration-500">
-                <div className="inline-block bg-red-600 text-white px-8 py-2 rounded-full text-2xl font-bold mb-10 animate-pulse shadow-[0_0_30px_rgba(220,38,38,0.6)]">
-                  النداء الحالي
+        {/* القسم العلوي: ميديا (يمين 60%) + أرقام (يسار 40%) — أو 100% لو مفيش ميديا */}
+        <div className="flex" style={{ height: '70%' }}>
+          {showMedia && (
+            <div style={{ width: '60%' }} className="relative bg-black flex items-center justify-center overflow-hidden border-l border-slate-700">
+              {media.length === 0 ? (
+                <div className="text-slate-600 flex flex-col items-center gap-2">
+                  <ImageIcon className="w-16 h-16" />
+                  <p className="text-lg">لا توجد وسائط مضافة</p>
                 </div>
-                <div className="text-[12rem] leading-none font-black text-emerald-500 mb-8 drop-shadow-2xl font-mono">
-                  {currentCall.token_number}
-                </div>
-                <div className={`text-5xl ${mutedText} flex items-center justify-center gap-4 flex-wrap`}>
-                  تفضل بالدخول إلى:
-                  <span className="text-emerald-500 font-bold bg-emerald-950/10 px-6 py-3 rounded-xl border border-emerald-800/30">
-                    {viewMode === 'doctors' ? <Stethoscope className="w-10 h-10 inline-block ml-3" /> : <Building2 className="w-10 h-10 inline-block ml-3" />}
-                    {destinationLabel(currentCall)}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className={`text-center text-4xl flex flex-col items-center ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>
-                <Monitor className={`w-32 h-32 mb-6 ${isDark ? 'text-slate-800' : 'text-gray-200'}`} />
-                في انتظار النداء القادم...
-              </div>
-            )}
-          </div>
+              ) : media[mediaIndex]?.media_type === 'video' ? (
+                <video key={media[mediaIndex].id} src={media[mediaIndex].url} autoPlay muted loop className="w-full h-full object-cover" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={media[mediaIndex]?.id} src={media[mediaIndex]?.url} alt="" className="w-full h-full object-cover" />
+              )}
+            </div>
+          )}
 
-          {/* قائمة الانتظار / الميديا */}
-          <div className={`flex-1 flex flex-col ${viewMode === 'media_clinics' ? 'divide-y divide-slate-700' : ''}`}>
-            <div className={viewMode === 'media_clinics' ? 'flex-1 flex flex-col overflow-hidden' : 'flex-1 flex flex-col'}>
-              <div className={`${panelBg} p-6 shadow-md border-b`}>
-                <h3 className={`text-2xl font-bold ${mutedText} flex items-center gap-3`}>
-                  <span className="relative flex h-4 w-4">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-4 w-4 bg-orange-500"></span>
-                  </span>
-                  قائمة الانتظار ({waitingList.length})
-                </h3>
-              </div>
-              <div className="flex-1 overflow-hidden p-6">
-                <div className="flex flex-col gap-4">
-                  {waitingList.map((q, idx) => (
-                    <div key={q.id} className={`${rowBg} border p-5 rounded-2xl flex justify-between items-center shadow-lg`}>
-                      <div className="flex items-center gap-4">
-                        <span className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${isDark ? 'bg-slate-700 text-slate-400' : 'bg-gray-100 text-gray-500'}`}>
-                          {idx + 1}
-                        </span>
-                        <span className={`text-lg font-medium ${isDark ? 'text-slate-200' : 'text-gray-700'}`}>{destinationLabel(q)}</span>
-                      </div>
-                      <span className="font-bold text-orange-500 text-4xl font-mono">{q.token_number}</span>
-                    </div>
-                  ))}
-                  {waitingList.length === 0 && (
-                    <div className={`h-full flex items-center justify-center text-xl ${isDark ? 'text-slate-600' : 'text-gray-400'}`}>
-                      لا يوجد مرضى في طابور الانتظار
-                    </div>
-                  )}
+          <div style={{ width: showMedia ? '40%' : '100%' }} className="flex flex-col overflow-hidden">
+            {/* النداء الحالي */}
+            <div className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+              {currentCall ? (
+                <div className="text-center z-10 w-full">
+                  <div className="inline-block bg-red-600 text-white px-5 py-1.5 rounded-full text-base font-bold mb-4 animate-pulse">
+                    النداء الحالي
+                  </div>
+                  <div className="text-8xl leading-none font-black text-emerald-500 mb-4 font-mono">
+                    {currentCall.token_number}
+                  </div>
+                  <div className={`text-xl ${mutedText} flex items-center justify-center gap-2 flex-wrap`}>
+                    تفضل بالدخول إلى:
+                    <span className="text-emerald-500 font-bold bg-emerald-950/10 px-3 py-1.5 rounded-lg border border-emerald-800/30">
+                      {destinationLabel(currentCall)}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className={`text-center text-xl flex flex-col items-center ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>
+                  <Monitor className={`w-16 h-16 mb-3 ${isDark ? 'text-slate-800' : 'text-gray-200'}`} />
+                  في انتظار النداء القادم...
+                </div>
+              )}
             </div>
 
-            {viewMode === 'media_clinics' && (
-              <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
-                {media.length === 0 ? (
-                  <div className="text-slate-600 flex flex-col items-center gap-2">
-                    <ImageIcon className="w-12 h-12" />
-                    <p className="text-sm">لا توجد وسائط مضافة</p>
+            {/* قائمة الانتظار */}
+            <div className={`${panelBg} border-t p-3 shrink-0`} style={{ maxHeight: '45%', overflowY: 'auto' }}>
+              <h3 className={`text-sm font-bold ${mutedText} flex items-center gap-2 mb-2`}>
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500"></span>
+                </span>
+                قائمة الانتظار ({waitingList.length})
+              </h3>
+              <div className="flex flex-col gap-1.5">
+                {waitingList.map((q, idx) => (
+                  <div key={q.id} className={`${rowBg} border px-3 py-1.5 rounded-lg flex justify-between items-center text-sm`}>
+                    <span className={isDark ? 'text-slate-300' : 'text-gray-700'}>{idx + 1}. {destinationLabel(q)}</span>
+                    <span className="font-bold text-orange-500 font-mono text-lg">{q.token_number}</span>
                   </div>
-                ) : media[mediaIndex]?.media_type === 'video' ? (
-                  <video key={media[mediaIndex].id} src={media[mediaIndex].url} autoPlay muted loop className="w-full h-full object-cover" />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key={media[mediaIndex]?.id} src={media[mediaIndex]?.url} alt="" className="w-full h-full object-cover" />
+                ))}
+                {waitingList.length === 0 && (
+                  <div className={`text-sm py-2 text-center ${isDark ? 'text-slate-600' : 'text-gray-400'}`}>لا يوجد مرضى في الانتظار</div>
                 )}
               </div>
-            )}
+            </div>
           </div>
         </div>
+
+        {/* القسم السفلي: الأطباء المتواجدون — 30% ارتفاع، 100% عرض */}
+        <div className={`${panelBg} border-t p-4 shrink-0`} style={{ height: '30%' }}>
+          <h3 className={`text-sm font-bold ${mutedText} flex items-center gap-2 mb-3`}>
+            <Stethoscope className="w-4 h-4 text-emerald-500" /> العيادات الشغالة الآن ({activeClinicBoxes.length})
+          </h3>
+          {activeClinicBoxes.length === 0 ? (
+            <div className={`h-[calc(100%-2rem)] flex items-center justify-center text-sm ${isDark ? 'text-slate-600' : 'text-gray-400'}`}>
+              لا يوجد أطباء متواجدون حاليًا
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 h-[calc(100%-2rem)] overflow-y-auto">
+              {activeClinicBoxes.map(box => (
+                <div key={box.clinicId} className={`${rowBg} border rounded-xl p-3 flex flex-col items-center justify-center text-center gap-1`}>
+                  <p className={`text-sm font-bold ${isDark ? 'text-slate-200' : 'text-gray-700'}`}>{box.clinicName}</p>
+                  <p className="text-3xl font-black text-emerald-500 font-mono">{box.currentToken ?? '—'}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* إشعار النداء المنسدل من أعلى الشاشة */}
+      {dropNotice && (
+        <div className="fixed inset-x-0 top-0 z-[60] flex justify-center pointer-events-none">
+          <div className="drop-notice mt-24 text-white text-center rounded-2xl px-10 py-6 shadow-2xl border-4 border-white/30">
+            <p className="text-2xl font-bold mb-2">على العميل رقم {dropNotice.token}</p>
+            <p className="text-3xl font-black">التوجه إلى {dropNotice.clinicName}</p>
+          </div>
+        </div>
+      )}
 
       {!soundEnabled && (
         <button
