@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import {
   Monitor, Maximize, Minimize, Sun, Moon,
   ZoomIn, ZoomOut, LayoutGrid, ChevronDown, Image as ImageIcon, Volume2, VolumeX, Stethoscope,
+  Sliders, RotateCcw,
 } from 'lucide-react';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
 
@@ -39,6 +40,45 @@ export default function QueueDisplay() {
   const soundEnabledRef = useRef(false);
   const lastAnnouncedIdRef = useRef<string | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ==== تخصيص أبعاد الأقسام (يُحفظ محليًا لكل شاشة/جهاز على حدة) ====
+  const DEFAULT_MEDIA_WIDTH = 60;
+  const DEFAULT_DOCTORS_HEIGHT = 30;
+  const [mediaWidthPct, setMediaWidthPct] = useState(DEFAULT_MEDIA_WIDTH);
+  const [doctorsHeightPct, setDoctorsHeightPct] = useState(DEFAULT_DOCTORS_HEIGHT);
+  const [showLayoutPanel, setShowLayoutPanel] = useState(false);
+
+  useEffect(() => {
+    const savedMedia = localStorage.getItem('queue_display_media_width');
+    const savedDoctors = localStorage.getItem('queue_display_doctors_height');
+    if (savedMedia) setMediaWidthPct(Number(savedMedia));
+    if (savedDoctors) setDoctorsHeightPct(Number(savedDoctors));
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('queue_display_media_width', String(mediaWidthPct));
+  }, [mediaWidthPct]);
+
+  useEffect(() => {
+    localStorage.setItem('queue_display_doctors_height', String(doctorsHeightPct));
+  }, [doctorsHeightPct]);
+
+  const resetLayout = () => {
+    setMediaWidthPct(DEFAULT_MEDIA_WIDTH);
+    setDoctorsHeightPct(DEFAULT_DOCTORS_HEIGHT);
+    setZoom(1);
+  };
+
+  // الزووم بيغيّر حجم الخط الجذري (html) عشان كل وحدات rem في التصميم
+  // (اللي هي كل أحجام Tailwind) تتناسب معاه فعليًا — الطريقة القديمة كانت
+  // بتحط fontSize على div داخلي، وده ملوش أي تأثير على وحدات rem لأنها
+  // بترجع دايمًا لحجم خط عنصر html الجذري بغض النظر عن أي عنصر أب.
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${zoom * 100}%`;
+    return () => {
+      document.documentElement.style.fontSize = '';
+    };
+  }, [zoom]);
 
   // ==== إشعار النداء المنبثق ====
   const [dropNotice, setDropNotice] = useState<{ token: number; clinicName: string } | null>(null);
@@ -127,11 +167,11 @@ export default function QueueDisplay() {
     if (e.clientY < 90) {
       setShowBar(true);
       if (hideTimer.current) clearTimeout(hideTimer.current);
-    } else if (!showModeMenu) {
+    } else if (!showModeMenu && !showLayoutPanel) {
       if (hideTimer.current) clearTimeout(hideTimer.current);
       hideTimer.current = setTimeout(() => setShowBar(false), 2500);
     }
-  }, [showModeMenu]);
+  }, [showModeMenu, showLayoutPanel]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen();
@@ -234,13 +274,54 @@ export default function QueueDisplay() {
             <ZoomIn className="w-4 h-4" />
           </button>
         </div>
+
+        <div className="relative">
+          <button onClick={() => setShowLayoutPanel(s => !s)} className="flex items-center gap-2 text-white bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg text-sm font-bold transition-colors">
+            <Sliders className="w-4 h-4" /> تنسيق الشاشة
+          </button>
+          {showLayoutPanel && (
+            <div className="absolute top-full mt-2 left-0 bg-slate-800 border border-slate-600 rounded-xl shadow-xl p-4 w-80 space-y-4 text-right">
+              <div>
+                <div className="flex justify-between text-xs text-slate-300 mb-1">
+                  <span>{mediaWidthPct}%</span>
+                  <span>عرض قسم الميديا (والأرقام {100 - mediaWidthPct}%)</span>
+                </div>
+                <input
+                  type="range" min={20} max={80} step={5}
+                  value={mediaWidthPct}
+                  onChange={(e) => setMediaWidthPct(Number(e.target.value))}
+                  className="w-full accent-emerald-500"
+                />
+              </div>
+              <div>
+                <div className="flex justify-between text-xs text-slate-300 mb-1">
+                  <span>{doctorsHeightPct}%</span>
+                  <span>ارتفاع قسم الأطباء المتواجدين</span>
+                </div>
+                <input
+                  type="range" min={15} max={50} step={5}
+                  value={doctorsHeightPct}
+                  onChange={(e) => setDoctorsHeightPct(Number(e.target.value))}
+                  className="w-full accent-emerald-500"
+                />
+              </div>
+              <button
+                onClick={resetLayout}
+                className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2 rounded-lg text-sm transition-colors"
+              >
+                <RotateCcw className="w-4 h-4" /> استعادة الوضع الافتراضي
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* المحتوى — الزووم بيكبّر حجم الخط والمسافات بدل ما يعمل scale للتصميم كله،
-          عشان نسب الـ 60/40/30/100% متتكسرش أو تتقص من حواف الشاشة */}
-      <div className="flex-1 flex flex-col overflow-hidden" style={{ fontSize: `${zoom}rem` }}>
+      {/* المحتوى — الزووم بيكبّر حجم الخط والمسافات (عن طريق تكبير خط عنصر
+          html الجذري) بدل ما يعمل scale بصري للتصميم كله، عشان نسب الأقسام
+          متتكسرش أو تتقص من حواف الشاشة */}
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header (شريط علوي رفيع، مش من ضمن نسب الأقسام التلاتة) */}
-        <header className={`${panelBg} px-8 py-3 flex justify-between items-center shadow-xl border-b shrink-0`} style={{ fontSize: '1rem' }}>
+        <header className={`${panelBg} px-8 py-3 flex justify-between items-center shadow-xl border-b shrink-0`}>
           <div className="flex items-center gap-3">
             <Monitor className="w-8 h-8 text-emerald-500" />
             <h1 className="text-xl font-bold">مركز الطائر الحر الطبي</h1>
@@ -251,9 +332,9 @@ export default function QueueDisplay() {
         </header>
 
         {/* القسم العلوي: ميديا (يمين 60%) + أرقام (يسار 40%) — أو 100% لو مفيش ميديا */}
-        <div className="flex" style={{ height: '70%' }}>
+        <div className="flex" style={{ height: `${100 - doctorsHeightPct}%` }}>
           {showMedia && (
-            <div style={{ width: '60%' }} className="relative bg-black flex items-center justify-center overflow-hidden border-l border-slate-700">
+            <div style={{ width: `${mediaWidthPct}%` }} className="relative bg-black flex items-center justify-center overflow-hidden border-l border-slate-700">
               {media.length === 0 ? (
                 <div className="text-slate-600 flex flex-col items-center gap-2">
                   <ImageIcon className="w-16 h-16" />
@@ -268,7 +349,7 @@ export default function QueueDisplay() {
             </div>
           )}
 
-          <div style={{ width: showMedia ? '40%' : '100%' }} className="flex flex-col overflow-hidden">
+          <div style={{ width: showMedia ? `${100 - mediaWidthPct}%` : '100%' }} className="flex flex-col overflow-hidden">
             {/* النداء الحالي */}
             <div className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden">
               {currentCall ? (
@@ -319,7 +400,7 @@ export default function QueueDisplay() {
         </div>
 
         {/* القسم السفلي: الأطباء المتواجدون — 30% ارتفاع، 100% عرض */}
-        <div className={`${panelBg} border-t p-4 shrink-0`} style={{ height: '30%' }}>
+        <div className={`${panelBg} border-t p-4 shrink-0`} style={{ height: `${doctorsHeightPct}%` }}>
           <h3 className={`text-sm font-bold ${mutedText} flex items-center gap-2 mb-3`}>
             <Stethoscope className="w-4 h-4 text-emerald-500" /> العيادات الشغالة الآن ({activeClinicBoxes.length})
           </h3>
