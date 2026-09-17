@@ -40,42 +40,40 @@ export function SecretaryCallQueue() {
   const [specificToken, setSpecificToken] = useState('');
   const [presenceBusy, setPresenceBusy] = useState<string | null>(null);
   const [mediaIndex, setMediaIndex] = useState(0);
+  const [secretaryAlert, setSecretaryAlert] = useState<string | null>(null);
 
-  const fetchDoctorsOnly = useCallback(async () => {
-    const { data } = await supabase
-      .from('doctors')
-      .select('profile_id, clinic_id, specialty, is_present, profiles(first_name, last_name)');
-    if (data) setDoctors(data);
+  useEffect(() => {
+    fetchAll();
+    const channel = supabase
+      .channel('secretary_queue_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue' }, () => fetchQueueOnly())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctors' }, () => fetchDoctorsOnly())
+      .subscribe();
+
+    // نداء فوري من الطبيب — نغمة ding.mp3 + نص على الشاشة، بدون أي تخزين
+    const callChannel = supabase
+      .channel('secretary-calls')
+      .on('broadcast', { event: 'call_secretary' }, (payload) => {
+        new Audio('/audio/ding.mp3').play().catch(() => {});
+        setSecretaryAlert(`نداء للسكرتارية - ${payload.payload?.clinicName || 'عيادة'}`);
+        setTimeout(() => setSecretaryAlert(null), 8000);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(callChannel);
+    };
   }, []);
 
-  const fetchCompletedToday = useCallback(async () => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const { data } = await supabase
-      .from('call_queue')
-      .select('*, clinic:clinic_id(name)')
-      .eq('status', 'completed')
-      .gte('created_at', todayStart.toISOString())
-      .order('updated_at', { ascending: false })
-      .limit(100);
-    if (data) setCompletedToday(data);
-  }, []);
+  // دوران بسيط للوسائط كل 8 ثواني للصور (الفيديو بيكمل لوحده)
+  useEffect(() => {
+    if (media.length < 2) return;
+    const timer = setInterval(() => setMediaIndex(i => (i + 1) % media.length), 8000);
+    return () => clearInterval(timer);
+  }, [media.length]);
 
-  const fetchQueueOnly = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('call_queue')
-      .select('*, clinic:clinic_id(name, audio_number), service:service_id(name, price), assigned_doctor:doctor_id(first_name, last_name)')
-      .in('status', ['waiting', 'calling'])
-      .order('token_number', { ascending: true });
-    if (error) {
-      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل حالة النداء الآلي.'));
-    } else if (data) {
-      setQueues(data);
-    }
-    fetchCompletedToday();
-  }, [fetchCompletedToday]);
-
-  const fetchAll = useCallback(async () => {
+  const fetchAll = async () => {
     setLoadError(null);
     setLoading(true);
     // امسح أي حضور من يوم سابق قبل ما نعرض القائمة
@@ -100,30 +98,41 @@ export function SecretaryCallQueue() {
 
     await fetchQueueOnly();
     setLoading(false);
-  }, [selectedClinicId, fetchQueueOnly]);
+  };
 
-  useEffect(() => {
-    const t = setTimeout(() => {
-      fetchAll();
-    }, 0);
-    const channel = supabase
-      .channel('secretary_queue_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue' }, () => fetchQueueOnly())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctors' }, () => fetchDoctorsOnly())
-      .subscribe();
+  const fetchQueueOnly = async () => {
+    const { data, error } = await supabase
+      .from('call_queue')
+      .select('*, clinic:clinic_id(name, audio_number), service:service_id(name, price), assigned_doctor:doctor_id(first_name, last_name)')
+      .in('status', ['waiting', 'calling'])
+      .order('token_number', { ascending: true });
+    if (error) {
+      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل حالة النداء الآلي.'));
+    } else if (data) {
+      setQueues(data);
+    }
+    fetchCompletedToday();
+  };
 
-    return () => {
-      clearTimeout(t);
-      supabase.removeChannel(channel);
-    };
-  }, [fetchAll, fetchQueueOnly, fetchDoctorsOnly]);
+  const fetchCompletedToday = async () => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const { data } = await supabase
+      .from('call_queue')
+      .select('*, clinic:clinic_id(name)')
+      .eq('status', 'completed')
+      .gte('created_at', todayStart.toISOString())
+      .order('updated_at', { ascending: false })
+      .limit(100);
+    if (data) setCompletedToday(data);
+  };
 
-  // دوران بسيط للوسائط كل 8 ثواني للصور (الفيديو بيكمل لوحده)
-  useEffect(() => {
-    if (media.length < 2) return;
-    const timer = setInterval(() => setMediaIndex(i => (i + 1) % media.length), 8000);
-    return () => clearInterval(timer);
-  }, [media.length]);
+  const fetchDoctorsOnly = async () => {
+    const { data } = await supabase
+      .from('doctors')
+      .select('profile_id, clinic_id, specialty, is_present, profiles(first_name, last_name)');
+    if (data) setDoctors(data);
+  };
 
   const selectedClinic = clinics.find(c => c.id === selectedClinicId);
   const clinicQueue = queues.filter(q => q.clinic_id === selectedClinicId);
@@ -138,9 +147,9 @@ export function SecretaryCallQueue() {
     } catch {
       // النداء المرئي على الشاشة يفضل شغال حتى لو الصوت فشل
     }
-  }, [selectedClinic, fetchQueueOnly]);
+  }, [selectedClinic]);
 
-  async function handleCallNext() {
+  const handleCallNext = async () => {
     if (!selectedClinicId) return;
     setCalling(true);
     setActionError(null);
@@ -157,7 +166,7 @@ export function SecretaryCallQueue() {
     announceAndRefresh(data);
   };
 
-  async function handleCallPrevious() {
+  const handleCallPrevious = async () => {
     if (!selectedClinicId) return;
     setCalling(true);
     setActionError(null);
@@ -221,6 +230,11 @@ export function SecretaryCallQueue() {
 
   return (
     <div className="space-y-6">
+      {secretaryAlert && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-amber-500 text-white font-bold px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 animate-pulse">
+          <Activity className="w-5 h-5" /> {secretaryAlert}
+        </div>
+      )}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Activity className="w-8 h-8 text-emerald-600" />

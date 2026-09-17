@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
-import { Activity, Volume2, Users, Loader2, Hash, Lock } from 'lucide-react';
+import { Activity, Volume2, Users, Loader2, Hash, Lock, BellRing, CheckCircle2 } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
@@ -20,6 +20,7 @@ export function DoctorCallQueue() {
   const [queueLoadError, setQueueLoadError] = useState<string | null>(null);
   const [callInProgress, setCallInProgress] = useState(false);
   const [specificToken, setSpecificToken] = useState('');
+  const [secretaryCallSent, setSecretaryCallSent] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -54,7 +55,7 @@ export function DoctorCallQueue() {
     }
   }, [doctorClinicId]);
 
-  async function fetchDoctorClinic() {
+  const fetchDoctorClinic = async () => {
     setClinicLoadError(null);
     const { data, error } = await supabase.from('doctors').select('clinic_id, is_present').eq('profile_id', user?.id).single();
     if (error) {
@@ -73,7 +74,7 @@ export function DoctorCallQueue() {
     setLoading(false);
   };
 
-  async function fetchQueue() {
+  const fetchQueue = async () => {
     setQueueLoadError(null);
     const { data, error } = await supabase
       .from('call_queue')
@@ -126,7 +127,7 @@ export function DoctorCallQueue() {
     updateStatus(id, 'completed');
   };
 
-  async function handleCallNext() {
+  const handleCallNext = async () => {
     if (!doctorClinicId) return;
     setCallInProgress(true);
     setActionError(null);
@@ -144,7 +145,7 @@ export function DoctorCallQueue() {
     if (clinic) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
   };
 
-  async function handleCallPrevious() {
+  const handleCallPrevious = async () => {
     if (!doctorClinicId) return;
     setCallInProgress(true);
     setActionError(null);
@@ -160,6 +161,22 @@ export function DoctorCallQueue() {
     }
     fetchQueue();
     if (clinic) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
+  };
+
+  const handleCallSecretary = async () => {
+    // نداء فوري (Broadcast) بدون تخزين في قاعدة البيانات — بس تنبيه لحظي
+    // للسكرتارية اللي فاتحة شاشة الطابور، بصوت ding.mp3 ونص على شاشتها.
+    const channel = supabase.channel('secretary-calls');
+    await channel.subscribe();
+    await channel.send({
+      type: 'broadcast',
+      event: 'call_secretary',
+      payload: { clinicName: clinic?.name || 'العيادة' },
+    });
+    supabase.removeChannel(channel);
+
+    setSecretaryCallSent(true);
+    setTimeout(() => setSecretaryCallSent(false), 4000);
   };
 
   if (loading) {
@@ -231,6 +248,16 @@ export function DoctorCallQueue() {
           العميل السابق
         </button>
       </div>
+
+      <button
+        onClick={handleCallSecretary}
+        className={`w-full flex items-center justify-center gap-2 font-bold py-3.5 rounded-xl transition-colors ${
+          secretaryCallSent ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-500 text-white hover:bg-amber-600'
+        }`}
+      >
+        {secretaryCallSent ? <CheckCircle2 className="w-5 h-5" /> : <BellRing className="w-5 h-5" />}
+        {secretaryCallSent ? 'تم إرسال النداء للسكرتارية' : 'نداء السكرتارية'}
+      </button>
 
       <form onSubmit={handleCallSpecific} className="flex gap-2">
         <div className="relative flex-1">
