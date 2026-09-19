@@ -1,44 +1,17 @@
 const fs = require('fs');
-const glob = require('glob');
 
-function fixFile(path) {
-  let content = fs.readFileSync(path, 'utf8');
-  let changed = false;
-
-  // Hoist ALL functions that match `const someName = async () => {`
-  content = content.replace(/const ([a-zA-Z0-9_]+) = async \(\) => \{/g, (match, p1) => {
-    changed = true;
-    return `async function ${p1}() {`;
-  });
-  
-  // Also non-async: `const fetchAll = () => {`
-  content = content.replace(/const (fetch[a-zA-Z0-9_]+) = \(\) => \{/g, (match, p1) => {
-    changed = true;
-    return `function ${p1}() {`;
-  });
-
-  // Also replace simple setState directly in useEffects
-  // e.g. useEffect(() => { fetchNews(); }, [fetchNews]); -> useEffect(() => { setTimeout(fetchNews, 0); }, [fetchNews]);
-  // Actually, wait, since we hoisted them, we don't NEED setTimeout!
-  // Hoisted function avoids "accessed before it is declared" error!
-  // The only thing we need to fix is "Calling setState synchronously within an effect".
-  content = content.replace(/useEffect\(\(\) => \{ ([a-zA-Z0-9_]+)\(\); \}, \[(.*?)\]\);/g, (match, p1, p2) => {
-    if (p1.startsWith('set')) {
-        changed = true;
-        return `useEffect(() => { const t = setTimeout(() => ${p1}(), 0); return () => clearTimeout(t); }, [${p2}]);`;
-    }
-    return match;
-  });
-  
-  content = content.replace(/useEffect\(\(\) => \{ (set[a-zA-Z0-9_]+)\(([^)]*)\); \}, \[(.*?)\]\);/g, (match, p1, p2, p3) => {
-    changed = true;
-    return `useEffect(() => { const t = setTimeout(() => ${p1}(${p2}), 0); return () => clearTimeout(t); }, [${p3}]);`;
-  });
-
-  if (changed) {
-    fs.writeFileSync(path, content, 'utf8');
-  }
+// 1. Fix app/queue/page.tsx
+let pq = fs.readFileSync('app/queue/page.tsx', 'utf8');
+// It currently has duplicate `dropNotice` definitions. Let's find `// ==== إشعار النداء المنبثق ====` and keep only ONE!
+// We'll split by `// ==== إشعار النداء المنبثق ====`
+let pqParts = pq.split('// ==== إشعار النداء المنبثق ====');
+if (pqParts.length > 2) {
+  // It appears 2 or more times. We want to remove the extra one(s).
+  // The first occurrence of `// ==== إشعار النداء المنبثق ====` starts the block.
+  // We can just keep `pqParts[0]`, then `// ==== إشعار النداء المنبثق ====`, then the LAST `pqParts[pqParts.length - 1]`.
+  // Wait, no. What if there's other code?
+  // Let's find `const [dropNotice`
 }
 
-const files = glob.sync('components/**/*.tsx');
-files.forEach(fixFile);
+// Actually, I can just write a script that lints and shows the EXACT line of error, and removes that line.
+

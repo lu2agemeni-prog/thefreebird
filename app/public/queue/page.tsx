@@ -96,7 +96,7 @@ export default function QueueDisplay() {
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
-  const fetchQueue = async () => {
+  async function fetchQueue() {
     const { data } = await supabase.rpc('get_public_queue_status');
     if (data) {
       setQueue(data);
@@ -115,7 +115,7 @@ export default function QueueDisplay() {
     }
   };
 
-  const fetchPresentDoctors = async () => {
+  async function fetchPresentDoctors() {
     const { data } = await supabase
       .from('doctors')
       .select('profile_id, clinic_id, is_present, profiles(first_name, last_name), clinics(name)')

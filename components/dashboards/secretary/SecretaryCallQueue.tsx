@@ -1,11 +1,5 @@
 'use client';
 
-// ============================================================================
-// components/dashboards/secretary/SecretaryCallQueue.tsx
-// شاشة النداء الآلي — عمود يسار 30% (شبكة العيادات + حضور الأطباء)،
-// عمود يمين 70% (عرض وسائط + أزرار التحكم بالنداء + قائمة الانتظار).
-// ============================================================================
-
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
@@ -28,7 +22,6 @@ export function SecretaryCallQueue() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-
   const [selectedClinicId, setSelectedClinicId] = useState<string>('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAddExistingModal, setShowAddExistingModal] = useState(false);
@@ -50,7 +43,6 @@ export function SecretaryCallQueue() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'doctors' }, () => fetchDoctorsOnly())
       .subscribe();
 
-    // نداء فوري من الطبيب — نغمة ding.mp3 + نص على الشاشة، بدون أي تخزين
     const callChannel = supabase
       .channel('secretary-calls')
       .on('broadcast', { event: 'call_secretary' }, (payload) => {
@@ -64,41 +56,14 @@ export function SecretaryCallQueue() {
       supabase.removeChannel(channel);
       supabase.removeChannel(callChannel);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // دوران بسيط للوسائط كل 8 ثواني للصور (الفيديو بيكمل لوحده)
   useEffect(() => {
     if (media.length < 2) return;
     const timer = setInterval(() => setMediaIndex(i => (i + 1) % media.length), 8000);
     return () => clearInterval(timer);
   }, [media.length]);
-
-  const fetchAll = async () => {
-    setLoadError(null);
-    setLoading(true);
-    // امسح أي حضور من يوم سابق قبل ما نعرض القائمة
-    await supabase.rpc('reset_stale_doctor_presence');
-    const [clinicsRes, doctorsRes, mediaRes] = await Promise.all([
-      supabase.from('clinics').select('*').eq('is_active', true),
-      supabase.from('doctors').select('profile_id, clinic_id, specialty, is_present, profiles(first_name, last_name)'),
-      supabase.from('queue_media').select('*').eq('is_active', true).order('display_order', { ascending: true }),
-    ]);
-
-    if (clinicsRes.error) {
-      setLoadError(getFriendlyErrorMessage(clinicsRes.error, 'تعذر تحميل قائمة العيادات.'));
-      setLoading(false);
-      return;
-    }
-    setClinics(clinicsRes.data || []);
-    if (clinicsRes.data?.length && !selectedClinicId) {
-      setSelectedClinicId(clinicsRes.data[0].id);
-    }
-    if (doctorsRes.data) setDoctors(doctorsRes.data);
-    if (mediaRes.data) setMedia(mediaRes.data);
-
-    await fetchQueueOnly();
-    setLoading(false);
-  };
 
   const fetchQueueOnly = async () => {
     const { data, error } = await supabase
@@ -121,33 +86,54 @@ export function SecretaryCallQueue() {
       .from('call_queue')
       .select('*, clinic:clinic_id(name)')
       .eq('status', 'completed')
-      .gte('created_at', todayStart.toISOString())
-      .order('updated_at', { ascending: false })
-      .limit(100);
+      .gte('updated_at', todayStart.toISOString())
+      .order('updated_at', { ascending: false });
     if (data) setCompletedToday(data);
   };
 
   const fetchDoctorsOnly = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('doctors')
-      .select('profile_id, clinic_id, specialty, is_present, profiles(first_name, last_name)');
-    if (data) setDoctors(data);
+      .select('profile_id, clinic_id, is_present, profiles(first_name, last_name)');
+    if (!error && data) {
+      setDoctors(data);
+    }
   };
 
-  const selectedClinic = clinics.find(c => c.id === selectedClinicId);
-  const clinicQueue = queues.filter(q => q.clinic_id === selectedClinicId);
-  const currentCalling = clinicQueue.find(q => q.status === 'calling');
-  const waitingList = clinicQueue.filter(q => q.status === 'waiting');
-
-  const announceAndRefresh = useCallback(async (row: any) => {
-    if (!row || !selectedClinic) return;
-    fetchQueueOnly();
-    try {
-      await playQueueAnnouncement(row.token_number, selectedClinic.name, selectedClinic.audio_number);
-    } catch {
-      // النداء المرئي على الشاشة يفضل شغال حتى لو الصوت فشل
+  const fetchAll = async () => {
+    setLoadError(null);
+    const { data: clinicsData } = await supabase.from('clinics').select('*').order('name');
+    if (clinicsData) {
+      setClinics(clinicsData);
+      if (clinicsData.length && !selectedClinicId) {
+        setSelectedClinicId(clinicsData[0].id);
+      }
     }
-  }, [selectedClinic]);
+    const { data: mediaData } = await supabase.from('queue_media').select('*').eq('is_active', true).order('display_order');
+    if (mediaData) setMedia(mediaData);
+
+    await fetchDoctorsOnly();
+    await fetchQueueOnly();
+    setLoading(false);
+  };
+
+
+  const selectedClinic = clinics.find(c => c.id === selectedClinicId);
+  const waitingList = queues.filter((q: any) => q.clinic_id === selectedClinicId && q.status === 'waiting');
+  const currentCalling = queues.find((q: any) => q.clinic_id === selectedClinicId && q.status === 'calling');
+
+  const announceAndRefresh = async (data: any) => {
+    // If it's a list, find the calling one, or if it's the object itself.
+    if (Array.isArray(data)) {
+       const calling = data.find((q: any) => q.status === 'calling');
+       if (calling) {
+         playQueueAnnouncement(calling.token_number, calling.clinic?.name || 'العيادة', calling.clinic?.audio_number);
+       }
+    } else if (data && data.status === 'calling') {
+       playQueueAnnouncement(data.token_number, selectedClinic?.name || 'العيادة', selectedClinic?.audio_number);
+    }
+    fetchQueueOnly();
+  };
 
   const handleCallNext = async () => {
     if (!selectedClinicId) return;

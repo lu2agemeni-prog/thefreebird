@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -22,58 +23,6 @@ export function DoctorCallQueue() {
   const [specificToken, setSpecificToken] = useState('');
   const [secretaryCallSent, setSecretaryCallSent] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      fetchDoctorClinic();
-      // متابعة تغيّر حالة "التواجد" فور ما السكرتارية تفعّلها/توقفها
-      const presenceChannel = supabase
-        .channel('doctor_presence_changes')
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'doctors', filter: `profile_id=eq.${user.id}` }, () => {
-          fetchDoctorClinic();
-        })
-        .subscribe();
-      return () => {
-        supabase.removeChannel(presenceChannel);
-      };
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (doctorClinicId) {
-      fetchQueue();
-      // Setup realtime subscription
-      const channel = supabase
-        .channel('call_queue_changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue', filter: `clinic_id=eq.${doctorClinicId}` }, () => {
-          fetchQueue();
-        })
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
-  }, [doctorClinicId]);
-
-  const fetchDoctorClinic = async () => {
-    setClinicLoadError(null);
-    const { data, error } = await supabase.from('doctors').select('clinic_id, is_present').eq('profile_id', user?.id).single();
-    if (error) {
-      // PGRST116: لم يُنشأ صف طبيب بعد — حالة طبيعية (غير مرتبط بعيادة)
-      if (error.code === 'PGRST116') {
-        setDoctorClinicId(null);
-      } else {
-        setClinicLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل بيانات العيادة الخاصة بك.'));
-      }
-    } else if (data) {
-      setDoctorClinicId(data.clinic_id);
-      setIsPresent(!!data.is_present);
-      const { data: clinicData } = await supabase.from('clinics').select('*').eq('id', data.clinic_id).single();
-      if (clinicData) setClinic(clinicData);
-    }
-    setLoading(false);
-  };
-
   const fetchQueue = async () => {
     setQueueLoadError(null);
     const { data, error } = await supabase
@@ -88,6 +37,45 @@ export function DoctorCallQueue() {
       setQueue(data || []);
     }
   };
+
+  const fetchDoctorClinic = async () => {
+    setClinicLoadError(null);
+    const { data, error } = await supabase.from('doctors').select('clinic_id, is_present').eq('profile_id', user?.id).single();
+    if (error) {
+      if (error.code === 'PGRST116') {
+        setDoctorClinicId(null);
+      } else {
+        setClinicLoadError(getFriendlyErrorMessage(error, 'تعذر جلب بيانات العيادة.'));
+      }
+    } else if (data) {
+      setDoctorClinicId(data.clinic_id);
+      setIsPresent(data.is_present || false);
+      if (data.clinic_id) {
+        const { data: clinicData } = await supabase.from('clinics').select('name, audio_number').eq('id', data.clinic_id).single();
+        if (clinicData) setClinic(clinicData);
+      }
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (user?.id) fetchDoctorClinic();
+  }, [user]);
+
+  useEffect(() => {
+    if (doctorClinicId) {
+      fetchQueue();
+      const channel = supabase
+        .channel('call_queue_changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue', filter: `clinic_id=eq.${doctorClinicId}` }, () => {
+          fetchQueue();
+        })
+        .subscribe();
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [doctorClinicId]);
 
   const handleCallSpecific = async (e: React.FormEvent) => {
     e.preventDefault();

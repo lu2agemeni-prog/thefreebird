@@ -84,6 +84,10 @@ export default function QueueDisplay() {
   const [dropNotice, setDropNotice] = useState<{ token: number; clinicName: string } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ==== نداء السكرتارية من الطبيب — بث فوري بدون أي تخزين ====
+  const [secretaryAlert, setSecretaryAlert] = useState<string | null>(null);
+  const secretaryAlertTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
@@ -109,12 +113,26 @@ export default function QueueDisplay() {
     const pollTimer = setInterval(fetchQueue, 5000);
     const presencePoll = setInterval(fetchPresentDoctors, 30000);
 
+    // نداء السكرتارية من الطبيب — نفس البث اللي بتستقبله شاشة السكرتارية،
+    // بدون أي تخزين في قاعدة البيانات
+    const callChannel = supabase.channel('secretary-calls')
+      .on('broadcast', { event: 'call_secretary' }, (payload) => {
+        if (soundEnabledRef.current) {
+          new Audio('/audio/ding.mp3').play().catch(() => {});
+        }
+        setSecretaryAlert(`نداء للسكرتارية - ${payload.payload?.clinicName || 'عيادة'}`);
+        if (secretaryAlertTimer.current) clearTimeout(secretaryAlertTimer.current);
+        secretaryAlertTimer.current = setTimeout(() => setSecretaryAlert(null), 8000);
+      })
+      .subscribe();
+
     return () => {
       clearInterval(timer);
       clearInterval(pollTimer);
       clearInterval(presencePoll);
       supabase.removeChannel(sub);
       supabase.removeChannel(presenceSub);
+      supabase.removeChannel(callChannel);
     };
   }, []);
 
@@ -187,17 +205,18 @@ export default function QueueDisplay() {
     return [clinic, doctor].filter(Boolean).join(' — ') || q.clinic_name || 'غير محدد';
   };
 
-  // مربعات العيادات الشغالة (فيها طبيب متواجد) — عيادة واحدة تظهر مرة واحدة
-  const activeClinicBoxes = Array.from(
-    new Map(
-      presentDoctors
-        .filter(d => d.clinic_id)
-        .map(d => [d.clinic_id, { clinicId: d.clinic_id, clinicName: d.clinics?.name || 'عيادة' }])
-    ).values()
-  ).map(box => {
-    const calling = queue.find(q => q.status === 'calling' && q.clinic_id === box.clinicId);
-    return { ...box, currentToken: calling?.token_number ?? null };
-  });
+  // مربعات الأطباء المتواجدين — كل طبيب متواجد بمربّع لوحده (اسم الطبيب + عيادته)
+  const presentDoctorBoxes = presentDoctors
+    .filter(d => d.profiles)
+    .map(d => {
+      const calling = queue.find(q => q.status === 'calling' && q.clinic_id === d.clinic_id);
+      return {
+        doctorId: d.profile_id,
+        doctorName: `د. ${d.profiles?.first_name || ''} ${d.profiles?.last_name || ''}`.trim(),
+        clinicName: d.clinics?.name || 'عيادة',
+        currentToken: calling?.token_number ?? null,
+      };
+    });
 
   const bg = isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900';
   const panelBg = isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200';
@@ -221,6 +240,13 @@ export default function QueueDisplay() {
         }
         .drop-notice {
           animation: drop-notice-fall 0.7s cubic-bezier(0.34,1.56,0.64,1) both, drop-notice-flash 1s ease-in-out infinite;
+        }
+        @keyframes drop-notice-flash-amber {
+          0%, 100% { box-shadow: 0 0 40px 10px rgba(217,119,6,0.9); background-color: rgb(217 119 6); }
+          50% { box-shadow: 0 0 60px 20px rgba(245,158,11,0.6); background-color: rgb(180 83 9); }
+        }
+        .drop-notice-amber {
+          animation: drop-notice-fall 0.7s cubic-bezier(0.34,1.56,0.64,1) both, drop-notice-flash-amber 1s ease-in-out infinite;
         }
       `}</style>
 
@@ -284,7 +310,7 @@ export default function QueueDisplay() {
               <div>
                 <div className="flex justify-between text-xs text-slate-300 mb-1">
                   <span>{mediaWidthPct}%</span>
-                  <span>عرض قسم الميديا (والأرقام {100 - mediaWidthPct}%)</span>
+                  <span>عرض قسم الميديا (والأطباء المتواجدون {100 - mediaWidthPct}%)</span>
                 </div>
                 <input
                   type="range" min={20} max={80} step={5}
@@ -296,7 +322,7 @@ export default function QueueDisplay() {
               <div>
                 <div className="flex justify-between text-xs text-slate-300 mb-1">
                   <span>{doctorsHeightPct}%</span>
-                  <span>ارتفاع قسم الأطباء المتواجدين</span>
+                  <span>ارتفاع قسم النداء الحالي وقائمة الانتظار</span>
                 </div>
                 <input
                   type="range" min={15} max={50} step={5}
@@ -331,7 +357,7 @@ export default function QueueDisplay() {
           </div>
         </header>
 
-        {/* القسم العلوي: ميديا (يمين 60%) + أرقام (يسار 40%) — أو 100% لو مفيش ميديا */}
+        {/* القسم العلوي: ميديا (يمين) + الأطباء المتواجدون (يسار) — أو 100% لو مفيش ميديا */}
         <div className="flex" style={{ height: `${100 - doctorsHeightPct}%` }}>
           {showMedia && (
             <div style={{ width: `${mediaWidthPct}%` }} className="relative bg-black flex items-center justify-center overflow-hidden border-l border-slate-700">
@@ -349,75 +375,75 @@ export default function QueueDisplay() {
             </div>
           )}
 
-          <div style={{ width: showMedia ? `${100 - mediaWidthPct}%` : '100%' }} className="flex flex-col overflow-hidden">
-            {/* النداء الحالي */}
-            <div className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-              {currentCall ? (
-                <div className="text-center z-10 w-full">
-                  <div className="inline-block bg-red-600 text-white px-5 py-1.5 rounded-full text-base font-bold mb-4 animate-pulse">
-                    النداء الحالي
-                  </div>
-                  <div className="text-8xl leading-none font-black text-emerald-500 mb-4 font-mono">
-                    {currentCall.token_number}
-                  </div>
-                  <div className={`text-xl ${mutedText} flex items-center justify-center gap-2 flex-wrap`}>
-                    تفضل بالدخول إلى:
-                    <span className="text-emerald-500 font-bold bg-emerald-950/10 px-3 py-1.5 rounded-lg border border-emerald-800/30">
-                      {destinationLabel(currentCall)}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className={`text-center text-xl flex flex-col items-center ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>
-                  <Monitor className={`w-16 h-16 mb-3 ${isDark ? 'text-slate-800' : 'text-gray-200'}`} />
-                  في انتظار النداء القادم...
-                </div>
-              )}
-            </div>
-
-            {/* قائمة الانتظار */}
-            <div className={`${panelBg} border-t p-3 shrink-0`} style={{ maxHeight: '45%', overflowY: 'auto' }}>
-              <h3 className={`text-sm font-bold ${mutedText} flex items-center gap-2 mb-2`}>
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500"></span>
-                </span>
-                قائمة الانتظار ({waitingList.length})
-              </h3>
-              <div className="flex flex-col gap-1.5">
-                {waitingList.map((q, idx) => (
-                  <div key={q.id} className={`${rowBg} border px-3 py-1.5 rounded-lg flex justify-between items-center text-sm`}>
-                    <span className={isDark ? 'text-slate-300' : 'text-gray-700'}>{idx + 1}. {destinationLabel(q)}</span>
-                    <span className="font-bold text-orange-500 font-mono text-lg">{q.token_number}</span>
+          {/* الأطباء المتواجدون */}
+          <div style={{ width: showMedia ? `${100 - mediaWidthPct}%` : '100%' }} className="flex flex-col overflow-hidden p-4">
+            <h3 className={`text-sm font-bold ${mutedText} flex items-center gap-2 mb-3 shrink-0`}>
+              <Stethoscope className="w-4 h-4 text-emerald-500" /> الأطباء المتواجدون ({presentDoctorBoxes.length})
+            </h3>
+            {presentDoctorBoxes.length === 0 ? (
+              <div className={`flex-1 flex items-center justify-center text-sm ${isDark ? 'text-slate-600' : 'text-gray-400'}`}>
+                لا يوجد أطباء متواجدون حاليًا
+              </div>
+            ) : (
+              <div className="flex-1 grid grid-cols-2 gap-3 overflow-y-auto content-start">
+                {presentDoctorBoxes.map(box => (
+                  <div key={box.doctorId} className={`${rowBg} border rounded-xl p-3 flex flex-col items-center justify-center text-center gap-1`}>
+                    <p className={`text-sm font-bold ${isDark ? 'text-slate-200' : 'text-gray-700'}`}>{box.doctorName}</p>
+                    <p className={`text-xs ${mutedText}`}>{box.clinicName}</p>
+                    <p className="text-2xl font-black text-emerald-500 font-mono">{box.currentToken ?? '—'}</p>
                   </div>
                 ))}
-                {waitingList.length === 0 && (
-                  <div className={`text-sm py-2 text-center ${isDark ? 'text-slate-600' : 'text-gray-400'}`}>لا يوجد مرضى في الانتظار</div>
-                )}
               </div>
-            </div>
+            )}
           </div>
         </div>
 
-        {/* القسم السفلي: الأطباء المتواجدون — 30% ارتفاع، 100% عرض */}
-        <div className={`${panelBg} border-t p-4 shrink-0`} style={{ height: `${doctorsHeightPct}%` }}>
-          <h3 className={`text-sm font-bold ${mutedText} flex items-center gap-2 mb-3`}>
-            <Stethoscope className="w-4 h-4 text-emerald-500" /> العيادات الشغالة الآن ({activeClinicBoxes.length})
-          </h3>
-          {activeClinicBoxes.length === 0 ? (
-            <div className={`h-[calc(100%-2rem)] flex items-center justify-center text-sm ${isDark ? 'text-slate-600' : 'text-gray-400'}`}>
-              لا يوجد أطباء متواجدون حاليًا
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 h-[calc(100%-2rem)] overflow-y-auto">
-              {activeClinicBoxes.map(box => (
-                <div key={box.clinicId} className={`${rowBg} border rounded-xl p-3 flex flex-col items-center justify-center text-center gap-1`}>
-                  <p className={`text-sm font-bold ${isDark ? 'text-slate-200' : 'text-gray-700'}`}>{box.clinicName}</p>
-                  <p className="text-3xl font-black text-emerald-500 font-mono">{box.currentToken ?? '—'}</p>
+        {/* القسم السفلي: النداء الحالي (أخضر، 50% من عرض الشاشة) + قائمة الانتظار */}
+        <div className="flex" style={{ height: `${doctorsHeightPct}%` }}>
+          <div style={{ width: '50%' }} className={`${panelBg} border-t p-3 shrink-0 overflow-y-auto`}>
+            <h3 className={`text-sm font-bold ${mutedText} flex items-center gap-2 mb-2`}>
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500"></span>
+              </span>
+              قائمة الانتظار ({waitingList.length})
+            </h3>
+            <div className="flex flex-col gap-1.5">
+              {waitingList.map((q, idx) => (
+                <div key={q.id} className={`${rowBg} border px-3 py-1.5 rounded-lg flex justify-between items-center text-sm`}>
+                  <span className={isDark ? 'text-slate-300' : 'text-gray-700'}>{idx + 1}. {destinationLabel(q)}</span>
+                  <span className="font-bold text-orange-500 font-mono text-lg">{q.token_number}</span>
                 </div>
               ))}
+              {waitingList.length === 0 && (
+                <div className={`text-sm py-2 text-center ${isDark ? 'text-slate-600' : 'text-gray-400'}`}>لا يوجد مرضى في الانتظار</div>
+              )}
             </div>
-          )}
+          </div>
+
+          <div style={{ width: '50%' }} className="bg-emerald-600 border-t border-emerald-700 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+            {currentCall ? (
+              <div className="text-center z-10 w-full">
+                <div className="inline-block bg-emerald-800 text-white px-5 py-1.5 rounded-full text-base font-bold mb-3 animate-pulse">
+                  النداء الحالي
+                </div>
+                <div className="text-7xl leading-none font-black text-white mb-3 font-mono">
+                  {currentCall.token_number}
+                </div>
+                <div className="text-lg text-emerald-50 flex items-center justify-center gap-2 flex-wrap">
+                  تفضل بالدخول إلى:
+                  <span className="text-white font-bold bg-emerald-800/60 px-3 py-1.5 rounded-lg border border-emerald-400/30">
+                    {destinationLabel(currentCall)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-lg flex flex-col items-center text-emerald-100">
+                <Monitor className="w-14 h-14 mb-3 text-emerald-400" />
+                في انتظار النداء القادم...
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -427,6 +453,16 @@ export default function QueueDisplay() {
           <div className="drop-notice mt-24 text-white text-center rounded-2xl px-10 py-6 shadow-2xl border-4 border-white/30">
             <p className="text-2xl font-bold mb-2">على العميل رقم {dropNotice.token}</p>
             <p className="text-3xl font-black">التوجه إلى {dropNotice.clinicName}</p>
+          </div>
+        </div>
+      )}
+
+      {/* نداء السكرتارية من الطبيب */}
+      {secretaryAlert && (
+        <div className="fixed inset-x-0 top-0 z-[60] flex justify-center pointer-events-none">
+          <div className="drop-notice-amber mt-56 text-white text-center rounded-2xl px-10 py-5 shadow-2xl border-4 border-white/30 flex items-center gap-3">
+            <span className="text-2xl font-black">🔔</span>
+            <p className="text-2xl font-bold">{secretaryAlert}</p>
           </div>
         </div>
       )}
