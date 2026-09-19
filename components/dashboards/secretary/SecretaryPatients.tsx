@@ -2,13 +2,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
-import { Users, Loader2, UserPlus, FileSpreadsheet } from 'lucide-react';
+import { Users, Loader2, UserPlus, FileSpreadsheet, CalendarPlus } from 'lucide-react';
 import { ErrorState } from '@/components/ui/error-state';
 import { SearchInput } from '@/components/ui/search-input';
 import { Pagination } from '@/components/ui/pagination';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { AddWalkInPatientModal } from './AddWalkInPatientModal';
 import { BulkPatientImportModal } from '../shared/BulkPatientImportModal';
+import { AddPastVisitModal } from './AddPastVisitModal';
 
 const PAGE_SIZE = 10;
 const FETCH_CAP = 2000;
@@ -30,8 +31,13 @@ export function SecretaryPatients() {
   const [page, setPage] = useState(0);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showPastVisitModal, setShowPastVisitModal] = useState(false);
 
-  async function fetchPatients() {
+  useEffect(() => {
+    fetchPatients();
+  }, []);
+
+  const fetchPatients = async () => {
     setLoadError(null);
     setLoading(true);
 
@@ -72,16 +78,13 @@ export function SecretaryPatients() {
     setLoading(false);
   };
 
-  useEffect(() => {
-    const t = setTimeout(fetchPatients, 0);
-    return () => clearTimeout(t);
-  }, []);
-
   const filteredPatients = useMemo(() => patients.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     (p.patient_code && p.patient_code.toLowerCase().includes(search.toLowerCase())) ||
     (p.phone && p.phone.includes(search))
   ), [patients, search]);
+
+  useEffect(() => { setPage(0); }, [search]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPatients.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -106,15 +109,18 @@ export function SecretaryPatients() {
         >
           <FileSpreadsheet className="w-5 h-5" /> استيراد من إكسيل
         </button>
+        <button
+          onClick={() => setShowPastVisitModal(true)}
+          className="bg-white border border-blue-200 text-blue-700 font-bold px-5 py-3 rounded-xl hover:bg-blue-50 flex items-center gap-2 shadow-sm"
+        >
+          <CalendarPlus className="w-5 h-5" /> إضافة زيارة قديمة
+        </button>
       </div>
 
       <div className="mb-6 max-w-md">
         <SearchInput
           value={search}
-          onValueChange={(val) => {
-            setSearch(val);
-            setPage(0);
-          }}
+          onValueChange={setSearch}
           placeholder="بحث بالاسم، الكود، أو رقم الهاتف..."
         />
       </div>
@@ -196,6 +202,13 @@ export function SecretaryPatients() {
         <BulkPatientImportModal
           onClose={() => setShowImportModal(false)}
           onImported={fetchPatients}
+        />
+      )}
+
+      {showPastVisitModal && (
+        <AddPastVisitModal
+          onClose={() => setShowPastVisitModal(false)}
+          onAdded={fetchPatients}
         />
       )}
     </div>
