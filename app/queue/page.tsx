@@ -367,10 +367,10 @@ export default function QueueDisplay() {
                   <p className="text-lg">لا توجد وسائط مضافة</p>
                 </div>
               ) : media[mediaIndex]?.media_type === 'video' ? (
-                <video key={media[mediaIndex].id} src={media[mediaIndex].url} autoPlay muted loop className="w-full h-full object-cover" />
+                <video key={media[mediaIndex].id} src={media[mediaIndex].url} autoPlay muted loop className="w-full h-full object-contain" />
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={media[mediaIndex]?.id} src={media[mediaIndex]?.url} alt="" className="w-full h-full object-cover" />
+                <img key={media[mediaIndex]?.id} src={media[mediaIndex]?.url} alt="" className="w-full h-full object-contain" />
               )}
             </div>
           )}
