@@ -4,16 +4,19 @@
 // components/dashboards/secretary/SecretaryCallQueue.tsx
 // تبويب «النداء الآلي» في حساب السكرتارية.
 //
-// التصميم بعد التبسيط:
+// التصميم الحالي:
 //   • لا توجد أزرار إضافة هنا — كل إضافة مريض بتتم من تبويب «دليل المرضى»
-//     فقط (مودال AddVisitModal الموحّد). ده بيخلّي السكرتارية تاخد القرار
-//     في مكان واحد (الملف + الزيارة + النداء) من غير تنقل بين شاشات، وبيمنع
-//     تسجيل مريض مرتين (مرة في ملفات المرضى ومرة في النداء).
-//   • التركيز على إجراء النداء نفسه: شاشة كبيرة للمريض الجاري نداؤه +
-//     أزرار نداء واضححة (التالي / السابق / رقم محدد).
+//     فقط (مودال AddVisitModal الموحّد).
+//   • العيادة المختارة في dropdown واحد في الأعلى عشان السكرتارية تختار العيادة
+//     اللي بتشتغل عليها بسرعة من غير ما تلف على شبكة أزرار.
+//   • أزرار النداء الثلاثة:
+//       1) الزائر التالي (call_next_in_queue) — ياخد أول واحد في الطابور.
+//       2) نداء رقم معين (call_specific_in_queue) — تكتب رقم الدور يدويًا.
+//       3) اختيار زائر معين — modal فيه قائمة الانتظار، تضغط على المريض مباشرة.
+//   • لا توجد شاشة وسائط هنا — شاشة النداء العام عندها تبويب منفصل في المدير
+//     («وسائط شاشة النداء») لتشغيل الصور والفيديوهات في صالة الانتظار.
 //   • إحصائيات لحظية في الأعلى (كام عيادة مشغولة، كام في الانتظار، كام
-//     اتكشف عليهم النهارده).
-//   • شبكة العيادات بصرية: العيادة الجاري فيها النداء تظهر مميّزة.
+//     اتكشف عليهم النهارده، كام دكتور متواجد).
 //   • حضور الأطباء موجود كشبكة سريعة (تشغيل/إيقاف بنقرة واحدة).
 //   • قائمة الانتظار مختصرة ومركّزة — المريض الجاي في النداء بعده ظاهر
 //     بشكل بارز.
@@ -25,8 +28,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 import {
-  Activity, Loader2, Users, Volume2, ChevronRight, ChevronLeft,
-  Hash, Stethoscope, ImageIcon, UserCheck, CheckCircle2, ListChecks, Clock, Sparkles,
+  Activity, Loader2, Users, Volume2, ChevronLeft,
+  Hash, Stethoscope, UserCheck, CheckCircle2, ListChecks, Clock, Sparkles, Search, X,
 } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
@@ -37,7 +40,6 @@ export function SecretaryCallQueue() {
   const [queues, setQueues] = useState<any[]>([]);
   const [clinics, setClinics] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
-  const [media, setMedia] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -49,9 +51,10 @@ export function SecretaryCallQueue() {
   const [calling, setCalling] = useState(false);
   const [specificToken, setSpecificToken] = useState('');
   const [presenceBusy, setPresenceBusy] = useState<string | null>(null);
-  const [mediaIndex, setMediaIndex] = useState(0);
   const [secretaryAlert, setSecretaryAlert] = useState<string | null>(null);
   const [addedToast, setAddedToast] = useState<string | null>(null);
+  const [pickOpen, setPickOpen] = useState(false);
+  const [pickSearch, setPickSearch] = useState('');
 
   useEffect(() => {
     fetchAll();
@@ -76,12 +79,6 @@ export function SecretaryCallQueue() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (media.length < 2) return;
-    const timer = setInterval(() => setMediaIndex(i => (i + 1) % media.length), 8000);
-    return () => clearInterval(timer);
-  }, [media.length]);
 
   const fetchQueueOnly = async () => {
     const { data, error } = await supabase
@@ -127,8 +124,6 @@ export function SecretaryCallQueue() {
         setSelectedClinicId(clinicsData[0].id);
       }
     }
-    const { data: mediaData } = await supabase.from('queue_media').select('*').eq('is_active', true).order('display_order');
-    if (mediaData) setMedia(mediaData);
 
     await fetchDoctorsOnly();
     await fetchQueueOnly();
@@ -172,23 +167,6 @@ export function SecretaryCallQueue() {
     }
     if (!data) {
       setActionError('لا يوجد مرضى في قائمة الانتظار لهذه العيادة.');
-      return;
-    }
-    announceAndRefresh(data);
-  };
-
-  const handleCallPrevious = async () => {
-    if (!selectedClinicId) return;
-    setCalling(true);
-    setActionError(null);
-    const { data, error } = await supabase.rpc('call_previous_in_queue', { p_clinic_id: selectedClinicId });
-    setCalling(false);
-    if (error) {
-      setActionError(getFriendlyErrorMessage(error, 'تعذر استدعاء المريض السابق.'));
-      return;
-    }
-    if (!data) {
-      setActionError('لا يوجد نداء سابق يمكن الرجوع إليه.');
       return;
     }
     announceAndRefresh(data);
@@ -301,48 +279,54 @@ export function SecretaryCallQueue() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* ── العمود الأيسر: العيادات + الأطباء (4/12) ── */}
+        {/* ── العمود الأيسر: اختيار العيادة + الأطباء (4/12) ── */}
         <div className="lg:col-span-4 space-y-4">
           <Card>
             <CardContent className="p-4">
-              <h3 className="font-bold text-gray-700 mb-3 text-sm">العيادات</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {clinics.map(clinic => {
-                  const callingRow = queues.find(q => q.clinic_id === clinic.id && q.status === 'calling');
-                  const waitingCount = queues.filter(q => q.clinic_id === clinic.id && q.status === 'waiting').length;
-                  const isSelected = clinic.id === selectedClinicId;
-                  return (
-                    <button
-                      key={clinic.id}
-                      onClick={() => setSelectedClinicId(clinic.id)}
-                      className={`text-right p-2.5 rounded-xl border transition-all ${
-                        isSelected
-                          ? 'bg-emerald-600 border-emerald-600 text-white shadow-md ring-2 ring-emerald-300'
-                          : callingRow
-                          ? 'bg-blue-50 border-blue-200 text-blue-900 hover:border-blue-400'
-                          : 'bg-white border-gray-200 hover:border-emerald-300'
-                      }`}
-                    >
-                      <div className={`text-[11px] font-bold mb-0.5 truncate ${isSelected ? 'text-emerald-50' : callingRow ? 'text-blue-700' : 'text-gray-500'}`}>
-                        {clinic.name}
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className={`text-xl font-black ${isSelected ? 'text-white' : callingRow ? 'text-blue-700' : 'text-gray-800'}`}>
-                          {callingRow ? `#${callingRow.token_number}` : '—'}
-                        </div>
-                        {waitingCount > 0 && (
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isSelected ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'}`}>
-                            {waitingCount} منتظر
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-                {clinics.length === 0 && (
-                  <div className="col-span-2 text-center text-sm text-gray-400 py-4">لا توجد عيادات نشطة</div>
-                )}
+              <h3 className="font-bold text-gray-700 mb-3 text-sm">اختر العيادة</h3>
+              <div className="relative">
+                <select
+                  value={selectedClinicId}
+                  onChange={(e) => setSelectedClinicId(e.target.value)}
+                  className="w-full appearance-none border-2 border-emerald-200 bg-white text-gray-800 font-bold rounded-xl py-3 px-4 pr-10 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 cursor-pointer"
+                  dir="rtl"
+                >
+                  {clinics.length === 0 && <option value="">لا توجد عيادات نشطة</option>}
+                  {clinics.map(clinic => {
+                    const callingRow = queues.find(q => q.clinic_id === clinic.id && q.status === 'calling');
+                    const waitingCount = queues.filter(q => q.clinic_id === clinic.id && q.status === 'waiting').length;
+                    const marker = callingRow
+                      ? ` — جاري النداء #${callingRow.token_number}`
+                      : waitingCount > 0
+                      ? ` — ${waitingCount} منتظر`
+                      : '';
+                    return (
+                      <option key={clinic.id} value={clinic.id}>
+                        {clinic.name}{marker}
+                      </option>
+                    );
+                  })}
+                </select>
+                <ChevronLeft className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 pointer-events-none rotate-90" />
               </div>
+              {selectedClinic && (
+                <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                  {(() => {
+                    const callingRow = queues.find(q => q.clinic_id === selectedClinic.id && q.status === 'calling');
+                    const waitingCount = queues.filter(q => q.clinic_id === selectedClinic.id && q.status === 'waiting').length;
+                    return (
+                      <>
+                        <span className="bg-blue-50 text-blue-700 font-bold px-2 py-1 rounded-md">
+                          جاري: {callingRow ? `#${callingRow.token_number}` : 'لا يوجد'}
+                        </span>
+                        <span className="bg-amber-50 text-amber-700 font-bold px-2 py-1 rounded-md">
+                          منتظرين: {waitingCount}
+                        </span>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -415,70 +399,48 @@ export function SecretaryCallQueue() {
 
           {/* أزرار النداء */}
           <Card className="border-emerald-100">
-            <CardContent className="p-5">
-              <div className="grid grid-cols-2 gap-3 mb-3">
+            <CardContent className="p-5 space-y-3">
+              <button
+                onClick={handleCallNext}
+                disabled={calling || !selectedClinicId}
+                className="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50 text-lg"
+              >
+                {calling ? <Loader2 className="w-5 h-5 animate-spin" /> : <ChevronLeft className="w-5 h-5" />}
+                الزائر التالي
+              </button>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <form onSubmit={handleCallSpecific} className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Hash className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="number"
+                      value={specificToken}
+                      onChange={(e) => setSpecificToken(e.target.value)}
+                      placeholder="رقم الدور..."
+                      className="w-full border rounded-lg py-2.5 pr-9 pl-3 bg-white"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={calling || !specificToken || !selectedClinicId}
+                    className="bg-blue-600 text-white font-bold px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm whitespace-nowrap"
+                  >
+                    نداء رقم معين
+                  </button>
+                </form>
+
                 <button
-                  onClick={handleCallNext}
-                  disabled={calling || !selectedClinicId}
-                  className="bg-emerald-600 text-white font-bold py-4 rounded-xl hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50"
+                  onClick={() => { setPickOpen(true); setPickSearch(''); }}
+                  disabled={!selectedClinicId}
+                  className="bg-purple-600 text-white font-bold py-2.5 px-4 rounded-lg hover:bg-purple-700 flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
                 >
-                  {calling ? <Loader2 className="w-5 h-5 animate-spin" /> : <ChevronLeft className="w-5 h-5" />}
-                  النداء التالي
-                </button>
-                <button
-                  onClick={handleCallPrevious}
-                  disabled={calling || !selectedClinicId}
-                  className="bg-gray-100 text-gray-700 font-bold py-4 rounded-xl hover:bg-gray-200 flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                  النداء السابق
+                  <Users className="w-4 h-4" />
+                  اختيار زائر معين
                 </button>
               </div>
-
-              <form onSubmit={handleCallSpecific} className="flex gap-2">
-                <div className="relative flex-1">
-                  <Hash className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="number"
-                    value={specificToken}
-                    onChange={(e) => setSpecificToken(e.target.value)}
-                    placeholder="نداء رقم دور محدد..."
-                    className="w-full border rounded-lg py-3 pr-9 pl-3 bg-white"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={calling || !specificToken || !selectedClinicId}
-                  className="bg-blue-600 text-white font-bold px-6 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                >
-                  نداء رقم
-                </button>
-              </form>
             </CardContent>
           </Card>
-
-          {/* وسائط الشاشة (compact) */}
-          {media.length > 0 && (
-            <Card className="overflow-hidden">
-              <div className="bg-gray-900 aspect-video flex items-center justify-center relative">
-                {media[mediaIndex]?.media_type === 'video' ? (
-                  <video
-                    key={media[mediaIndex].id}
-                    src={media[mediaIndex].url}
-                    className="w-full h-full object-contain"
-                    autoPlay muted loop playsInline
-                  />
-                ) : (
-                  <img
-                    key={media[mediaIndex]?.id}
-                    src={media[mediaIndex]?.url}
-                    alt=""
-                    className="w-full h-full object-contain"
-                  />
-                )}
-              </div>
-            </Card>
-          )}
 
           {/* قائمة الانتظار — المريض التالي واضح في الأعلى */}
           <Card>
@@ -602,6 +564,94 @@ export function SecretaryCallQueue() {
           onClose={() => setAddServiceForRow(null)}
           onChanged={() => { fetchQueueOnly(); }}
         />
+      )}
+
+      {/* مودال «اختيار زائر معين»: قائمة الانتظار بالكامل، اضغط على مريض لندائه */}
+      {pickOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <Users className="w-5 h-5 text-purple-600" />
+                اختيار زائر معين — {selectedClinic?.name || ''}
+              </h3>
+              <button onClick={() => setPickOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 border-b">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  autoFocus
+                  type="text"
+                  value={pickSearch}
+                  onChange={(e) => setPickSearch(e.target.value)}
+                  placeholder="ابحث بالاسم أو رقم الدور..."
+                  className="w-full border rounded-lg py-2.5 pr-9 pl-3 bg-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {waitingList.length === 0 ? (
+                <p className="text-center text-sm text-gray-400 py-8">لا يوجد مرضى في الانتظار لهذه العيادة</p>
+              ) : (
+                waitingList
+                  .filter(q => {
+                    const q2 = pickSearch.trim().toLowerCase();
+                    if (!q2) return true;
+                    return q.patient_name?.toLowerCase().includes(q2) || String(q.token_number).includes(q2);
+                  })
+                  .map(q => (
+                    <button
+                      key={q.id}
+                      onClick={async () => {
+                        // استخدم نفس RPC الموجود — call_specific_in_queue
+                        setPickOpen(false);
+                        setCalling(true);
+                        setActionError(null);
+                        const { data, error } = await supabase.rpc('call_specific_in_queue', {
+                          p_clinic_id: selectedClinicId,
+                          p_token: q.token_number,
+                        });
+                        setCalling(false);
+                        if (error) {
+                          setActionError(getFriendlyErrorMessage(error, 'تعذر نداء هذا الزائر.'));
+                          return;
+                        }
+                        if (!data) {
+                          setActionError('تعذر نداء هذا الزائر — ربما تم حذفه من الطابور.');
+                          return;
+                        }
+                        announceAndRefresh(data);
+                      }}
+                      className="w-full text-right p-3 rounded-xl border border-gray-200 hover:border-emerald-400 hover:bg-emerald-50 transition-colors flex items-center justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-bold text-gray-800 truncate">{q.patient_name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {q.service?.name && <span>{q.service.name}</span>}
+                          {q.assigned_doctor && <span> · د. {q.assigned_doctor.first_name} {q.assigned_doctor.last_name}</span>}
+                        </p>
+                      </div>
+                      <span className="text-xl font-black text-emerald-700 shrink-0" dir="ltr">#{q.token_number}</span>
+                    </button>
+                  ))
+              )}
+            </div>
+
+            <div className="p-3 border-t text-center">
+              <button
+                onClick={() => setPickOpen(false)}
+                className="text-sm font-bold text-gray-500 hover:text-gray-700"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
