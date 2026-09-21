@@ -1,41 +1,36 @@
 'use client';
 
 // ============================================================================
-// components/dashboards/secretary/SecretaryPatients.tsx
-// تبويب «دليل المرضى» في حساب السكرتارية:
+// components/dashboards/manager/tabs/PatientGuideTab.tsx
+// تبويب "دليل المرضى" في حساب المدير.
 //
-// التصميم الحالي بعد التبسيط:
-//   • زرار واحد فقط للسكرتارية: «إضافة زيارة» (AddVisitModal الموحّد).
-//     المودال ده بيدمج:
-//       - البحث عن مريض موجود أو إنشاء ملف جديد inline.
-//       - اختيار التاريخ: اليوم → يحفظ في patient_visits + call_queue (النداء
-//         الآلي). تاريخ سابق → يحفظ في patient_visits بس.
-//       - إضافة خدمات متعددة لنفس الزيارة (visit_group_id) عشان المريض اللي
-//         بيعمل كشف + تحاليل + أشعة مرة واحدة يتسجل كله مرة واحدة.
-//   • شاشتان داخل التبويب:
-//       1. ملفات المرضى: البحث + الجدول الموحد (مسجّلين + زيارات مباشرة).
-//       2. سجل الزيارات: كل الزيارات بتاريخها مع إمكانية التعديل/الحذف/ضم
-//          خدمة لنفس الجلسة.
+// الوظيفة:
+//   1. استعراض كل المرضى (مسجّلين بالتطبيق + زيارات مباشرة) في جدول
+//      موحّد مع بحث وتصفّح.
+//   2. زر «استيراد من إكسيل» — كان موجود في السكرتارية واتنقل هنا (المدير
+//      هو اللي بيستورد البيانات التاريخية الكبيرة مرة واحدة).
+//   3. شاشة «سجل الزيارات» مع تعديل/حذف/ضم خدمة لنفس الجلسة.
+//   4. زر «إضافة زيارة» للمدير — نفس المودال الموحد اللي بتستخدمه السكرتارية
+//      (AddVisitModal). المدير بيقدر يدخل بيانات يومية لوحده لو احتاج.
 //
-// تم حذف:
-//   • زر «استيراد من إكسيل» — انتقل لحساب المدير في تبويب «دليل المرضى».
-//   • زر «إضافة مريض» المنفصل — استُبدل بميزة «إنشاء مريض جديد» داخل
-//     مودال الإضافة نفسها (السكرتارية دلوقتي بتسجل المريض والزيارة مع بعض
-//     في خطوة واحدة، بدل ما تسجل المريض وبعدين تفتح مودال تاني للزيارة).
+// الـ API تحت /api/manager/patients-import كان فعلاً مفعّل للمدير والسكرتارية
+// معًا، فالنقل هنا مجرد نقل للواجهة (UI) — قاعدة البيانات والصلاحيات
+// زي ما هي.
 // ============================================================================
 
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
-import { Users, Loader2, CalendarPlus } from 'lucide-react';
+import { Users, Loader2, CalendarPlus, FileSpreadsheet, Database } from 'lucide-react';
 import { ErrorState } from '@/components/ui/error-state';
 import { SearchInput } from '@/components/ui/search-input';
 import { Pagination } from '@/components/ui/pagination';
 import { getFriendlyErrorMessage } from '@/lib/errors';
-import { AddVisitModal } from './AddVisitModal';
-import { PatientVisitsHistory } from './PatientVisitsHistory';
+import { AddVisitModal } from '../../secretary/AddVisitModal';
+import { BulkPatientImportModal } from '../../shared/BulkPatientImportModal';
+import { PatientVisitsHistory } from '../../secretary/PatientVisitsHistory';
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 15;
 const FETCH_CAP = 2000;
 
 interface UnifiedPatient {
@@ -47,7 +42,7 @@ interface UnifiedPatient {
   source: 'registered' | 'walk_in';
 }
 
-export function SecretaryPatients() {
+export function PatientGuideTab() {
   const [view, setView] = useState<'list' | 'history'>('list');
   const [patients, setPatients] = useState<UnifiedPatient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,6 +50,15 @@ export function SecretaryPatients() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [showAddVisitModal, setShowAddVisitModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+
+  // إحصائيات سريعة فوق الجدول
+  const stats = useMemo(() => {
+    const total = patients.length;
+    const registered = patients.filter(p => p.source === 'registered').length;
+    const walkIns = patients.filter(p => p.source === 'walk_in').length;
+    return { total, registered, walkIns };
+  }, [patients]);
 
   useEffect(() => {
     fetchPatients();
@@ -65,8 +69,8 @@ export function SecretaryPatients() {
     setLoading(true);
 
     const [profilesRes, walkInRes] = await Promise.all([
-      supabase.from('profiles').select('*').eq('role', 'patient').order('created_at', { ascending: false }).limit(FETCH_CAP),
-      supabase.from('walk_in_patients').select('*').order('created_at', { ascending: false }).limit(FETCH_CAP),
+      supabase.from('profiles').select('id, first_name, last_name, phone, patient_code, created_at').eq('role', 'patient').order('created_at', { ascending: false }).limit(FETCH_CAP),
+      supabase.from('walk_in_patients').select('id, name, phone, patient_code, created_at').order('created_at', { ascending: false }).limit(FETCH_CAP),
     ]);
 
     if (profilesRes.error) {
@@ -115,32 +119,79 @@ export function SecretaryPatients() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
+      {/* العنوان + الأزرار */}
+      <div className="flex items-start justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <Users className="w-8 h-8 text-emerald-600" />
           <div>
             <h2 className="text-3xl font-bold text-gray-800">دليل المرضى</h2>
-            <p className="text-sm text-gray-500">
-              نقطة الدخول الموحدة لإضافة أي زيارة (اليوم أو تاريخ سابق) — المودال بيسمح بالبحث عن مريض موجود أو إنشاء ملف جديد.
+            <p className="text-sm text-gray-500 max-w-2xl">
+              نقطة الدخول الموحدة لإدارة بيانات المرضى. استورد ملفات إكسيل، تصفّح الملفات، أو سجّل زيارات (يومية أو تاريخية).
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setShowAddVisitModal(true)}
-          className="bg-emerald-600 text-white font-bold px-5 py-3 rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow-sm"
-        >
-          <CalendarPlus className="w-5 h-5" /> إضافة زيارة
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="bg-white border border-emerald-200 text-emerald-700 font-bold px-4 py-2.5 rounded-xl hover:bg-emerald-50 flex items-center gap-2 shadow-sm"
+          >
+            <FileSpreadsheet className="w-5 h-5" /> استيراد من إكسيل
+          </button>
+          <button
+            onClick={() => setShowAddVisitModal(true)}
+            className="bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow-sm"
+          >
+            <CalendarPlus className="w-5 h-5" /> إضافة زيارة
+          </button>
+        </div>
       </div>
 
+      {/* إحصائيات سريعة */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 font-bold">إجمالي المرضى</p>
+              <p className="text-2xl font-black text-gray-800" dir="ltr">{stats.total.toLocaleString()}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 font-bold">مسجّلون بالتطبيق</p>
+              <p className="text-2xl font-black text-gray-800" dir="ltr">{stats.registered.toLocaleString()}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-700 flex items-center justify-center">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 font-bold">زيارات مباشرة</p>
+              <p className="text-2xl font-black text-gray-800" dir="ltr">{stats.walkIns.toLocaleString()}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* تبويبات فرعية: قائمة المرضى / سجل الزيارات */}
       <div className="flex gap-2">
-        <button onClick={() => setView('list')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${view === 'list' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>ملفات المرضى</button>
+        <button onClick={() => setView('list')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${view === 'list' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>قائمة المرضى</button>
         <button onClick={() => setView('history')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${view === 'history' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>سجل الزيارات</button>
       </div>
 
       {view === 'history' ? <PatientVisitsHistory /> : (
       <>
-      <div className="mb-6 max-w-md">
+      <div className="mb-4 max-w-md">
         <SearchInput
           value={search}
           onValueChange={setSearch}
@@ -220,6 +271,13 @@ export function SecretaryPatients() {
             setShowAddVisitModal(false);
             fetchPatients();
           }}
+        />
+      )}
+
+      {showImportModal && (
+        <BulkPatientImportModal
+          onClose={() => setShowImportModal(false)}
+          onImported={fetchPatients}
         />
       )}
     </div>

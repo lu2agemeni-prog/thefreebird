@@ -1,16 +1,35 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+// ============================================================================
+// components/dashboards/secretary/SecretaryCallQueue.tsx
+// تبويب «النداء الآلي» في حساب السكرتارية.
+//
+// التصميم بعد التبسيط:
+//   • لا توجد أزرار إضافة هنا — كل إضافة مريض بتتم من تبويب «دليل المرضى»
+//     فقط (مودال AddVisitModal الموحّد). ده بيخلّي السكرتارية تاخد القرار
+//     في مكان واحد (الملف + الزيارة + النداء) من غير تنقل بين شاشات، وبيمنع
+//     تسجيل مريض مرتين (مرة في ملفات المرضى ومرة في النداء).
+//   • التركيز على إجراء النداء نفسه: شاشة كبيرة للمريض الجاري نداؤه +
+//     أزرار نداء واضححة (التالي / السابق / رقم محدد).
+//   • إحصائيات لحظية في الأعلى (كام عيادة مشغولة، كام في الانتظار، كام
+//     اتكشف عليهم النهارده).
+//   • شبكة العيادات بصرية: العيادة الجاري فيها النداء تظهر مميّزة.
+//   • حضور الأطباء موجود كشبكة سريعة (تشغيل/إيقاف بنقرة واحدة).
+//   • قائمة الانتظار مختصرة ومركّزة — المريض الجاي في النداء بعده ظاهر
+//     بشكل بارز.
+//   • مرضى مكتملين اليوم قابلة للطي/الفتح (بتاخد شاشتها الكاملة لما تتفتح
+//     فعلاً، عشان ما تشوّشش على السكرتارية).
+// ============================================================================
+
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 import {
-  Activity, Plus, Loader2, Users, Volume2, CheckCircle2,
-  ChevronRight, ChevronLeft, Hash, Stethoscope, ImageIcon, UserCheck, PlusCircle,
+  Activity, Loader2, Users, Volume2, ChevronRight, ChevronLeft,
+  Hash, Stethoscope, ImageIcon, UserCheck, CheckCircle2, ListChecks, Clock, Sparkles,
 } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
-import { AddPatientModal } from './AddPatientModal';
-import { AddExistingPatientModal } from './AddExistingPatientModal';
 import { AddQueueServiceModal } from './AddQueueServiceModal';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
 
@@ -23,17 +42,16 @@ export function SecretaryCallQueue() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [selectedClinicId, setSelectedClinicId] = useState<string>('');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showAddExistingModal, setShowAddExistingModal] = useState(false);
   const [addServiceForRow, setAddServiceForRow] = useState<any | null>(null);
   const [completedToday, setCompletedToday] = useState<any[]>([]);
+  const [completedOpen, setCompletedOpen] = useState(false);
   const [completedSearch, setCompletedSearch] = useState('');
-  const [addedToast, setAddedToast] = useState<string | null>(null);
   const [calling, setCalling] = useState(false);
   const [specificToken, setSpecificToken] = useState('');
   const [presenceBusy, setPresenceBusy] = useState<string | null>(null);
   const [mediaIndex, setMediaIndex] = useState(0);
   const [secretaryAlert, setSecretaryAlert] = useState<string | null>(null);
+  const [addedToast, setAddedToast] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAll();
@@ -94,7 +112,7 @@ export function SecretaryCallQueue() {
   const fetchDoctorsOnly = async () => {
     const { data, error } = await supabase
       .from('doctors')
-      .select('profile_id, clinic_id, is_present, profiles(first_name, last_name)');
+      .select('profile_id, clinic_id, is_present, specialty, profiles(first_name, last_name)');
     if (!error && data) {
       setDoctors(data);
     }
@@ -122,8 +140,15 @@ export function SecretaryCallQueue() {
   const waitingList = queues.filter((q: any) => q.clinic_id === selectedClinicId && q.status === 'waiting');
   const currentCalling = queues.find((q: any) => q.clinic_id === selectedClinicId && q.status === 'calling');
 
+  // إحصائيات سريعة في الهيدر
+  const stats = {
+    activeClinics: queues.filter(q => q.status === 'calling').length,
+    totalWaiting: queues.filter(q => q.status === 'waiting').length,
+    completed: completedToday.length,
+    presentDoctors: doctors.filter(d => d.is_present).length,
+  };
+
   const announceAndRefresh = async (data: any) => {
-    // If it's a list, find the calling one, or if it's the object itself.
     if (Array.isArray(data)) {
        const calling = data.find((q: any) => q.status === 'calling');
        if (calling) {
@@ -215,30 +240,55 @@ export function SecretaryCallQueue() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5" dir="rtl">
       {secretaryAlert && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-amber-500 text-white font-bold px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 animate-pulse">
           <Activity className="w-5 h-5" /> {secretaryAlert}
         </div>
       )}
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+
+      {/* ── هيدر + إحصائيات ── */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <Activity className="w-8 h-8 text-emerald-600" />
-          <h2 className="text-3xl font-bold text-gray-800">إدارة النداء الآلي</h2>
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+            <Activity className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-2xl md:text-3xl font-bold text-gray-800">النداء الآلي</h2>
+            <p className="text-xs text-gray-500">التحكم في ترتيب النداء — إضافة المرضى من تبويب «دليل المرضى».</p>
+          </div>
         </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => setShowAddExistingModal(true)}
-            className="bg-blue-600 text-white font-bold px-5 py-3 rounded-xl hover:bg-blue-700 flex items-center gap-2 shadow-sm"
-          >
-            <UserCheck className="w-5 h-5" /> مريض مسجّل
-          </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="bg-emerald-600 text-white font-bold px-5 py-3 rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow-sm"
-          >
-            <Plus className="w-5 h-5" /> مريض جديد
-          </button>
+      </div>
+
+      {/* شريط إحصائيات */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><Volume2 className="w-5 h-5" /></div>
+          <div>
+            <p className="text-[11px] text-gray-500 font-bold">عيادات مشغولة</p>
+            <p className="text-xl font-black text-gray-800" dir="ltr">{stats.activeClinics}</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center"><Clock className="w-5 h-5" /></div>
+          <div>
+            <p className="text-[11px] text-gray-500 font-bold">في الانتظار</p>
+            <p className="text-xl font-black text-gray-800" dir="ltr">{stats.totalWaiting}</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><CheckCircle2 className="w-5 h-5" /></div>
+          <div>
+            <p className="text-[11px] text-gray-500 font-bold">مكتمل اليوم</p>
+            <p className="text-xl font-black text-gray-800" dir="ltr">{stats.completed}</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center"><UserCheck className="w-5 h-5" /></div>
+          <div>
+            <p className="text-[11px] text-gray-500 font-bold">أطباء متواجدون</p>
+            <p className="text-xl font-black text-gray-800" dir="ltr">{stats.presentDoctors}</p>
+          </div>
         </div>
       </div>
 
@@ -250,30 +300,41 @@ export function SecretaryCallQueue() {
         </div>
       )}
 
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* ── العمود الأيسر 30% ── */}
-        <div className="w-full lg:w-[30%] space-y-6">
-          {/* شبكة العيادات */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* ── العمود الأيسر: العيادات + الأطباء (4/12) ── */}
+        <div className="lg:col-span-4 space-y-4">
           <Card>
             <CardContent className="p-4">
               <h3 className="font-bold text-gray-700 mb-3 text-sm">العيادات</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 {clinics.map(clinic => {
                   const callingRow = queues.find(q => q.clinic_id === clinic.id && q.status === 'calling');
+                  const waitingCount = queues.filter(q => q.clinic_id === clinic.id && q.status === 'waiting').length;
                   const isSelected = clinic.id === selectedClinicId;
                   return (
                     <button
                       key={clinic.id}
                       onClick={() => setSelectedClinicId(clinic.id)}
-                      className={`text-right p-3 rounded-xl border transition-colors ${
-                        isSelected ? 'bg-emerald-600 border-emerald-600 text-white shadow-md' : 'bg-white border-gray-200 hover:border-emerald-300'
+                      className={`text-right p-2.5 rounded-xl border transition-all ${
+                        isSelected
+                          ? 'bg-emerald-600 border-emerald-600 text-white shadow-md ring-2 ring-emerald-300'
+                          : callingRow
+                          ? 'bg-blue-50 border-blue-200 text-blue-900 hover:border-blue-400'
+                          : 'bg-white border-gray-200 hover:border-emerald-300'
                       }`}
                     >
-                      <div className={`text-xs font-bold mb-1 truncate ${isSelected ? 'text-emerald-50' : 'text-gray-500'}`}>
+                      <div className={`text-[11px] font-bold mb-0.5 truncate ${isSelected ? 'text-emerald-50' : callingRow ? 'text-blue-700' : 'text-gray-500'}`}>
                         {clinic.name}
                       </div>
-                      <div className={`text-2xl font-black ${isSelected ? 'text-white' : 'text-gray-800'}`}>
-                        {callingRow ? `#${callingRow.token_number}` : '—'}
+                      <div className="flex items-center justify-between">
+                        <div className={`text-xl font-black ${isSelected ? 'text-white' : callingRow ? 'text-blue-700' : 'text-gray-800'}`}>
+                          {callingRow ? `#${callingRow.token_number}` : '—'}
+                        </div>
+                        {waitingCount > 0 && (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isSelected ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'}`}>
+                            {waitingCount} منتظر
+                          </span>
+                        )}
                       </div>
                     </button>
                   );
@@ -285,25 +346,24 @@ export function SecretaryCallQueue() {
             </CardContent>
           </Card>
 
-          {/* حضور الأطباء */}
           <Card>
             <CardContent className="p-4">
               <h3 className="font-bold text-gray-700 mb-3 text-sm flex items-center gap-2">
-                <Stethoscope className="w-4 h-4" /> الأطباء المتواجدون اليوم
+                <Stethoscope className="w-4 h-4" /> حضور الأطباء
               </h3>
-              <div className="space-y-2 max-h-72 overflow-y-auto">
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
                 {doctors.map(d => (
-                  <div key={d.profile_id} className="flex items-center justify-between p-2 rounded-lg border border-gray-100">
+                  <div key={d.profile_id} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 hover:bg-gray-50">
                     <div className="min-w-0">
                       <div className="font-bold text-gray-800 text-sm truncate">
-                        {d.profiles?.first_name} {d.profiles?.last_name}
+                        د. {d.profiles?.first_name} {d.profiles?.last_name}
                       </div>
-                      {d.specialty && <div className="text-xs text-gray-400 truncate">{d.specialty}</div>}
+                      {d.specialty && <div className="text-[11px] text-gray-400 truncate">{d.specialty}</div>}
                     </div>
                     <button
                       onClick={() => togglePresence(d.profile_id, !!d.is_present)}
                       disabled={presenceBusy === d.profile_id}
-                      className={`shrink-0 text-xs font-bold px-2 py-1 rounded-full transition-colors disabled:opacity-50 ${
+                      className={`shrink-0 text-[11px] font-bold px-2 py-1 rounded-full transition-colors disabled:opacity-50 ${
                         d.is_present ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
                       }`}
                     >
@@ -319,56 +379,51 @@ export function SecretaryCallQueue() {
           </Card>
         </div>
 
-        {/* ── العمود الأيمن 70% ── */}
-        <div className="w-full lg:w-[70%] space-y-6">
-          {/* منطقة عرض الوسائط */}
+        {/* ── العمود الأيمن: المريض الحالي + أدوات النداء + الانتظار (8/12) ── */}
+        <div className="lg:col-span-8 space-y-4">
+          {/* كارت البطل: المريض الجاري نداؤه */}
           <Card className="overflow-hidden">
-            <div className="bg-gray-900 aspect-video flex items-center justify-center relative">
-              {media.length === 0 ? (
-                <div className="text-slate-500 flex flex-col items-center gap-2">
-                  <ImageIcon className="w-12 h-12" />
-                  <span className="text-sm">لا توجد وسائط معروضة حاليًا</span>
-                </div>
-              ) : media[mediaIndex]?.media_type === 'video' ? (
-                <video
-                  key={media[mediaIndex].id}
-                  src={media[mediaIndex].url}
-                  className="w-full h-full object-contain"
-                  autoPlay muted loop playsInline
-                />
+            <div className="bg-gradient-to-br from-emerald-600 to-emerald-700 text-white p-6">
+              <p className="text-xs font-bold uppercase opacity-80 mb-1">
+                {selectedClinic?.name || '—'} — جاري النداء الآن
+              </p>
+              {currentCalling ? (
+                <>
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-3xl md:text-4xl font-black">{currentCalling.patient_name}</p>
+                      {currentCalling.service?.name && (
+                        <p className="text-sm opacity-90 mt-1">{currentCalling.service.name}</p>
+                      )}
+                      {currentCalling.assigned_doctor && (
+                        <p className="text-xs opacity-75 mt-0.5">د. {currentCalling.assigned_doctor.first_name} {currentCalling.assigned_doctor.last_name}</p>
+                      )}
+                    </div>
+                    <div className="text-7xl md:text-8xl font-black leading-none" dir="ltr">
+                      #{currentCalling.token_number}
+                    </div>
+                  </div>
+                </>
               ) : (
-                <img
-                  key={media[mediaIndex]?.id}
-                  src={media[mediaIndex]?.url}
-                  alt=""
-                  className="w-full h-full object-contain"
-                />
+                <div className="py-6 text-center">
+                  <p className="text-2xl font-bold opacity-90">لا يوجد نداء حالي</p>
+                  <p className="text-sm opacity-70 mt-1">اختر عيادة واضغط «النداء التالي» للبدء</p>
+                </div>
               )}
             </div>
           </Card>
 
-          {/* أزرار التحكم بالنداء */}
+          {/* أزرار النداء */}
           <Card className="border-emerald-100">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-gray-800 text-lg">
-                  التحكم بالنداء — {selectedClinic?.name || '—'}
-                </h3>
-                {currentCalling && (
-                  <span className="flex items-center gap-1 text-sm font-bold bg-blue-100 text-blue-800 px-3 py-1 rounded-full animate-pulse">
-                    <Volume2 className="w-4 h-4" /> جارٍ نداء #{currentCalling.token_number}
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            <CardContent className="p-5">
+              <div className="grid grid-cols-2 gap-3 mb-3">
                 <button
                   onClick={handleCallNext}
                   disabled={calling || !selectedClinicId}
                   className="bg-emerald-600 text-white font-bold py-4 rounded-xl hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {calling ? <Loader2 className="w-5 h-5 animate-spin" /> : <ChevronLeft className="w-5 h-5" />}
-                  العميل التالي
+                  النداء التالي
                 </button>
                 <button
                   onClick={handleCallPrevious}
@@ -376,7 +431,7 @@ export function SecretaryCallQueue() {
                   className="bg-gray-100 text-gray-700 font-bold py-4 rounded-xl hover:bg-gray-200 flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <ChevronRight className="w-5 h-5" />
-                  العميل السابق
+                  النداء السابق
                 </button>
               </div>
 
@@ -388,7 +443,7 @@ export function SecretaryCallQueue() {
                     value={specificToken}
                     onChange={(e) => setSpecificToken(e.target.value)}
                     placeholder="نداء رقم دور محدد..."
-                    className="w-full border rounded-lg py-3 pr-9 pl-3"
+                    className="w-full border rounded-lg py-3 pr-9 pl-3 bg-white"
                   />
                 </div>
                 <button
@@ -396,29 +451,70 @@ export function SecretaryCallQueue() {
                   disabled={calling || !specificToken || !selectedClinicId}
                   className="bg-blue-600 text-white font-bold px-6 rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
-                  نداء
+                  نداء رقم
                 </button>
               </form>
             </CardContent>
           </Card>
 
-          {/* قائمة الانتظار للعيادة المختارة */}
+          {/* وسائط الشاشة (compact) */}
+          {media.length > 0 && (
+            <Card className="overflow-hidden">
+              <div className="bg-gray-900 aspect-video flex items-center justify-center relative">
+                {media[mediaIndex]?.media_type === 'video' ? (
+                  <video
+                    key={media[mediaIndex].id}
+                    src={media[mediaIndex].url}
+                    className="w-full h-full object-contain"
+                    autoPlay muted loop playsInline
+                  />
+                ) : (
+                  <img
+                    key={media[mediaIndex]?.id}
+                    src={media[mediaIndex]?.url}
+                    alt=""
+                    className="w-full h-full object-contain"
+                  />
+                )}
+              </div>
+            </Card>
+          )}
+
+          {/* قائمة الانتظار — المريض التالي واضح في الأعلى */}
           <Card>
             <CardContent className="p-4">
               <h3 className="font-bold text-gray-700 mb-3 text-sm flex items-center gap-2">
-                <Users className="w-4 h-4" /> قائمة الانتظار ({waitingList.length})
+                <Users className="w-4 h-4" />
+                قائمة الانتظار
+                <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full" dir="ltr">{waitingList.length}</span>
               </h3>
               {waitingList.length === 0 ? (
-                <div className="text-center text-sm text-gray-400 py-6">لا يوجد مرضى في الانتظار</div>
+                <div className="text-center text-sm text-gray-400 py-6">
+                  لا يوجد مرضى في الانتظار
+                  <br />
+                  <span className="text-xs">أضف المرضى من تبويب «دليل المرضى»</span>
+                </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {waitingList.map(q => {
+                <div className="space-y-2">
+                  {waitingList.map((q, idx) => {
                     const hasRemaining = (q.remaining_amount || 0) > 0;
+                    const isNext = idx === 0;
                     return (
-                      <div key={q.id} className="p-3 rounded-xl border bg-white border-gray-200">
+                      <div key={q.id} className={`p-3 rounded-xl border transition-colors ${
+                        isNext ? 'bg-emerald-50 border-emerald-200 ring-1 ring-emerald-200' : 'bg-white border-gray-200'
+                      }`}>
                         <div className="flex items-center justify-between mb-1">
-                          <span className="font-bold text-gray-800 truncate">{q.patient_name}</span>
-                          <span className="text-lg font-black text-gray-600">#{q.token_number}</span>
+                          <div className="flex items-center gap-2 min-w-0">
+                            {isNext && (
+                              <span className="text-[10px] font-bold bg-emerald-600 text-white px-1.5 py-0.5 rounded shrink-0 flex items-center gap-1">
+                                <Sparkles className="w-3 h-3" /> التالي
+                              </span>
+                            )}
+                            <span className="font-bold text-gray-800 truncate">{q.patient_name}</span>
+                          </div>
+                          <span className={`text-lg font-black ${isNext ? 'text-emerald-700' : 'text-gray-600'}`} dir="ltr">
+                            #{q.token_number}
+                          </span>
                         </div>
                         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
                           {q.phone && <span dir="ltr">{q.phone}</span>}
@@ -435,9 +531,9 @@ export function SecretaryCallQueue() {
                         )}
                         <button
                           onClick={() => setAddServiceForRow(q)}
-                          className="mt-2 text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1"
+                          className="mt-1.5 text-xs font-bold text-emerald-600 hover:underline"
                         >
-                          <PlusCircle className="w-3 h-3" /> ضم خدمة
+                          + ضم خدمة
                         </button>
                       </div>
                     );
@@ -447,40 +543,52 @@ export function SecretaryCallQueue() {
             </CardContent>
           </Card>
 
-          {/* مرضى تم الكشف عليهم اليوم — لضم خدمات إضافية (تحاليل/أشعة) */}
+          {/* مكتملين اليوم — قابلة للطي عشان ما تشوّشش */}
           <Card>
             <CardContent className="p-4">
-              <h3 className="font-bold text-gray-700 mb-3 text-sm flex items-center gap-2">
-                <Users className="w-4 h-4" /> مرضى مكتملين اليوم ({completedToday.length})
-              </h3>
-              <input
-                type="text"
-                value={completedSearch}
-                onChange={(e) => setCompletedSearch(e.target.value)}
-                placeholder="بحث بالاسم..."
-                className="w-full border rounded-lg p-2 text-sm mb-3"
-              />
-              <div className="max-h-64 overflow-y-auto space-y-2">
-                {completedToday
-                  .filter(q => q.patient_name?.toLowerCase().includes(completedSearch.toLowerCase()))
-                  .map(q => (
-                    <div key={q.id} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 text-sm">
-                      <div>
-                        <span className="font-bold text-gray-700">{q.patient_name}</span>
-                        <span className="text-xs text-gray-400 mr-2">{q.clinic?.name}</span>
-                      </div>
-                      <button
-                        onClick={() => setAddServiceForRow(q)}
-                        className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1"
-                      >
-                        <PlusCircle className="w-3 h-3" /> ضم خدمة
-                      </button>
-                    </div>
-                  ))}
-                {completedToday.length === 0 && (
-                  <div className="text-center text-sm text-gray-400 py-4">لا يوجد مرضى مكتملين اليوم بعد</div>
-                )}
-              </div>
+              <button
+                onClick={() => setCompletedOpen(o => !o)}
+                className="w-full flex items-center justify-between"
+              >
+                <h3 className="font-bold text-gray-700 text-sm flex items-center gap-2">
+                  <ListChecks className="w-4 h-4" />
+                  مكتملون اليوم
+                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full" dir="ltr">{completedToday.length}</span>
+                </h3>
+                <span className="text-xs text-gray-400">{completedOpen ? 'إخفاء' : 'عرض'}</span>
+              </button>
+              {completedOpen && (
+                <>
+                  <input
+                    type="text"
+                    value={completedSearch}
+                    onChange={(e) => setCompletedSearch(e.target.value)}
+                    placeholder="بحث بالاسم..."
+                    className="w-full border rounded-lg p-2 text-sm mb-2 mt-3 bg-white"
+                  />
+                  <div className="max-h-56 overflow-y-auto space-y-1.5">
+                    {completedToday
+                      .filter(q => q.patient_name?.toLowerCase().includes(completedSearch.toLowerCase()))
+                      .map(q => (
+                        <div key={q.id} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 text-sm hover:bg-gray-50">
+                          <div className="min-w-0">
+                            <span className="font-bold text-gray-700 truncate block">{q.patient_name}</span>
+                            {q.clinic?.name && <span className="text-[11px] text-gray-400">{q.clinic.name}</span>}
+                          </div>
+                          <button
+                            onClick={() => setAddServiceForRow(q)}
+                            className="text-xs font-bold text-emerald-600 hover:underline shrink-0"
+                          >
+                            + ضم خدمة
+                          </button>
+                        </div>
+                      ))}
+                    {completedToday.length === 0 && (
+                      <div className="text-center text-sm text-gray-400 py-4">لا يوجد مرضى مكتملين اليوم بعد</div>
+                    )}
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -493,32 +601,6 @@ export function SecretaryCallQueue() {
           patientName={addServiceForRow.patient_name}
           onClose={() => setAddServiceForRow(null)}
           onChanged={() => { fetchQueueOnly(); }}
-        />
-      )}
-
-      {showAddExistingModal && (
-        <AddExistingPatientModal
-          onClose={() => setShowAddExistingModal(false)}
-          onAdded={(token, clinicId) => {
-            setShowAddExistingModal(false);
-            setSelectedClinicId(clinicId);
-            setAddedToast(`تم إضافة المريض للنداء برقم دور: ${token}`);
-            setTimeout(() => setAddedToast(null), 5000);
-            fetchQueueOnly();
-          }}
-        />
-      )}
-
-      {showAddModal && (
-        <AddPatientModal
-          onClose={() => setShowAddModal(false)}
-          onAdded={(token, clinicId) => {
-            setShowAddModal(false);
-            setSelectedClinicId(clinicId);
-            setAddedToast(`تم إضافة المريض وتسجيله برقم دور: ${token}`);
-            setTimeout(() => setAddedToast(null), 5000);
-            fetchQueueOnly();
-          }}
         />
       )}
     </div>

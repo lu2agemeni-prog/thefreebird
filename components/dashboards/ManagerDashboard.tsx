@@ -13,7 +13,7 @@ import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
 import {
   Building, Calculator, Stethoscope, Activity, QrCode, Shield,
-  BarChart, FileText, Newspaper, List, FlaskConical, Wallet, Megaphone, User,
+  BarChart, FileText, Newspaper, List, FlaskConical, Wallet, Megaphone, User, Users,
 } from 'lucide-react';
 import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
 import { QueueMediaManager } from './manager/QueueMediaManager';
@@ -22,6 +22,7 @@ import { DoctorsTab } from './manager/tabs/DoctorsTab';
 import { ClinicsTab } from './manager/tabs/ClinicsTab';
 import { StaffManagementTab } from './manager/tabs/StaffManagementTab';
 import { MedicalRecordsTab } from './manager/tabs/MedicalRecordsTab';
+import { PatientGuideTab } from './manager/tabs/PatientGuideTab';
 import { QRCodesTab } from './manager/tabs/QRCodesTab';
 import { ServicesTab } from './manager/tabs/ServicesTab';
 import { MedicalNewsTab } from './manager/tabs/MedicalNewsTab';
@@ -35,6 +36,7 @@ import { AccountProfileTab } from './shared/AccountProfileTab';
 
 const managerNav: SidebarItem[] = [
   { name: 'لوحة القيادة', id: 'dashboard', icon: Activity },
+  { name: 'دليل المرضى', id: 'patient_guide', icon: Users },
   { name: 'الملفات الطبية', id: 'medical_records', icon: FileText },
   { name: 'الأطباء', id: 'doctors', icon: Stethoscope },
   { name: 'العيادات', id: 'clinics', icon: Building },
@@ -64,6 +66,7 @@ export function ManagerDashboard() {
           <h2 className="text-3xl font-bold text-gray-800 mb-8">{managerNav.find(n => n.id === activeTab)?.name}</h2>
 
           {activeTab === 'dashboard' && <DashboardOverviewTab />}
+          {activeTab === 'patient_guide' && <PatientGuideTab />}
           {activeTab === 'doctors' && <DoctorsTab />}
           {activeTab === 'clinics' && <ClinicsTab />}
           {activeTab === 'staff_management' && <StaffManagementTab />}

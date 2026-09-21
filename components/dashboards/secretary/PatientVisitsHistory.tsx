@@ -13,7 +13,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { SearchInput } from '@/components/ui/search-input';
 import { supabase } from '@/lib/supabase';
 import { getFriendlyErrorMessage } from '@/lib/errors';
-import { AddPastVisitModal } from './AddPastVisitModal';
+import { AddVisitModal } from './AddVisitModal';
 
 const PAGE_SIZE = 8;
 const FETCH_CAP = 1000;
@@ -162,7 +162,7 @@ export function PatientVisitsHistory() {
       </CardContent>
 
       {editingVisit && (
-        <AddPastVisitModal
+        <AddVisitModal
           editVisit={editingVisit}
           onClose={() => setEditingVisit(null)}
           onAdded={fetchVisits}
@@ -170,7 +170,7 @@ export function PatientVisitsHistory() {
       )}
 
       {addingServiceToGroup && (
-        <AddPastVisitModal
+        <AddVisitModal
           addServiceTo={addingServiceToGroup}
           onClose={() => setAddingServiceToGroup(null)}
           onAdded={fetchVisits}
