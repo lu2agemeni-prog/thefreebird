@@ -4,7 +4,8 @@
 // components/dashboards/secretary/AddPastVisitModal.tsx
 // إضافة زيارة قديمة (بتاريخ سابق) من دليل المرضى — لا تُضاف إلى النداء
 // الآلي (call_queue) خالص، بس تتسجل في سجل الزيارات وتُحتسب في التقارير
-// المالية بتاريخها الحقيقي.
+// المالية بتاريخها الحقيقي. بقى يدعم كمان: تعديل صف موجود، أو إضافة خدمة
+// جديدة لنفس جلسة الزيارة (نفس visit_group_id) لمريض اتسجل بالفعل.
 // ============================================================================
 import { useState, useEffect, useRef } from 'react';
 import { X, Loader2, CheckCircle2, Search } from 'lucide-react';
@@ -24,24 +25,47 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function AddPastVisitModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+interface AddPastVisitModalProps {
+  onClose: () => void;
+  onAdded: () => void;
+  /** تعديل صف موجود بدل إضافة صف جديد */
+  editVisit?: any;
+  /** إضافة خدمة جديدة لنفس جلسة زيارة موجودة لنفس المريض */
+  addServiceTo?: {
+    visitGroupId: string;
+    patient: FoundPatient;
+    visitDate: string;
+    clinicId: string | null;
+    doctorId: string | null;
+  };
+}
+
+export function AddPastVisitModal({ onClose, onAdded, editVisit, addServiceTo }: AddPastVisitModalProps) {
   const { user } = useAuth();
+  const isEditing = !!editVisit;
 
   const [search, setSearch] = useState('');
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<FoundPatient[]>([]);
-  const [selectedPatient, setSelectedPatient] = useState<FoundPatient | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<FoundPatient | null>(
+    addServiceTo
+      ? addServiceTo.patient
+      : editVisit
+      ? { id: editVisit.patient_id || editVisit.walk_in_patient_id, name: editVisit.patient_name, phone: null, source: editVisit.patient_id ? 'registered' : 'walk_in' }
+      : null
+  );
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [clinics, setClinics] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
 
-  const [visitDate, setVisitDate] = useState(todayStr());
-  const [clinicId, setClinicId] = useState('');
-  const [serviceId, setServiceId] = useState('');
-  const [doctorId, setDoctorId] = useState('');
-  const [paidAmount, setPaidAmount] = useState('');
+  const [visitDate, setVisitDate] = useState(editVisit?.visit_date || addServiceTo?.visitDate || todayStr());
+  const [clinicId, setClinicId] = useState(editVisit?.clinic_id || addServiceTo?.clinicId || '');
+  const [serviceId, setServiceId] = useState(editVisit?.service_id || '');
+  const [doctorId, setDoctorId] = useState(editVisit?.doctor_id || addServiceTo?.doctorId || '');
+  const [paidAmount, setPaidAmount] = useState(editVisit ? String(editVisit.paid_amount ?? '') : '');
+  const [customServiceName, setCustomServiceName] = useState(editVisit?.service_id ? '' : (editVisit?.service_name || ''));
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -73,11 +97,13 @@ export function AddPastVisitModal({ onClose, onAdded }: { onClose: () => void; o
 
   const servicesForClinic = clinicId ? services.filter(s => s.clinic_id === clinicId || !s.clinic_id) : services;
   const doctorsForClinic = clinicId ? doctors.filter((d: any) => d.doctor?.clinic_id === clinicId) : doctors;
+  const patientLocked = !!addServiceTo; // إضافة خدمة لنفس الزيارة = نفس المريض والتاريخ، ملهمش داعي يتغيروا
 
   const handleServiceChange = (id: string) => {
     setServiceId(id);
+    setCustomServiceName('');
     const svc = services.find(s => s.id === id);
-    if (svc && !paidAmount) setPaidAmount(String(svc.price));
+    if (svc) setPaidAmount(String(svc.price));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -93,26 +119,45 @@ export function AddPastVisitModal({ onClose, onAdded }: { onClose: () => void; o
     }
 
     const selectedService = services.find(s => s.id === serviceId);
+    const finalServiceName = selectedService?.name || customServiceName.trim() || null;
 
     setSaving(true);
-    const { error } = await supabase.from('patient_visits').insert([{
-      patient_id: selectedPatient.source === 'registered' ? selectedPatient.id : null,
-      walk_in_patient_id: selectedPatient.source === 'walk_in' ? selectedPatient.id : null,
-      patient_name: selectedPatient.name,
-      visit_date: visitDate,
-      service_id: serviceId || null,
-      service_name: selectedService?.name || null,
-      clinic_id: clinicId || null,
-      doctor_id: doctorId || null,
-      paid_amount: parseFloat(paidAmount) || 0,
-      entered_by: user?.id || null,
-    }]);
-    setSaving(false);
 
-    if (error) {
-      setSaveError(getFriendlyErrorMessage(error, 'تعذر حفظ الزيارة.'));
-      return;
+    if (isEditing) {
+      const { error } = await supabase.from('patient_visits').update({
+        visit_date: visitDate,
+        service_id: serviceId || null,
+        service_name: finalServiceName,
+        clinic_id: clinicId || null,
+        doctor_id: doctorId || null,
+        paid_amount: parseFloat(paidAmount) || 0,
+      }).eq('id', editVisit.id);
+      setSaving(false);
+      if (error) {
+        setSaveError(getFriendlyErrorMessage(error, 'تعذر حفظ التعديلات.'));
+        return;
+      }
+    } else {
+      const { error } = await supabase.from('patient_visits').insert([{
+        patient_id: selectedPatient.source === 'registered' ? selectedPatient.id : null,
+        walk_in_patient_id: selectedPatient.source === 'walk_in' ? selectedPatient.id : null,
+        patient_name: selectedPatient.name,
+        visit_date: visitDate,
+        service_id: serviceId || null,
+        service_name: finalServiceName,
+        clinic_id: clinicId || null,
+        doctor_id: doctorId || null,
+        paid_amount: parseFloat(paidAmount) || 0,
+        entered_by: user?.id || null,
+        ...(addServiceTo ? { visit_group_id: addServiceTo.visitGroupId } : {}),
+      }]);
+      setSaving(false);
+      if (error) {
+        setSaveError(getFriendlyErrorMessage(error, 'تعذر حفظ الزيارة.'));
+        return;
+      }
     }
+
     onAdded();
     onClose();
   };
@@ -121,21 +166,27 @@ export function AddPastVisitModal({ onClose, onAdded }: { onClose: () => void; o
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir="rtl">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white">
-          <h3 className="text-xl font-bold text-gray-800">إضافة زيارة قديمة</h3>
+          <h3 className="text-xl font-bold text-gray-800">
+            {isEditing ? 'تعديل الزيارة' : addServiceTo ? 'إضافة خدمة لنفس الزيارة' : 'إضافة زيارة قديمة'}
+          </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <p className="text-xs text-gray-400 bg-gray-50 border border-gray-100 rounded-lg p-2">
-            الزيارة دي بتتسجل في سجل الزيارات والتقارير المالية بس، ومش هتظهر في شاشة النداء الآلي أو طابور اليوم.
-          </p>
+          {!isEditing && !addServiceTo && (
+            <p className="text-xs text-gray-400 bg-gray-50 border border-gray-100 rounded-lg p-2">
+              الزيارة دي بتتسجل في سجل الزيارات والتقارير المالية بس، ومش هتظهر في شاشة النداء الآلي أو طابور اليوم.
+            </p>
+          )}
 
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">المريض</label>
             {selectedPatient ? (
               <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl p-3">
                 <span className="font-bold text-gray-800">{selectedPatient.name}</span>
-                <button type="button" onClick={() => setSelectedPatient(null)} className="text-sm text-red-600 font-bold">تغيير</button>
+                {!patientLocked && !isEditing && (
+                  <button type="button" onClick={() => setSelectedPatient(null)} className="text-sm text-red-600 font-bold">تغيير</button>
+                )}
               </div>
             ) : (
               <div className="relative">
@@ -172,13 +223,16 @@ export function AddPastVisitModal({ onClose, onAdded }: { onClose: () => void; o
 
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">تاريخ الزيارة</label>
-            <input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} max={todayStr()} className="w-full border rounded-lg p-2.5" required />
+            <input
+              type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} max={todayStr()}
+              className="w-full border rounded-lg p-2.5" required disabled={!!addServiceTo}
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">العيادة</label>
-              <select value={clinicId} onChange={(e) => { setClinicId(e.target.value); setServiceId(''); setDoctorId(''); }} className="w-full border rounded-lg p-2.5">
+              <select value={clinicId} onChange={(e) => { setClinicId(e.target.value); setServiceId(''); }} className="w-full border rounded-lg p-2.5">
                 <option value="">-- اختر العيادة --</option>
                 {clinics.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -196,9 +250,15 @@ export function AddPastVisitModal({ onClose, onAdded }: { onClose: () => void; o
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">الخدمة</label>
               <select value={serviceId} onChange={(e) => handleServiceChange(e.target.value)} className="w-full border rounded-lg p-2.5">
-                <option value="">-- بدون تحديد --</option>
+                <option value="">-- خدمة مخصصة (اكتبها تحت) --</option>
                 {servicesForClinic.map(s => <option key={s.id} value={s.id}>{s.name} ({s.price} ج.م)</option>)}
               </select>
+              {!serviceId && (
+                <input
+                  type="text" value={customServiceName} onChange={(e) => setCustomServiceName(e.target.value)}
+                  className="w-full border rounded-lg p-2.5 mt-2" placeholder="اسم خدمة مخصص (اختياري)"
+                />
+              )}
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">المبلغ المدفوع (ج.م)</label>
@@ -210,7 +270,7 @@ export function AddPastVisitModal({ onClose, onAdded }: { onClose: () => void; o
 
           <button type="submit" disabled={saving} className="w-full bg-emerald-600 text-white font-bold py-3 rounded-lg hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50">
             {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-            حفظ الزيارة
+            {isEditing ? 'حفظ التعديلات' : 'حفظ الزيارة'}
           </button>
         </form>
       </div>

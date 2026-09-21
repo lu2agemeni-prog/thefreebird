@@ -10,6 +10,7 @@ import { getFriendlyErrorMessage } from '@/lib/errors';
 import { AddWalkInPatientModal } from './AddWalkInPatientModal';
 import { BulkPatientImportModal } from '../shared/BulkPatientImportModal';
 import { AddPastVisitModal } from './AddPastVisitModal';
+import { PatientVisitsHistory } from './PatientVisitsHistory';
 
 const PAGE_SIZE = 10;
 const FETCH_CAP = 2000;
@@ -24,6 +25,7 @@ interface UnifiedPatient {
 }
 
 export function SecretaryPatients() {
+  const [view, setView] = useState<'list' | 'history'>('list');
   const [patients, setPatients] = useState<UnifiedPatient[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -117,6 +119,13 @@ export function SecretaryPatients() {
         </button>
       </div>
 
+      <div className="flex gap-2">
+        <button onClick={() => setView('list')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${view === 'list' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>ملفات المرضى</button>
+        <button onClick={() => setView('history')} className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${view === 'history' ? 'bg-emerald-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>سجل الزيارات القديمة</button>
+      </div>
+
+      {view === 'history' ? <PatientVisitsHistory /> : (
+      <>
       <div className="mb-6 max-w-md">
         <SearchInput
           value={search}
@@ -187,6 +196,8 @@ export function SecretaryPatients() {
           )}
         </CardContent>
       </Card>
+      </>
+      )}
 
       {showAddModal && (
         <AddWalkInPatientModal
