@@ -2,11 +2,22 @@
 
 // ============================================================================
 // components/dashboards/secretary/PatientVisitsHistory.tsx
-// سجل الزيارات القديمة — مجمّعة حسب جلسة الزيارة (visit_group_id)، مع
-// إمكانية تعديل/حذف كل خدمة لوحدها، وإضافة خدمة جديدة لنفس الزيارة.
+// سجل الزيارات — مجمّعة حسب جلسة الزيارة (visit_group_id)، مع إمكانية
+// تعديل/حذف كل خدمة لوحدها، وإضافة خدمة جديدة لنفس الجلسة.
+//
+// الفلاتر المتاحة:
+//   • بحث بالاسم (الافتراضي).
+//   • فلتر العيادة (dropdown).
+//   • فلتر الطبيب (dropdown).
+//
+// الترتيب: حسب تاريخ الزيارة (visit_date) تنازليًا، ثم تاريخ التسجيل
+// (created_at) تنازليًا — زي ما طلب المستخدم. ده مهم خصوصًا في التقارير
+// القديمة: لو دخلت زيارات بترتيب مختلف عن الإدخال، التاريخ الصح هو
+// تاريخ الزيارة.
 // ============================================================================
+
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { CalendarClock, Pencil, Trash2, Plus, Loader2 } from 'lucide-react';
+import { CalendarClock, Pencil, Trash2, Plus, Loader2, Building, Stethoscope } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { Pagination } from '@/components/ui/pagination';
@@ -36,9 +47,13 @@ interface VisitRow {
 
 export function PatientVisitsHistory() {
   const [visits, setVisits] = useState<VisitRow[]>([]);
+  const [clinics, setClinics] = useState<{ id: string; name: string }[]>([]);
+  const [doctors, setDoctors] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [clinicFilter, setClinicFilter] = useState('');
+  const [doctorFilter, setDoctorFilter] = useState('');
   const [page, setPage] = useState(0);
 
   const [editingVisit, setEditingVisit] = useState<VisitRow | null>(null);
@@ -49,6 +64,7 @@ export function PatientVisitsHistory() {
   const fetchVisits = useCallback(async () => {
     setLoading(true);
     setError(null);
+    // الترتيب: حسب تاريخ الزيارة (الأهم) ثم تاريخ التسجيل
     const { data, error } = await supabase
       .from('patient_visits')
       .select('*, clinics(name), doctor:doctor_id(first_name, last_name)')
@@ -60,8 +76,23 @@ export function PatientVisitsHistory() {
     setLoading(false);
   }, []);
 
+  const fetchFiltersOptions = useCallback(async () => {
+    const [clinicsRes, docsRes] = await Promise.all([
+      supabase.from('clinics').select('id, name').order('name'),
+      supabase.from('profiles').select('id, first_name, last_name').eq('role', 'doctor').order('first_name'),
+    ]);
+    if (clinicsRes.data) setClinics(clinicsRes.data);
+    if (docsRes.data) {
+      setDoctors(docsRes.data.map((d: any) => ({
+        id: d.id,
+        name: `د. ${d.first_name || ''} ${d.last_name || ''}`.trim(),
+      })));
+    }
+  }, []);
+
   useEffect(() => { fetchVisits(); }, [fetchVisits]);
-  useEffect(() => { setPage(0); }, [search]);
+  useEffect(() => { fetchFiltersOptions(); }, [fetchFiltersOptions]);
+  useEffect(() => { setPage(0); }, [search, clinicFilter, doctorFilter]);
 
   // تجميع الصفوف حسب جلسة الزيارة (نفس visit_group_id = نفس زيارة، خدمات متعددة)
   const groups = useMemo(() => {
@@ -76,13 +107,23 @@ export function PatientVisitsHistory() {
 
   const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return groups;
-    return groups.filter(g => g.first.patient_name.toLowerCase().includes(q));
-  }, [groups, search]);
+    return groups.filter(g => {
+      // فلتر الاسم
+      if (q && !g.first.patient_name.toLowerCase().includes(q)) return false;
+      // فلتر العيادة
+      if (clinicFilter && g.first.clinic_id !== clinicFilter) return false;
+      // فلتر الطبيب
+      if (doctorFilter && g.first.doctor_id !== doctorFilter) return false;
+      return true;
+    });
+  }, [groups, search, clinicFilter, doctorFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredGroups.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
   const pageGroups = filteredGroups.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
+  // عدّاد الفلاتر النشطة عشان يبان للمستخدم إن فيه فلتر شغّال
+  const activeFiltersCount = (clinicFilter ? 1 : 0) + (doctorFilter ? 1 : 0);
 
   const handleDelete = async (id: string) => {
     if (!confirm('هل تريد حذف هذه الخدمة من الزيارة؟')) return;
@@ -90,15 +131,67 @@ export function PatientVisitsHistory() {
     fetchVisits();
   };
 
+  const resetFilters = () => {
+    setSearch('');
+    setClinicFilter('');
+    setDoctorFilter('');
+  };
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <CardTitle className="flex items-center gap-2"><CalendarClock className="w-5 h-5 text-emerald-600" /> سجل الزيارات القديمة</CardTitle>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2">
+              <CalendarClock className="w-5 h-5 text-emerald-600" /> سجل الزيارات
+            </CardTitle>
+            <div className="w-full md:w-72">
+              <SearchInput value={search} onValueChange={setSearch} placeholder="ابحث باسم المريض..." />
+            </div>
           </div>
-          <div className="w-full md:w-72">
-            <SearchInput value={search} onValueChange={setSearch} placeholder="ابحث باسم المريض..." />
+
+          {/* شريط الفلاتر */}
+          <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center flex-wrap">
+            <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
+              <Building className="w-4 h-4" />
+              <select
+                value={clinicFilter}
+                onChange={(e) => setClinicFilter(e.target.value)}
+                className="border rounded-lg p-2 text-sm bg-white min-w-[180px]"
+              >
+                <option value="">كل العيادات</option>
+                {clinics.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
+              <Stethoscope className="w-4 h-4" />
+              <select
+                value={doctorFilter}
+                onChange={(e) => setDoctorFilter(e.target.value)}
+                className="border rounded-lg p-2 text-sm bg-white min-w-[180px]"
+              >
+                <option value="">كل الأطباء</option>
+                {doctors.map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {activeFiltersCount > 0 && (
+              <button
+                onClick={resetFilters}
+                className="text-xs font-bold text-emerald-700 hover:underline"
+              >
+                مسح الفلاتر ({activeFiltersCount})
+              </button>
+            )}
+
+            <span className="text-xs text-gray-400 md:mr-auto">
+              الترتيب: حسب تاريخ الزيارة (الأحدث أولًا)
+            </span>
           </div>
         </div>
       </CardHeader>
@@ -107,7 +200,11 @@ export function PatientVisitsHistory() {
         {loading ? (
           <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>
         ) : pageGroups.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">لا توجد زيارات قديمة مسجلة بعد.</p>
+          <p className="text-center text-gray-500 py-8">
+            {search || clinicFilter || doctorFilter
+              ? 'لا توجد زيارات مطابقة للفلاتر المحددة.'
+              : 'لا توجد زيارات مسجلة بعد.'}
+          </p>
         ) : (
           <div className="space-y-4">
             {pageGroups.map(({ groupId, rows, first }) => {

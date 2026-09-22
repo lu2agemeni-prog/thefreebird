@@ -6,7 +6,15 @@
 //   1) تعديل بيانات العيادة (الاسم / الوصف / التفعيل)
 //   2) أطباء العيادة (من جدول doctor_clinics الجديد + العمود القديم clinic_id)
 //   3) تقارير العيادة: المواعيد + نداء الاليكتروني (call_queue) + الخدمات
-//      + ملخص مالي (إيرادات نداء الاليكتروني)
+//      + ملخص مالي (إيرادات نداء الاليكتروني + الزيارات القديمة)
+//
+// ملاحظة مالية مهمة: التقارير دي بتجمع:
+//   • الإيرادات من call_queue.paid_amount (اللي بتتحول تلقائيًا لـ transactions
+//     عن طريق ترايقر sync_call_queue_payment_to_transactions).
+//   • الإيرادات من patient_visits.paid_amount (اللي بتدخلها السكرتارية كزيارات
+//     قديمة عبر AddVisitModal — وبتتضيف لـ transactions بنفس visit_date).
+// ده بيخلي "محصل من نداء الاليكتروني" يشمل تحصيلات النداء + تحصيلات الزيارات
+// القديمة لنفس العيادة، وده هو الرقم الصح للعيادة.
 // ============================================================================
 
 import { useEffect, useMemo, useState } from 'react';
@@ -28,6 +36,10 @@ import {
 
 const FETCH_CAP = 2000;
 const PAGE_SIZE = 10;
+
+function toDateInputValue(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
 
 type Clinic = {
   id: string;
@@ -68,10 +80,19 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [queue, setQueue] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
+  // زيارات قديمة لهذه العيادة (المُدخلة عبر AddVisitModal بتاريخ سابق) — مهمة لإجمالي الإيرادات
+  const [patientVisits, setPatientVisits] = useState<any[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [reportSearch, setReportSearch] = useState('');
   const [reportPage, setReportPage] = useState(0);
+  // فلتر تاريخ (افتراضي: آخر 30 يوم)
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 29);
+    return toDateInputValue(d);
+  });
+  const [dateTo, setDateTo] = useState(() => toDateInputValue(new Date()));
   useEffect(() => { const t = setTimeout(() => setReportPage(0), 0); return () => clearTimeout(t); }, [reportSearch]);
 
   // ---- تحميل أطباء العيادة (الجدول الجديد + fallback للعمود القديم) ----
@@ -141,20 +162,26 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
 
   useEffect(() => { setTimeout(fetchDoctors, 0);   }, [clinic.id]);
 
-  // ---- تحميل تقارير العيادة ----
+  // ---- تحميل تقارير العيادة (مع فلتر التاريخ) ----
   async function fetchReports() {
     setReportsLoading(true);
     setReportsError(null);
     try {
-      const [apRes, qRes, svRes] = await Promise.all([
+      const fromIso = `${dateFrom}T00:00:00`;
+      const toIso = `${dateTo}T23:59:59`;
+      const [apRes, qRes, svRes, pvRes] = await Promise.all([
         supabase.from('appointments')
           .select('*, patient:patient_id(first_name, last_name), doctor:doctor_id(profiles(first_name, last_name))')
           .eq('clinic_id', clinic.id)
-          .order('created_at', { ascending: false })
+          .gte('appointment_date', fromIso)
+          .lte('appointment_date', toIso)
+          .order('appointment_date', { ascending: false })
           .limit(FETCH_CAP),
         supabase.from('call_queue')
           .select('*, service:service_id(name, price), doctor:doctor_id(first_name, last_name)')
           .eq('clinic_id', clinic.id)
+          .gte('created_at', fromIso)
+          .lte('created_at', toIso)
           .order('created_at', { ascending: false })
           .limit(FETCH_CAP),
         supabase.from('services')
@@ -162,13 +189,23 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
           .eq('clinic_id', clinic.id)
           .order('name', { ascending: true })
           .limit(200),
+        // الزيارات القديمة المُدخلة كـ past visits عبر AddVisitModal — بتتحسب في الإيرادات
+        supabase.from('patient_visits')
+          .select('id, visit_date, service_name, paid_amount, patient_name, doctor_id')
+          .eq('clinic_id', clinic.id)
+          .gte('visit_date', dateFrom)
+          .lte('visit_date', dateTo)
+          .order('visit_date', { ascending: false })
+          .limit(FETCH_CAP),
       ]);
       if (apRes.error) throw apRes.error;
       if (qRes.error) throw qRes.error;
       if (svRes.error) throw svRes.error;
+      if (pvRes.error) throw pvRes.error;
       setAppointments(apRes.data || []);
       setQueue(qRes.data || []);
       setServices(svRes.data || []);
+      setPatientVisits(pvRes.data || []);
     } catch (err) {
       setReportsError(getFriendlyErrorMessage(err, 'تعذر تحميل تقارير العيادة.'));
     } finally {
@@ -176,7 +213,7 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
     }
   };
 
-  useEffect(() => { setTimeout(fetchReports, 0);   }, [clinic.id]);
+  useEffect(() => { setTimeout(fetchReports, 0);   }, [clinic.id, dateFrom, dateTo]);
 
   // ---- حفظ تعديل بيانات العيادة ----
   const handleSaveClinic = async (e: React.FormEvent) => {
@@ -205,12 +242,19 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
   const completedAppointments = useMemo(
     () => appointments.filter((a) => a.status === 'completed').length, [appointments]
   );
+  // تحصيلات النداء الآلي (call_queue) في النطاق الزمني المحدد
   const queuePaidTotal = useMemo(
     () => queue.reduce((s, q) => s + Number(q.paid_amount || 0), 0), [queue]
   );
   const queueRemainingTotal = useMemo(
     () => queue.reduce((s, q) => s + Number(q.remaining_amount || 0), 0), [queue]
   );
+  // تحصيلات الزيارات القديمة (المُدخلة بتاريخ سابق عبر AddVisitModal) في النطاق الزمني
+  const oldVisitsPaidTotal = useMemo(
+    () => patientVisits.reduce((s, v) => s + Number(v.paid_amount || 0), 0), [patientVisits]
+  );
+  // إجمالي الإيرادات = تحصيلات النداء + تحصيلات الزيارات القديمة
+  const totalIncome = queuePaidTotal + oldVisitsPaidTotal;
   const servedPatients = useMemo(
     () => queue.filter((q) => q.status === 'completed').length, [queue]
   );
@@ -360,9 +404,58 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
             <CalendarDays className="w-5 h-5 text-emerald-600" />
             تقارير العيادة
           </CardTitle>
-          <CardDescription>مواعيد العيادة وحركات نداء الاليكتروني (call_queue) والخدمات المتاحة</CardDescription>
-          <div className="mt-3 max-w-md">
-            <SearchInput value={reportSearch} onValueChange={setReportSearch} placeholder="ابحث داخل تقارير العيادة..." />
+          <CardDescription>مواعيد العيادة وحركات نداء الاليكتروني (call_queue) والزيارات القديمة والخدمات المتاحة</CardDescription>
+
+          {/* فلتر التاريخ + البحث */}
+          <div className="mt-3 flex flex-col md:flex-row gap-3 items-stretch md:items-center flex-wrap">
+            <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
+              <span>من</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="border rounded-lg p-2 text-sm bg-white"
+              />
+            </div>
+            <span className="text-gray-400 text-sm">إلى</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="border rounded-lg p-2 text-sm bg-white"
+            />
+            <div className="flex gap-1">
+              <button
+                onClick={() => {
+                  const today = toDateInputValue(new Date());
+                  setDateFrom(today); setDateTo(today);
+                }}
+                className="text-xs px-2.5 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 font-bold text-gray-600"
+              >
+                اليوم
+              </button>
+              <button
+                onClick={() => {
+                  const d = new Date(); d.setDate(d.getDate() - 6);
+                  setDateFrom(toDateInputValue(d)); setDateTo(toDateInputValue(new Date()));
+                }}
+                className="text-xs px-2.5 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 font-bold text-gray-600"
+              >
+                آخر 7 أيام
+              </button>
+              <button
+                onClick={() => {
+                  const d = new Date(); d.setDate(d.getDate() - 29);
+                  setDateFrom(toDateInputValue(d)); setDateTo(toDateInputValue(new Date()));
+                }}
+                className="text-xs px-2.5 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 font-bold text-gray-600"
+              >
+                آخر 30 يوم
+              </button>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <SearchInput value={reportSearch} onValueChange={setReportSearch} placeholder="ابحث داخل تقارير العيادة..." />
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -371,23 +464,25 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
             <p className="text-gray-500 py-4">جاري تحميل تقارير العيادة...</p>
           ) : (
             <>
-              {/* ملخص إحصائي */}
+              {/* ملخص إحصائي — يشمل تحصيلات النداء + الزيارات القديمة */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-center">
                   <p className="text-2xl font-bold text-blue-700">{appointments.length}</p>
                   <p className="text-xs text-blue-600 font-bold mt-1">إجمالي المواعيد</p>
                 </div>
                 <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center">
-                  <p className="text-2xl font-bold text-emerald-700">{completedAppointments}</p>
-                  <p className="text-xs text-emerald-600 font-bold mt-1">كشوفات مكتملة</p>
+                  <p className="text-2xl font-bold text-emerald-700">{totalIncome} ج.م</p>
+                  <p className="text-xs text-emerald-600 font-bold mt-1">إجمالي الإيرادات</p>
                 </div>
                 <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-center">
-                  <p className="text-2xl font-bold text-orange-700">{queuePaidTotal} ج.م</p>
-                  <p className="text-xs text-orange-600 font-bold mt-1">محصل من نداء الاليكتروني</p>
+                  <p className="text-2xl font-bold text-orange-700" dir="ltr">
+                    {queuePaidTotal} <span className="text-sm">+ {oldVisitsPaidTotal}</span>
+                  </p>
+                  <p className="text-xs text-orange-600 font-bold mt-1">نداء + زيارات قديمة (ج.م)</p>
                 </div>
                 <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center">
                   <p className="text-2xl font-bold text-red-700">{queueRemainingTotal} ج.م</p>
-                  <p className="text-xs text-red-600 font-bold mt-1">مبالغ متبقية</p>
+                  <p className="text-xs text-red-600 font-bold mt-1">مبالغ متبقية (نداء)</p>
                 </div>
               </div>
 
@@ -479,6 +574,43 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
                   </table>
                 </div>
                 <Pagination page={qSafePage} pageSize={PAGE_SIZE} total={filteredQueue.length} onPageChange={setReportPage} isLoading={reportsLoading} />
+              </div>
+
+              {/* الزيارات القديمة (إدخال يدوي بتاريخ سابق) */}
+              <div>
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h4 className="font-bold text-gray-800 flex items-center gap-2">
+                    <CalendarDays className="w-4 h-4 text-purple-600" />
+                    الزيارات القديمة لهذه العيادة ({patientVisits.length}) — إجمالي {oldVisitsPaidTotal} ج.م
+                  </h4>
+                  <button onClick={() => exportToCSV(patientVisits, `تقارير_عيادة_${clinic.name}_الزيارات_القديمة`)} className="flex items-center gap-1 text-xs font-bold bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg hover:bg-purple-200">
+                    <Download className="w-3.5 h-3.5" /> تصدير CSV
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50 border-b">
+                        <th className="p-3 font-semibold text-gray-600 text-sm">تاريخ الزيارة</th>
+                        <th className="p-3 font-semibold text-gray-600 text-sm">المريض</th>
+                        <th className="p-3 font-semibold text-gray-600 text-sm">الخدمة</th>
+                        <th className="p-3 font-semibold text-gray-600 text-sm">المبلغ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {patientVisits.length === 0 ? (
+                        <tr><td colSpan={4} className="text-center p-4 text-gray-500 text-sm">لا توجد زيارات قديمة في هذه العيادة</td></tr>
+                      ) : patientVisits.map((v: any) => (
+                        <tr key={v.id} className="border-b hover:bg-gray-50">
+                          <td className="p-3 text-sm text-gray-500">{new Date(v.visit_date).toLocaleDateString('ar-EG')}</td>
+                          <td className="p-3 text-sm font-medium">{v.patient_name}</td>
+                          <td className="p-3 text-sm text-gray-600">{v.service_name || 'غير محدد'}</td>
+                          <td className="p-3 text-sm font-bold text-emerald-700" dir="ltr">{v.paid_amount || 0} ج.م</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               {/* خدمات العيادة */}

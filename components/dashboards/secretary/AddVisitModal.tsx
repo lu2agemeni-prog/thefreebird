@@ -85,6 +85,8 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
   const [clinics, setClinics] = useState<any[]>([]);
   const [servicesCatalog, setServicesCatalog] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
+  // ─── خريطة كل طبيب للعيادات المسندة ليه (doctors.clinic_id + doctor_clinics) ───
+  const [doctorClinicsMap, setDoctorClinicsMap] = useState<Map<string, Set<string>>>(new Map());
   const [loadingOptions, setLoadingOptions] = useState(true);
 
   // ─── المريض: بحث / اختيار / إنشاء جديد ───
@@ -129,15 +131,40 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
     let cancelled = false;
     async function loadOptions() {
       setLoadingOptions(true);
-      const [clinicsRes, servicesRes, doctorsRes] = await Promise.all([
+      const [clinicsRes, servicesRes, doctorsRes, dcRes] = await Promise.all([
         supabase.from('clinics').select('id, name, audio_number').eq('is_active', true).order('name'),
         supabase.from('services').select('id, name, price, clinic_id').eq('is_active', true).order('name'),
         supabase.from('doctors').select('profile_id, clinic_id, specialty, profiles(first_name, last_name)'),
+        // جدول الربط many-to-many: طبيب ممكن يكون في أكتر من عيادة
+        supabase.from('doctor_clinics').select('doctor_id, clinic_id'),
       ]);
       if (cancelled) return;
       if (clinicsRes.data) setClinics(clinicsRes.data);
       if (servicesRes.data) setServicesCatalog(servicesRes.data);
       if (doctorsRes.data) setDoctors(doctorsRes.data);
+
+      // بناء الخريطة: كل طبيب → Set<clinic_id> من المصدرين معًا
+      const map = new Map<string, Set<string>>();
+      if (doctorsRes.data) {
+        doctorsRes.data.forEach((d: any) => {
+          if (d.clinic_id) {
+            if (!map.has(d.profile_id)) map.set(d.profile_id, new Set());
+            map.get(d.profile_id)!.add(d.clinic_id);
+          }
+        });
+      }
+      // doctor_clinics table موجودة في الـ schema — لو الـ PGREST رد بخطأ (الجدول مش موجود) نتجاهله
+      if (dcRes.error && dcRes.error.code !== 'PGRST106' && dcRes.error.code !== '42P01') {
+        console.warn('doctor_clinics load error:', dcRes.error.message);
+      } else if (dcRes.data) {
+        dcRes.data.forEach((row: any) => {
+          if (!row.doctor_id || !row.clinic_id) return;
+          if (!map.has(row.doctor_id)) map.set(row.doctor_id, new Set());
+          map.get(row.doctor_id)!.add(row.clinic_id);
+        });
+      }
+      setDoctorClinicsMap(map);
+
       setLoadingOptions(false);
     }
     loadOptions();
@@ -179,9 +206,16 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
     () => (clinicId ? servicesCatalog.filter(s => s.clinic_id === clinicId) : []),
     [clinicId, servicesCatalog]
   );
+  // الطبيب يظهر في القائمة لو العيادة المختارة واحدة من عياداته (doctors.clinic_id أو doctor_clinics)
   const doctorsForClinic = useMemo(
-    () => (clinicId ? doctors.filter((d: any) => d.clinic_id === clinicId) : doctors),
-    [clinicId, doctors]
+    () => {
+      if (!clinicId) return doctors;
+      return doctors.filter((d: any) => {
+        const assigned = doctorClinicsMap.get(d.profile_id);
+        return assigned ? assigned.has(clinicId) : false;
+      });
+    },
+    [clinicId, doctors, doctorClinicsMap]
   );
 
   // إجمالي المبلغ اللي المفروض يدفعه المريض (محسوب من السطور)
@@ -333,11 +367,13 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
 
       // 5) إضافة: نضيف صف لكل خدمة في patient_visits (visit_group_id موحّد)
       const visitsToInsert: any[] = [];
+      const transactionsToInsert: any[] = [];
       for (const line of filledLines) {
         const resolved = await resolveLine(line);
         const svcName = resolved.customName
           || servicesCatalog.find(s => s.id === resolved.serviceId)?.name
           || null;
+        const paid = parseFloat(line.price) || 0;
         visitsToInsert.push({
           patient_id: patient.source === 'registered' ? patient.id : null,
           walk_in_patient_id: patient.source === 'walk_in' ? patient.id : null,
@@ -347,13 +383,35 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
           service_name: svcName,
           clinic_id: clinicId || null,
           doctor_id: doctorId || null,
-          paid_amount: parseFloat(line.price) || 0,
+          paid_amount: paid,
           entered_by: user?.id || null,
           visit_group_id: groupId,
         });
+
+        // لو الزيارة بتاريخ سابق (مش بتدخل call_queue)، لازم نسجل الـ
+        // paid_amount كـ transaction عشان يظهر في التقارير المالية.
+        // زيارات اليوم بتتعامل معاها ترايقر sync_call_queue_payment_to_transactions
+        // على call_queue أوتوماتيك.
+        if (!isVisitToday && paid > 0) {
+          transactionsToInsert.push({
+            type: 'income',
+            category: 'تحصيل زيارة (إدخال يدوي)',
+            amount: paid,
+            description: `زيارة ${patient.name} — ${svcName || 'خدمة'} — بتاريخ ${visitDate}`,
+            user_id: user?.id || null,
+            clinic_id: clinicId,
+            created_at: `${visitDate}T${new Date().toISOString().slice(11, 19)}Z`,
+          });
+        }
       }
       const { error: visitErr } = await supabase.from('patient_visits').insert(visitsToInsert);
       if (visitErr) throw visitErr;
+
+      // سجّل transactions للزيارات القديمة (عشان التقارير المالية)
+      if (transactionsToInsert.length > 0) {
+        const { error: txErr } = await supabase.from('transactions').insert(transactionsToInsert);
+        if (txErr) console.warn('transactions insert warning:', txErr.message);
+      }
 
       // 6) لو الزيارة النهارده: نضيف سطر رئيسي في call_queue
       //    الخدمات الإضافية (أكتر من واحدة) بتدخل في queue_services.
