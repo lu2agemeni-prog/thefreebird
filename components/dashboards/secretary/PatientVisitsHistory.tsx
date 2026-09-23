@@ -17,7 +17,7 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { CalendarClock, Pencil, Trash2, Plus, Loader2, Building, Stethoscope } from 'lucide-react';
+import { CalendarClock, Pencil, Trash2, Plus, Loader2, Building, Stethoscope, Calendar } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { Pagination } from '@/components/ui/pagination';
@@ -54,6 +54,8 @@ export function PatientVisitsHistory() {
   const [search, setSearch] = useState('');
   const [clinicFilter, setClinicFilter] = useState('');
   const [doctorFilter, setDoctorFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(0);
 
   const [editingVisit, setEditingVisit] = useState<VisitRow | null>(null);
@@ -92,7 +94,7 @@ export function PatientVisitsHistory() {
 
   useEffect(() => { fetchVisits(); }, [fetchVisits]);
   useEffect(() => { fetchFiltersOptions(); }, [fetchFiltersOptions]);
-  useEffect(() => { setPage(0); }, [search, clinicFilter, doctorFilter]);
+  useEffect(() => { setPage(0); }, [search, clinicFilter, doctorFilter, dateFrom, dateTo]);
 
   // تجميع الصفوف حسب جلسة الزيارة (نفس visit_group_id = نفس زيارة، خدمات متعددة)
   const groups = useMemo(() => {
@@ -114,16 +116,20 @@ export function PatientVisitsHistory() {
       if (clinicFilter && g.first.clinic_id !== clinicFilter) return false;
       // فلتر الطبيب
       if (doctorFilter && g.first.doctor_id !== doctorFilter) return false;
+      // فلتر التاريخ (من - إلى)
+      const visitDateOnly = (g.first.visit_date || '').slice(0, 10);
+      if (dateFrom && visitDateOnly < dateFrom) return false;
+      if (dateTo && visitDateOnly > dateTo) return false;
       return true;
     });
-  }, [groups, search, clinicFilter, doctorFilter]);
+  }, [groups, search, clinicFilter, doctorFilter, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(filteredGroups.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
   const pageGroups = filteredGroups.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
   // عدّاد الفلاتر النشطة عشان يبان للمستخدم إن فيه فلتر شغّال
-  const activeFiltersCount = (clinicFilter ? 1 : 0) + (doctorFilter ? 1 : 0);
+  const activeFiltersCount = (clinicFilter ? 1 : 0) + (doctorFilter ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
 
   const handleDelete = async (id: string) => {
     if (!confirm('هل تريد حذف هذه الخدمة من الزيارة؟')) return;
@@ -135,6 +141,8 @@ export function PatientVisitsHistory() {
     setSearch('');
     setClinicFilter('');
     setDoctorFilter('');
+    setDateFrom('');
+    setDateTo('');
   };
 
   return (
@@ -180,6 +188,27 @@ export function PatientVisitsHistory() {
               </select>
             </div>
 
+            <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
+              <Calendar className="w-4 h-4" />
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                max={dateTo || undefined}
+                className="border rounded-lg p-2 text-sm bg-white"
+                title="من تاريخ"
+              />
+              <span className="text-gray-400">إلى</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                min={dateFrom || undefined}
+                className="border rounded-lg p-2 text-sm bg-white"
+                title="إلى تاريخ"
+              />
+            </div>
+
             {activeFiltersCount > 0 && (
               <button
                 onClick={resetFilters}
@@ -201,7 +230,7 @@ export function PatientVisitsHistory() {
           <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>
         ) : pageGroups.length === 0 ? (
           <p className="text-center text-gray-500 py-8">
-            {search || clinicFilter || doctorFilter
+            {search || clinicFilter || doctorFilter || dateFrom || dateTo
               ? 'لا توجد زيارات مطابقة للفلاتر المحددة.'
               : 'لا توجد زيارات مسجلة بعد.'}
           </p>

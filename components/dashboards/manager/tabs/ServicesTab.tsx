@@ -6,10 +6,11 @@
 // ملحوظة صغيرة: serviceError كانت موجودة بس مش متعرضة في الواجهة أصلاً —
 // ضفنا عرضها تحت الجدول (تصحيح بسيط أثناء النقل، مش تغيير سلوك مقصود).
 // ============================================================================
-import { useState, useEffect, useCallback } from 'react';
-import { CheckCircle, Pencil, X, Loader2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { CheckCircle, Pencil, X, Loader2, Building, ArrowUpDown } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
+import { SearchInput } from '@/components/ui/search-input';
 import { supabase } from '@/lib/supabase';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 
@@ -32,6 +33,12 @@ export function ServicesTab() {
   const [editServiceActive, setEditServiceActive] = useState(true);
   const [savingService, setSavingService] = useState(false);
   const [serviceError, setServiceError] = useState<string | null>(null);
+
+  // فلترة وترتيب الجدول
+  const [filterClinicId, setFilterClinicId] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'clinic' | 'name' | 'price'>('clinic');
 
   const fetchClinics = useCallback(async () => {
     const { data } = await supabase.from('clinics').select('*').limit(FETCH_CAP);
@@ -110,6 +117,42 @@ export function ServicesTab() {
     }
   };
 
+  // الخدمات بعد الفلترة (عيادة / حالة / بحث بالاسم) والترتيب
+  const visibleServices = useMemo(() => {
+    let list = [...services];
+
+    if (filterClinicId) {
+      if (filterClinicId === 'general') list = list.filter(s => !s.clinic_id);
+      else list = list.filter(s => s.clinic_id === filterClinicId);
+    }
+
+    if (filterStatus !== 'all') {
+      const wantActive = filterStatus === 'active';
+      list = list.filter(s => (s.is_active !== false) === wantActive);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(s => (s.name || '').toLowerCase().includes(q));
+    }
+
+    list.sort((a, b) => {
+      if (sortBy === 'clinic') {
+        const clinicA = a.clinic?.name || 'ي - خدمة عامة'; // بادئة تخليها آخر الترتيب أبجديًا
+        const clinicB = b.clinic?.name || 'ي - خدمة عامة';
+        const cmp = clinicA.localeCompare(clinicB, 'ar');
+        if (cmp !== 0) return cmp;
+        return (a.name || '').localeCompare(b.name || '', 'ar');
+      }
+      if (sortBy === 'price') {
+        return Number(a.price || 0) - Number(b.price || 0);
+      }
+      return (a.name || '').localeCompare(b.name || '', 'ar');
+    });
+
+    return list;
+  }, [services, filterClinicId, filterStatus, searchQuery, sortBy]);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -143,7 +186,62 @@ export function ServicesTab() {
 
       <Card>
         <CardHeader>
-          <CardTitle>الخدمات والأسعار الحالية</CardTitle>
+          <div className="flex flex-col gap-4">
+            <CardTitle>الخدمات والأسعار الحالية</CardTitle>
+            <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center flex-wrap">
+              <div className="w-full md:w-64">
+                <SearchInput value={searchQuery} onValueChange={setSearchQuery} placeholder="بحث باسم الخدمة..." />
+              </div>
+              <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
+                <Building className="w-4 h-4" />
+                <select
+                  value={filterClinicId}
+                  onChange={(e) => setFilterClinicId(e.target.value)}
+                  className="border rounded-lg p-2 text-sm bg-white min-w-[170px]"
+                >
+                  <option value="">كل العيادات</option>
+                  <option value="general">خدمة عامة (بدون عيادة)</option>
+                  {clinics.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value as any)}
+                  className="border rounded-lg p-2 text-sm bg-white"
+                >
+                  <option value="all">كل الحالات</option>
+                  <option value="active">مفعلة فقط</option>
+                  <option value="inactive">معطلة فقط</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
+                <ArrowUpDown className="w-4 h-4" />
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="border rounded-lg p-2 text-sm bg-white"
+                >
+                  <option value="clinic">ترتيب حسب العيادة</option>
+                  <option value="name">ترتيب حسب الاسم</option>
+                  <option value="price">ترتيب حسب السعر</option>
+                </select>
+              </div>
+              {(filterClinicId || filterStatus !== 'all' || searchQuery) && (
+                <button
+                  onClick={() => { setFilterClinicId(''); setFilterStatus('all'); setSearchQuery(''); }}
+                  className="text-xs font-bold text-emerald-700 hover:underline"
+                >
+                  مسح الفلاتر
+                </button>
+              )}
+              <span className="text-xs text-gray-400 md:mr-auto" dir="ltr">
+                {visibleServices.length.toLocaleString()} / {services.length.toLocaleString()}
+              </span>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {error && <ErrorState message={error} onRetry={fetchServices} compact />}
@@ -161,9 +259,11 @@ export function ServicesTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {services.length === 0 ? (
-                    <tr><td colSpan={5} className="text-center p-4 text-gray-500">لا توجد خدمات مسجلة.</td></tr>
-                  ) : services.map(service => (
+                  {visibleServices.length === 0 ? (
+                    <tr><td colSpan={5} className="text-center p-4 text-gray-500">
+                      {services.length === 0 ? 'لا توجد خدمات مسجلة.' : 'لا توجد خدمات مطابقة للفلاتر المحددة.'}
+                    </td></tr>
+                  ) : visibleServices.map(service => (
                     editingServiceId === service.id ? (
                       <tr key={service.id} className="border-b bg-emerald-50/50">
                         <td className="p-2">

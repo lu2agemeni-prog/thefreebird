@@ -127,6 +127,7 @@ function PricingSettings() {
 
 function LabReport() {
   const [rows, setRows] = useState<any[]>([]);
+  const [visitRows, setVisitRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState(() => {
@@ -139,38 +140,92 @@ function LabReport() {
   const fetchReport = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const { data, error } = await supabase
+
+    // 1) نتائج التحاليل المدخلة من تبويب "المعمل" (lab_results) — فيها تفصيل
+    //    نسب التوزيع (المركز/الطبيب/صاحب المعمل).
+    const resultsPromise = supabase
       .from('lab_results')
       .select('id, value, price, clinic_share, doctor_share, lab_owner_share, created_at, test:test_id(name, unit), patient:patient_id(first_name, last_name), doctor:doctor_id(first_name, last_name)')
       .gte('created_at', `${dateFrom}T00:00:00`)
       .lte('created_at', `${dateTo}T23:59:59`)
       .order('created_at', { ascending: false });
-    if (error) setError(getFriendlyErrorMessage(error, 'تعذر تحميل تقرير حسابات المعمل.'));
-    else setRows(data || []);
+
+    // 2) زيارات المعمل المسجّلة من شاشة "الزيارات" العادية (سكرتارية/مدير) —
+    //    أي زيارة مربوطة بعيادة اسمها فيه "معمل". دي كانت بتفوت من التقرير
+    //    القديم لأنه كان بيقرأ من lab_results بس، فكانت مبالغ محصّلة من
+    //    زيارات المعمل مش بتظهر هنا رغم إنها فلوس معمل فعليًا.
+    const clinicsPromise = supabase.from('clinics').select('id, name').ilike('name', '%معمل%');
+
+    const [resultsRes, clinicsRes] = await Promise.all([resultsPromise, clinicsPromise]);
+
+    if (resultsRes.error) {
+      setError(getFriendlyErrorMessage(resultsRes.error, 'تعذر تحميل تقرير حسابات المعمل.'));
+      setLoading(false);
+      return;
+    }
+    setRows(resultsRes.data || []);
+
+    const labClinicIds = (clinicsRes.data || []).map((c: any) => c.id);
+    if (labClinicIds.length > 0) {
+      const { data: visitsData, error: visitsError } = await supabase
+        .from('patient_visits')
+        .select('id, patient_name, service_name, paid_amount, visit_date, clinic_id, doctor_id, doctor:doctor_id(first_name, last_name)')
+        .in('clinic_id', labClinicIds)
+        .gte('visit_date', dateFrom)
+        .lte('visit_date', dateTo)
+        .order('visit_date', { ascending: false });
+      if (!visitsError) setVisitRows(visitsData || []);
+      else setVisitRows([]);
+    } else {
+      setVisitRows([]);
+    }
+
     setLoading(false);
   }, [dateFrom, dateTo]);
 
   useEffect(() => { const t = setTimeout(fetchReport, 0); return () => clearTimeout(t); }, [fetchReport]);
 
-  const totals = useMemo(() => rows.reduce((acc, r) => ({
-    price: acc.price + Number(r.price || 0),
-    clinic: acc.clinic + Number(r.clinic_share || 0),
-    doctor: acc.doctor + Number(r.doctor_share || 0),
-    owner: acc.owner + Number(r.lab_owner_share || 0),
-  }), { price: 0, clinic: 0, doctor: 0, owner: 0 }), [rows]);
+  const totals = useMemo(() => {
+    const fromResults = rows.reduce((acc, r) => ({
+      price: acc.price + Number(r.price || 0),
+      clinic: acc.clinic + Number(r.clinic_share || 0),
+      doctor: acc.doctor + Number(r.doctor_share || 0),
+      owner: acc.owner + Number(r.lab_owner_share || 0),
+    }), { price: 0, clinic: 0, doctor: 0, owner: 0 });
+    const visitsTotal = visitRows.reduce((s, v) => s + Number(v.paid_amount || 0), 0);
+    return {
+      price: fromResults.price + visitsTotal,
+      clinic: fromResults.clinic,
+      doctor: fromResults.doctor,
+      owner: fromResults.owner,
+      visitsTotal,
+    };
+  }, [rows, visitRows]);
 
   const handleExport = () => {
-    exportRowsToExcel(rows.map(r => ({
+    const resultRows = rows.map(r => ({
+      'المصدر': 'نتيجة تحليل',
       'التاريخ': new Date(r.created_at).toLocaleDateString('ar-EG'),
       'المريض': r.patient ? `${r.patient.first_name} ${r.patient.last_name}` : '',
-      'التحليل': r.test?.name || '',
-      'القيمة': r.value,
+      'التحليل / الخدمة': r.test?.name || '',
       'السعر': r.price,
       'نصيب المركز': r.clinic_share,
       'نصيب الطبيب': r.doctor_share,
       'الطبيب المحوِّل': r.doctor ? `د. ${r.doctor.first_name} ${r.doctor.last_name}` : '',
       'نصيب صاحب المعمل': r.lab_owner_share,
-    })), 'حسابات المعمل', `تقرير_حسابات_المعمل_${dateFrom}_${dateTo}`);
+    }));
+    const visitExportRows = visitRows.map(v => ({
+      'المصدر': 'زيارة معمل',
+      'التاريخ': new Date(v.visit_date).toLocaleDateString('ar-EG'),
+      'المريض': v.patient_name || '',
+      'التحليل / الخدمة': v.service_name || '',
+      'السعر': v.paid_amount,
+      'نصيب المركز': '',
+      'نصيب الطبيب': '',
+      'الطبيب المحوِّل': v.doctor ? `د. ${v.doctor.first_name} ${v.doctor.last_name}` : '',
+      'نصيب صاحب المعمل': '',
+    }));
+    exportRowsToExcel([...resultRows, ...visitExportRows], 'حسابات المعمل', `تقرير_حسابات_المعمل_${dateFrom}_${dateTo}`);
   };
 
   return (
@@ -190,11 +245,17 @@ function LabReport() {
       </Card>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card><CardContent className="p-4"><p className="text-xs text-gray-500 mb-1">إجمالي التحصيل</p><p className="text-xl font-black text-gray-800" dir="ltr">{totals.price.toLocaleString()} ج.م</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-gray-500 mb-1">إجمالي التحصيل (نتائج + زيارات)</p><p className="text-xl font-black text-gray-800" dir="ltr">{totals.price.toLocaleString()} ج.م</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-gray-500 mb-1">نصيب المركز</p><p className="text-xl font-black text-blue-600" dir="ltr">{totals.clinic.toLocaleString()} ج.م</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-gray-500 mb-1">نصيب الأطباء</p><p className="text-xl font-black text-purple-600" dir="ltr">{totals.doctor.toLocaleString()} ج.م</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-gray-500 mb-1">نصيب صاحب المعمل</p><p className="text-xl font-black text-emerald-600" dir="ltr">{totals.owner.toLocaleString()} ج.م</p></CardContent></Card>
       </div>
+
+      {visitRows.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-bold">
+          تحصيل زيارات المعمل (المسجّلة من شاشة الزيارات وليس شاشة إدخال النتائج): {totals.visitsTotal.toLocaleString()} ج.م — دي مبالغ متضمنة في «إجمالي التحصيل» فوق، لكنها ملهاش نسب موزّعة (مركز/طبيب/صاحب معمل) زي نتائج التحاليل، عشان ملهاش سعر ونسب محفوظة في كتالوج التحاليل وقت التسجيل.
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -204,9 +265,10 @@ function LabReport() {
               <table className="w-full text-right border-collapse text-sm">
                 <thead>
                   <tr className="bg-gray-50 border-b">
+                    <th className="p-3 font-semibold text-gray-600">المصدر</th>
                     <th className="p-3 font-semibold text-gray-600">التاريخ</th>
                     <th className="p-3 font-semibold text-gray-600">المريض</th>
-                    <th className="p-3 font-semibold text-gray-600">التحليل</th>
+                    <th className="p-3 font-semibold text-gray-600">التحليل / الخدمة</th>
                     <th className="p-3 font-semibold text-gray-600">السعر</th>
                     <th className="p-3 font-semibold text-gray-600">المركز</th>
                     <th className="p-3 font-semibold text-gray-600">الطبيب</th>
@@ -215,7 +277,8 @@ function LabReport() {
                 </thead>
                 <tbody>
                   {rows.map(r => (
-                    <tr key={r.id} className="border-b hover:bg-gray-50">
+                    <tr key={`result-${r.id}`} className="border-b hover:bg-gray-50">
+                      <td className="p-3"><span className="text-xs font-bold bg-purple-100 text-purple-700 px-2 py-1 rounded">نتيجة تحليل</span></td>
                       <td className="p-3 text-gray-500">{new Date(r.created_at).toLocaleDateString('ar-EG')}</td>
                       <td className="p-3 font-bold">{r.patient ? `${r.patient.first_name} ${r.patient.last_name}` : '---'}</td>
                       <td className="p-3">{r.test?.name}</td>
@@ -225,8 +288,20 @@ function LabReport() {
                       <td className="p-3" dir="ltr">{r.lab_owner_share}</td>
                     </tr>
                   ))}
-                  {rows.length === 0 && (
-                    <tr><td colSpan={7} className="p-8 text-center text-gray-500">لا توجد نتائج ضمن النطاق الزمني المحدد</td></tr>
+                  {visitRows.map(v => (
+                    <tr key={`visit-${v.id}`} className="border-b hover:bg-gray-50 bg-amber-50/30">
+                      <td className="p-3"><span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded">زيارة معمل</span></td>
+                      <td className="p-3 text-gray-500">{new Date(v.visit_date).toLocaleDateString('ar-EG')}</td>
+                      <td className="p-3 font-bold">{v.patient_name || '---'}</td>
+                      <td className="p-3">{v.service_name || '---'}</td>
+                      <td className="p-3" dir="ltr">{v.paid_amount}</td>
+                      <td className="p-3 text-gray-400">—</td>
+                      <td className="p-3 text-gray-400">{v.doctor ? `د. ${v.doctor.first_name} ${v.doctor.last_name}` : '—'}</td>
+                      <td className="p-3 text-gray-400">—</td>
+                    </tr>
+                  ))}
+                  {rows.length === 0 && visitRows.length === 0 && (
+                    <tr><td colSpan={8} className="p-8 text-center text-gray-500">لا توجد بيانات ضمن النطاق الزمني المحدد</td></tr>
                   )}
                 </tbody>
               </table>

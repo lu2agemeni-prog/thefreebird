@@ -44,11 +44,12 @@ function getPeriodBounds(dateStr: string, type: PeriodType) {
 const PERIOD_LABELS: Record<PeriodType, string> = { daily: 'يومي', weekly: 'أسبوعي', monthly: 'شهري' };
 
 function SettlementModal({
-  totalAmount, checkupsCount, defaultPercent, onClose, onConfirm, saving, error,
+  totalAmount, checkupsCount, defaultPercent, totalAdvances, onClose, onConfirm, saving, error,
 }: {
   totalAmount: number;
   checkupsCount: number;
   defaultPercent: number;
+  totalAdvances: number;
   onClose: () => void;
   onConfirm: (payload: { sharePercent: number | null; doctorShareAmount: number }) => void;
   saving: boolean;
@@ -61,11 +62,12 @@ function SettlementModal({
   const computedAmount = mode === 'percent'
     ? Math.round((totalAmount * (Number(percent) || 0) / 100) * 100) / 100
     : Number(fixedAmount) || 0;
+  const netAmount = Math.max(0, Math.round((computedAmount - totalAdvances) * 100) / 100);
 
   const handleConfirm = () => {
     onConfirm({
       sharePercent: mode === 'percent' ? (Number(percent) || 0) : null,
-      doctorShareAmount: computedAmount,
+      doctorShareAmount: netAmount,
     });
   };
 
@@ -99,9 +101,22 @@ function SettlementModal({
           )}
 
           <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
-            <p className="text-xs text-emerald-700 mb-1">المبلغ المستحق للطبيب</p>
+            <p className="text-xs text-emerald-700 mb-1">مستحقات الطبيب قبل خصم السلف</p>
             <p className="text-2xl font-black text-emerald-700" dir="ltr">{computedAmount.toLocaleString()} ج.م</p>
           </div>
+
+          {totalAdvances > 0 && (
+            <>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+                <p className="text-xs text-amber-700 mb-1">السلف والمدفوعات المسجّلة خلال الفترة (تُخصم)</p>
+                <p className="text-xl font-black text-amber-700" dir="ltr">- {totalAdvances.toLocaleString()} ج.م</p>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                <p className="text-xs text-blue-700 mb-1">الصافي المستحق للطبيب بعد خصم السلف</p>
+                <p className="text-2xl font-black text-blue-700" dir="ltr">{netAmount.toLocaleString()} ج.م</p>
+              </div>
+            </>
+          )}
 
           {error && <InlineError message={error} />}
 
@@ -126,6 +141,7 @@ export function DoctorReportsPanel() {
   const [dateStr, setDateStr] = useState(() => toDateInputValue(new Date()));
 
   const [checkups, setCheckups] = useState<any[]>([]);
+  const [advances, setAdvances] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settlement, setSettlement] = useState<any | null>(null);
@@ -155,7 +171,7 @@ export function DoctorReportsPanel() {
     setError(null);
     setSettleError(null);
 
-    const [queueRes, settlementRes] = await Promise.all([
+    const [queueRes, settlementRes, advancesRes] = await Promise.all([
       supabase.from('call_queue')
         .select('id, patient_name, paid_amount, status, created_at')
         .eq('doctor_id', doctorId)
@@ -168,18 +184,28 @@ export function DoctorReportsPanel() {
         .eq('period_type', periodType)
         .eq('period_start', startStr)
         .maybeSingle(),
+      // السلف والمدفوعات المسجّلة لهذا الطبيب خلال نفس الفترة (من تبويب
+      // "الحسابات الإضافية" > الأجور > سلفة/مدفوعات) — بتتخصم من مستحقاته.
+      supabase.from('transactions')
+        .select('id, category, amount, created_at, description')
+        .eq('beneficiary_id', doctorId)
+        .gte('created_at', `${startStr}T00:00:00`)
+        .lte('created_at', `${endStr}T23:59:59`)
+        .order('created_at', { ascending: true }),
     ]);
 
     if (queueRes.error) setError(getFriendlyErrorMessage(queueRes.error, 'تعذر تحميل تقرير الطبيب.'));
     else setCheckups(queueRes.data || []);
 
     setSettlement(settlementRes.data || null);
+    setAdvances(advancesRes.data || []);
     setLoading(false);
   }, [doctorId, startStr, endStr, periodType]);
 
   useEffect(() => { const t = setTimeout(fetchReport, 0); return () => clearTimeout(t); }, [fetchReport]);
 
   const totalAmount = checkups.reduce((sum, c) => sum + Number(c.paid_amount || 0), 0);
+  const totalAdvances = advances.reduce((sum, a) => sum + Number(a.amount || 0), 0);
   const currentDoctor = doctors.find(d => d.id === doctorId);
 
   const handleConfirmSettle = async ({ sharePercent, doctorShareAmount }: { sharePercent: number | null; doctorShareAmount: number }) => {
@@ -316,6 +342,7 @@ export function DoctorReportsPanel() {
           totalAmount={totalAmount}
           checkupsCount={checkups.length}
           defaultPercent={currentDoctor.defaultPercent}
+          totalAdvances={totalAdvances}
           onClose={() => setShowModal(false)}
           onConfirm={handleConfirmSettle}
           saving={settling}
