@@ -10,6 +10,8 @@ export interface SidebarItem {
   name: string;
   icon: LucideIcon;
   id: string;
+  badge?: React.ReactNode;
+  pulse?: boolean;
 }
 
 interface SidebarProps {
@@ -86,14 +88,26 @@ export function Sidebar({ items, activeItem, setActiveItem }: SidebarProps) {
                   setIsOpen(false);
                 }}
                 className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-right transition-all",
+                  "w-full flex items-center justify-between px-4 py-3 rounded-xl text-right transition-all group",
                   isActive 
                     ? "bg-emerald-50 text-emerald-700 font-bold shadow-sm" 
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 font-medium"
+                    : item.pulse
+                      ? "text-rose-700 bg-rose-50/90 hover:bg-rose-100 font-bold border border-rose-200/80 shadow-sm animate-pulse"
+                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 font-medium"
                 )}
               >
-                <item.icon className={cn("w-5 h-5", isActive ? "text-emerald-600" : "text-gray-400")} />
-                <span>{item.name}</span>
+                <div className="flex items-center gap-3 min-w-0">
+                  <item.icon className={cn(
+                    "w-5 h-5 flex-shrink-0 transition-transform",
+                    isActive 
+                      ? "text-emerald-600" 
+                      : item.pulse
+                        ? "text-rose-600"
+                        : "text-gray-400 group-hover:text-gray-600"
+                  )} />
+                  <span className="truncate">{item.name}</span>
+                </div>
+                {item.badge}
               </button>
             )
           })}

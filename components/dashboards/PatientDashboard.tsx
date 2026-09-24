@@ -1,11 +1,15 @@
 'use client';
-import { useState } from 'react';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
-import { User, Calendar, FileText, MessageSquare, AlertCircle, List, Calculator, Newspaper, FlaskConical, Tag } from 'lucide-react';
+import { User, Calendar, FileText, MessageSquare, AlertCircle, List, Calculator, Newspaper, FlaskConical, Tag, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { supabase } from '@/lib/supabase';
+import { getFriendlyErrorMessage } from '@/lib/errors';
 import { MedicalCalculators } from './patient/MedicalCalculators';
 import { PatientMedicalNews } from './patient/PatientMedicalNews';
 import { PatientOffers, type PatientOffer } from './patient/PatientOffers';
+import { PatientOfferModal } from './patient/PatientOfferModal';
 import { PatientAppointments } from './patient/PatientAppointments';
 import { PatientMedicalRecords } from './patient/PatientMedicalRecords';
 import { PatientConsultations } from './patient/PatientConsultations';
@@ -15,7 +19,7 @@ import { PatientProfile } from './patient/PatientProfile';
 import { PatientPrescriptions } from './patient/PatientPrescriptions';
 import { PatientLabResults } from './patient/PatientLabResults';
 
-const patientNav: SidebarItem[] = [
+const basePatientNav: SidebarItem[] = [
   { name: 'حجز المواعيد والسجلات', id: 'appointments', icon: Calendar },
   { name: 'خصومات وعروض', id: 'offers', icon: Tag },
   { name: 'البيانات الطبية', id: 'medical_data', icon: FileText },
@@ -31,29 +35,125 @@ const patientNav: SidebarItem[] = [
 
 export function PatientDashboard({ user }: { user?: any }) {
   const [activeTab, setActiveTab] = useState('appointments');
-  // بيانات العرض اللي المريض ضغط عليه "احجز الآن" بتاعه — بتتمرر مرة واحدة
-  // لتبويب المواعيد عشان تعبّي العيادة والملاحظات تلقائيًا، وبعدين بتتمسح.
-  const [offerPrefill, setOfferPrefill] = useState<{ clinicId?: string; note?: string } | null>(null);
+  const [activeOffers, setActiveOffers] = useState<PatientOffer[]>([]);
+  const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
 
-  const handleBookOffer = (offer: PatientOffer) => {
-    const discountLabel = offer.discount_percent != null ? ` (خصم ${offer.discount_percent}%)` : '';
-    setOfferPrefill({
-      clinicId: offer.clinic_id || undefined,
-      note: `مهتم بالعرض: ${offer.title}${discountLabel}`,
-    });
-    setActiveTab('appointments');
+  // جلب العروض السارية والمفعلة للتحقق من وجود عروض نشطة
+  const fetchActiveOffers = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('offers')
+        .select('id, title, description, image_url, discount_percent, clinic_id, ends_at, clinic:clinic_id(name)')
+        .eq('is_active', true)
+        .gt('ends_at', new Date().toISOString())
+        .order('ends_at', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        const offersList = (data as any) as PatientOffer[];
+        setActiveOffers(offersList);
+
+        // إظهار المودال التلقائي إذا لم يسبق للمريض إغلاقه خلال هذه الجلسة
+        if (typeof window !== 'undefined') {
+          const dismissed = sessionStorage.getItem('dismissed_offer_modal');
+          if (!dismissed) {
+            setIsOfferModalOpen(true);
+          }
+        }
+      } else {
+        setActiveOffers([]);
+      }
+    } catch {
+      // تجاهل أخطاء الشبكة المؤقتة
+    }
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(fetchActiveOffers, 0);
+    // فحص دوري كل دقيقة لتحديث حالة العروض
+    const interval = setInterval(fetchActiveOffers, 60000);
+    return () => {
+      clearTimeout(t);
+      clearInterval(interval);
+    };
+  }, [fetchActiveOffers]);
+
+  // إغلاق المودال مع تذكر الإغلاق في الجلسة الحالية
+  const handleCloseOfferModal = () => {
+    setIsOfferModalOpen(false);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('dismissed_offer_modal', 'true');
+    }
   };
+
+  // حجز فوري بضغطة واحدة من داخل المودال أو من صفحة العروض
+  const handleOneClickBook = async (offer: PatientOffer): Promise<{ success: boolean; error?: string }> => {
+    if (!user?.id) {
+      return { success: false, error: 'يرجى تسجيل الدخول أولاً لتأكيد الحجز.' };
+    }
+
+    try {
+      const discountLabel = offer.discount_percent != null ? ` (خصم ${offer.discount_percent}%)` : '';
+      const clinicLabel = offer.clinic?.name ? ` - عيادة ${offer.clinic.name}` : '';
+      const note = `حجز فوري للاستفادة من عرض: ${offer.title}${discountLabel}${clinicLabel}`;
+
+      const { error } = await supabase.from('appointments').insert([
+        {
+          patient_id: user.id,
+          clinic_id: offer.clinic_id || null,
+          doctor_id: null,
+          appointment_date: new Date().toISOString(),
+          status: 'pending',
+          notes: note,
+        },
+      ]);
+
+      if (error) {
+        return { 
+          success: false, 
+          error: getFriendlyErrorMessage(error, 'تعذر تسجيل الموعد، يرجى المحاولة لاحقاً.') 
+        };
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return { 
+        success: false, 
+        error: getFriendlyErrorMessage(err, 'حدث خطأ أثناء تسجيل الحجز.') 
+      };
+    }
+  };
+
+  // قائمة التنقل الجانبية مع وميض وعلامة الخصم لتبويب العروض إذا وُجدت عروض نشطة
+  const navItems = useMemo<SidebarItem[]>(() => {
+    const hasOffers = activeOffers.length > 0;
+    return basePatientNav.map((item) => {
+      if (item.id === 'offers') {
+        return {
+          ...item,
+          pulse: hasOffers,
+          badge: hasOffers ? (
+            <span className="inline-flex items-center gap-1 bg-gradient-to-r from-rose-500 to-amber-500 text-white text-[11px] font-black px-2 py-0.5 rounded-full shadow-sm">
+              <Sparkles className="w-3 h-3 text-amber-200" />
+              خصم %
+            </span>
+          ) : undefined,
+        };
+      }
+      return item;
+    });
+  }, [activeOffers.length]);
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'appointments': return (
-        <PatientAppointments
-          initialClinicId={offerPrefill?.clinicId}
-          initialNote={offerPrefill?.note}
-          onPrefillConsumed={() => setOfferPrefill(null)}
-        />
-      );
-      case 'offers': return <PatientOffers onBookOffer={handleBookOffer} />;
+      case 'appointments':
+        return <PatientAppointments />;
+      case 'offers':
+        return (
+          <PatientOffers 
+            onBookOffer={handleOneClickBook} 
+            onGoToAppointments={() => setActiveTab('appointments')}
+          />
+        );
       case 'medical_data': return <PatientMedicalRecords />;
       case 'consultations': return <PatientConsultations />;
       case 'prescriptions': return <PatientPrescriptions />;
@@ -65,10 +165,10 @@ export function PatientDashboard({ user }: { user?: any }) {
       case 'profile': return <PatientProfile />;
       default: return (
         <>
-          <h2 className="text-3xl font-bold text-gray-800 mb-8">{patientNav.find(n => n.id === activeTab)?.name}</h2>
+          <h2 className="text-3xl font-bold text-gray-800 mb-8">{basePatientNav.find(n => n.id === activeTab)?.name}</h2>
           <Card>
             <CardHeader>
-              <CardTitle>واجهة {patientNav.find(n => n.id === activeTab)?.name}</CardTitle>
+              <CardTitle>واجهة {basePatientNav.find(n => n.id === activeTab)?.name}</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-gray-500">سيتم ربط هذه الشاشة مع قاعدة بيانات Supabase (جدول {activeTab}).</p>
@@ -81,7 +181,21 @@ export function PatientDashboard({ user }: { user?: any }) {
 
   return (
     <div className="flex h-full w-full">
-      <Sidebar items={patientNav} activeItem={activeTab} setActiveItem={setActiveTab} />
+      {/* نافذة الإعلان المنبثقة التلقائية عند فتح التطبيق مع إمكانية الإغلاق والحجز بضغطة واحدة */}
+      <PatientOfferModal
+        isOpen={isOfferModalOpen}
+        onClose={handleCloseOfferModal}
+        offers={activeOffers}
+        onBookOffer={handleOneClickBook}
+        onGoToAppointments={() => {
+          handleCloseOfferModal();
+          setActiveTab('appointments');
+        }}
+      />
+
+      {/* القائمة الجانبية مع دعم وميض وعلامة الخصومات */}
+      <Sidebar items={navItems} activeItem={activeTab} setActiveItem={setActiveTab} />
+      
       <div className="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto bg-gray-50">
         <div className="max-w-6xl mx-auto">
           {user?.patient_code && (
