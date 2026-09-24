@@ -29,7 +29,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Activity, Loader2, Users, Volume2, ChevronLeft,
-  Hash, Stethoscope, UserCheck, CheckCircle2, ListChecks, Clock, Sparkles, Search, X,
+  Hash, Stethoscope, UserCheck, CheckCircle2, ListChecks, Clock, Sparkles, Search, X, RotateCcw,
 } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
@@ -55,6 +55,7 @@ export function SecretaryCallQueue() {
   const [addedToast, setAddedToast] = useState<string | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
   const [pickSearch, setPickSearch] = useState('');
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAll();
@@ -207,6 +208,57 @@ export function SecretaryCallQueue() {
     } else {
       fetchDoctorsOnly();
     }
+  };
+
+  // التحكم المباشر في حالة الزيارة (قيد الانتظار أو انتهت المقابلة)
+  const updateQueueStatus = async (
+    id: string,
+    newStatus: 'waiting' | 'completed' | 'calling',
+    patientName?: string
+  ) => {
+    setStatusUpdatingId(id);
+    setActionError(null);
+    const { error } = await supabase
+      .from('call_queue')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    setStatusUpdatingId(null);
+    if (error) {
+      setActionError(getFriendlyErrorMessage(error, 'تعذر تحديث حالة الزيارة.'));
+    } else {
+      const statusMsg =
+        newStatus === 'completed'
+          ? `تم تسجيل انتهاء الزيارة بنجاح ${patientName ? `للمريض (${patientName})` : ''}`
+          : newStatus === 'waiting'
+          ? `تمت إعادة الزيارة إلى «قيد الانتظار» ${patientName ? `للمريض (${patientName})` : ''}`
+          : `تم تحديث حالة الزيارة بنجاح`;
+      setAddedToast(statusMsg);
+      setTimeout(() => setAddedToast(null), 4000);
+      fetchQueueOnly();
+      fetchCompletedToday();
+    }
+  };
+
+  // نداء مريض برقم محدد بنقرة واحدة
+  const handleCallSpecificToken = async (token: number) => {
+    if (!selectedClinicId || !token) return;
+    setCalling(true);
+    setActionError(null);
+    const { data, error } = await supabase.rpc('call_specific_in_queue', {
+      p_clinic_id: selectedClinicId,
+      p_token: token,
+    });
+    setCalling(false);
+    if (error) {
+      setActionError(getFriendlyErrorMessage(error, 'تعذر نداء هذا الرقم.'));
+      return;
+    }
+    if (!data) {
+      setActionError(`لا يوجد مريض برقم الدور ${token} في قائمة انتظار اليوم.`);
+      return;
+    }
+    announceAndRefresh(data);
   };
 
   if (loading) {
@@ -387,6 +439,42 @@ export function SecretaryCallQueue() {
                       #{currentCalling.token_number}
                     </div>
                   </div>
+
+                  {/* شريط التحكم في حالة الزيارة الحالية — لإنهاء المقابلة في حال انشغال الطبيب أو إعادتها للانتظار */}
+                  <div className="mt-5 pt-4 border-t border-emerald-500/40 flex flex-wrap items-center justify-between gap-3 bg-emerald-800/40 -mx-6 -mb-6 p-4 rounded-b-xl">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-300 animate-pulse" />
+                      <span className="text-xs font-bold text-emerald-100">
+                        التحكم بالزيارة (إذا غادر المريض وانشغل الطبيب):
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => updateQueueStatus(currentCalling.id, 'completed', currentCalling.patient_name)}
+                        disabled={statusUpdatingId === currentCalling.id}
+                        className="bg-white hover:bg-emerald-50 text-emerald-800 font-black px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95 disabled:opacity-50"
+                        title="تسجيل انتهاء المقابلة وخروج المريض بنجاح"
+                      >
+                        {statusUpdatingId === currentCalling.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        )}
+                        <span>انتهت المقابلة (اكتمال الزيارة)</span>
+                      </button>
+
+                      <button
+                        onClick={() => updateQueueStatus(currentCalling.id, 'waiting', currentCalling.patient_name)}
+                        disabled={statusUpdatingId === currentCalling.id}
+                        className="bg-emerald-900/80 hover:bg-emerald-900 text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 border border-white/25 transition-all active:scale-95 disabled:opacity-50"
+                        title="إعادة المريض لقائمة الانتظار في حال لم يدخل أو غادر مؤقتاً"
+                      >
+                        <Clock className="w-4 h-4 text-amber-300" />
+                        <span>إعادة لقيد الانتظار</span>
+                      </button>
+                    </div>
+                  </div>
                 </>
               ) : (
                 <div className="py-6 text-center">
@@ -491,12 +579,42 @@ export function SecretaryCallQueue() {
                             {hasRemaining && <span className="text-red-500">متبقي: {q.remaining_amount} ج.م</span>}
                           </div>
                         )}
-                        <button
-                          onClick={() => setAddServiceForRow(q)}
-                          className="mt-1.5 text-xs font-bold text-emerald-600 hover:underline"
-                        >
-                          + ضم خدمة
-                        </button>
+
+                        {/* أدوات التحكم في الزيارة: نداء الآن، إنهاء المقابلة مباشرة، ضم خدمة */}
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 flex-wrap gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              onClick={() => handleCallSpecificToken(q.token_number)}
+                              disabled={calling}
+                              className="text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors disabled:opacity-50"
+                              title="نداء هذا المريض الآن على الشاشات"
+                            >
+                              <Volume2 className="w-3.5 h-3.5 text-blue-600" />
+                              نداء الآن
+                            </button>
+
+                            <button
+                              onClick={() => updateQueueStatus(q.id, 'completed', q.patient_name)}
+                              disabled={statusUpdatingId === q.id}
+                              className="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors disabled:opacity-50"
+                              title="تسجيل انتهاء المقابلة مباشرة (في حال كشف المريض بالفعل وخروجه)"
+                            >
+                              {statusUpdatingId === q.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                              ) : (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              )}
+                              إنهاء المقابلة (انتهت)
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={() => setAddServiceForRow(q)}
+                            className="text-xs font-bold text-gray-500 hover:text-emerald-700 hover:underline"
+                          >
+                            + ضم خدمة
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -532,17 +650,41 @@ export function SecretaryCallQueue() {
                     {completedToday
                       .filter(q => q.patient_name?.toLowerCase().includes(completedSearch.toLowerCase()))
                       .map(q => (
-                        <div key={q.id} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 text-sm hover:bg-gray-50">
+                        <div key={q.id} className="flex items-center justify-between p-2.5 rounded-xl border border-gray-100 text-sm hover:bg-gray-50 flex-wrap gap-2">
                           <div className="min-w-0">
-                            <span className="font-bold text-gray-700 truncate block">{q.patient_name}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-gray-800 truncate block">{q.patient_name}</span>
+                              <span className="text-xs font-black text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded" dir="ltr">#{q.token_number}</span>
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                                <CheckCircle2 className="w-3 h-3" />
+                                انتهت
+                              </span>
+                            </div>
                             {q.clinic?.name && <span className="text-[11px] text-gray-400">{q.clinic.name}</span>}
                           </div>
-                          <button
-                            onClick={() => setAddServiceForRow(q)}
-                            className="text-xs font-bold text-emerald-600 hover:underline shrink-0"
-                          >
-                            + ضم خدمة
-                          </button>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => updateQueueStatus(q.id, 'waiting', q.patient_name)}
+                              disabled={statusUpdatingId === q.id}
+                              className="text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors disabled:opacity-50"
+                              title="إعادة الزيارة إلى «قيد الانتظار» في حال تم إنهاؤها بالخطأ أو عودة المريض"
+                            >
+                              {statusUpdatingId === q.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin text-amber-600" />
+                              ) : (
+                                <Clock className="w-3 h-3 text-amber-600" />
+                              )}
+                              إعادة لقيد الانتظار
+                            </button>
+
+                            <button
+                              onClick={() => setAddServiceForRow(q)}
+                              className="text-xs font-bold text-gray-500 hover:text-emerald-700 hover:underline shrink-0"
+                            >
+                              + ضم خدمة
+                            </button>
+                          </div>
                         </div>
                       ))}
                     {completedToday.length === 0 && (

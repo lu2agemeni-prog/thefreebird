@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
-import { User, Calendar, FileText, MessageSquare, AlertCircle, List, Calculator, Newspaper, FlaskConical, Tag, Sparkles } from 'lucide-react';
+import { User, Calendar, FileText, MessageSquare, AlertCircle, List, Calculator, Newspaper, FlaskConical, Tag, Sparkles, Radio } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { supabase } from '@/lib/supabase';
 import { getFriendlyErrorMessage } from '@/lib/errors';
@@ -18,8 +18,10 @@ import { PatientServices } from './patient/PatientServices';
 import { PatientProfile } from './patient/PatientProfile';
 import { PatientPrescriptions } from './patient/PatientPrescriptions';
 import { PatientLabResults } from './patient/PatientLabResults';
+import { PatientLiveQueue } from './patient/PatientLiveQueue';
 
 const basePatientNav: SidebarItem[] = [
+  { name: 'تتبع الدور المباشر', id: 'live_queue', icon: Radio },
   { name: 'حجز المواعيد والسجلات', id: 'appointments', icon: Calendar },
   { name: 'خصومات وعروض', id: 'offers', icon: Tag },
   { name: 'البيانات الطبية', id: 'medical_data', icon: FileText },
@@ -43,6 +45,47 @@ export function PatientDashboard({ user }: { user?: any }) {
   });
   const [activeOffers, setActiveOffers] = useState<PatientOffer[]>([]);
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
+  const [activeQueueTicket, setActiveQueueTicket] = useState<any | null>(null);
+
+  // جلب تذكرة الدور النشطة اليوم للمريض للنداء المباشر
+  const fetchActiveQueueTicket = useCallback(async () => {
+    if (!user?.id) return;
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    try {
+      const { data } = await supabase
+        .from('call_queue')
+        .select('id, token_number, status, clinic:clinic_id(name)')
+        .eq('patient_id', user.id)
+        .in('status', ['waiting', 'calling'])
+        .gte('created_at', todayStart.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (data && data.length > 0) {
+        setActiveQueueTicket(data[0]);
+      } else {
+        setActiveQueueTicket(null);
+      }
+    } catch {
+      // Ignored
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchActiveQueueTicket();
+    const channel = supabase
+      .channel('patient-dashboard-queue-presence')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue' }, fetchActiveQueueTicket)
+      .subscribe();
+
+    const interval = setInterval(fetchActiveQueueTicket, 8000);
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, [fetchActiveQueueTicket]);
 
   // مزامنة التبويب النشط إذا تم الضغط على رابط في إشعار أو تغيير الرابط
   useEffect(() => {
@@ -156,10 +199,28 @@ export function PatientDashboard({ user }: { user?: any }) {
     }
   };
 
-  // قائمة التنقل الجانبية مع وميض وعلامة الخصم لتبويب العروض إذا وُجدت عروض نشطة
+  // قائمة التنقل الجانبية مع وميض وعلامة الخصم لتبويب العروض وتتبع الدور النشط
   const navItems = useMemo<SidebarItem[]>(() => {
     const hasOffers = activeOffers.length > 0;
+    const hasActiveQueue = !!activeQueueTicket;
+    const isCallingNow = activeQueueTicket?.status === 'calling';
+
     return basePatientNav.map((item) => {
+      if (item.id === 'live_queue') {
+        return {
+          ...item,
+          pulse: hasActiveQueue,
+          badge: isCallingNow ? (
+            <span className="inline-flex items-center gap-1 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+              دورك الآن! 🚨
+            </span>
+          ) : hasActiveQueue ? (
+            <span className="inline-flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
+              #{activeQueueTicket.token_number} مباشر
+            </span>
+          ) : undefined,
+        };
+      }
       if (item.id === 'offers') {
         return {
           ...item,
@@ -174,10 +235,12 @@ export function PatientDashboard({ user }: { user?: any }) {
       }
       return item;
     });
-  }, [activeOffers.length]);
+  }, [activeOffers.length, activeQueueTicket]);
 
   const renderContent = () => {
     switch (activeTab) {
+      case 'live_queue':
+        return <PatientLiveQueue user={user} />;
       case 'appointments':
         return <PatientAppointments />;
       case 'offers':
@@ -244,6 +307,39 @@ export function PatientDashboard({ user }: { user?: any }) {
             </div>
           )}
           
+          {/* شريط تنبيه الدور المباشر الحي إذا كان للمريض تذكرة في الطابور اليوم وهو يتصفح تبويباً آخر */}
+          {activeQueueTicket && activeTab !== 'live_queue' && (
+            <div
+              onClick={() => setActiveTab('live_queue')}
+              className={`mb-6 p-4 rounded-2xl cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md border ${
+                activeQueueTicket.status === 'calling'
+                  ? 'bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white border-red-300 animate-pulse'
+                  : 'bg-gradient-to-r from-emerald-800 to-teal-800 text-white border-emerald-600'
+              }`}
+            >
+              <div className="flex items-center gap-3 text-center sm:text-right">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <Radio className="w-5 h-5 animate-pulse text-white" />
+                </div>
+                <div>
+                  <p className="font-black text-sm">
+                    {activeQueueTicket.status === 'calling'
+                      ? `🚨 يتم استدعاؤك الآن! دورك رقم #${activeQueueTicket.token_number} في عيادة ${activeQueueTicket.clinic?.name || 'المركز'}`
+                      : `⏱️ دورك المباشر اليوم: تذكرة #${activeQueueTicket.token_number} في عيادة ${activeQueueTicket.clinic?.name || 'المركز'}`}
+                  </p>
+                  <p className="text-xs text-white/90">
+                    {activeQueueTicket.status === 'calling'
+                      ? 'تفضل بالدخول لغرفة الطبيب فوراً — اضغط هنا لمتابعة تفاصيل الدور'
+                      : 'اضغط هنا لمتابعة حركة الطابور المباشر ومعرفة الوقت التقديري المتبقي لدخولك'}
+                  </p>
+                </div>
+              </div>
+              <span className="text-xs font-bold px-4 py-2 bg-white/20 hover:bg-white/30 rounded-xl whitespace-nowrap border border-white/25 shrink-0">
+                تتبع الدور مباشرة &larr;
+              </span>
+            </div>
+          )}
+
           {renderContent()}
         </div>
       </div>

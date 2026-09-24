@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar, Plus, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { Calendar, Plus, Clock, CheckCircle2, XCircle, Radio } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import {
@@ -300,7 +300,16 @@ export function PatientAppointments({
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      {(status === 'confirmed' || status === 'pending') && (
+                        <a
+                          href={`/queue/track?clinic=${app.clinic_id || ''}`}
+                          className="text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs"
+                        >
+                          <Radio className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+                          تتبع الدور بالعيادة
+                        </a>
+                      )}
                       <span className={`px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1 ${APPOINTMENT_STATUS_COLORS[status]}`}>
                         {status === 'pending' && <Clock className="w-4 h-4" />}
                         {status === 'confirmed' && <CheckCircle2 className="w-4 h-4" />}

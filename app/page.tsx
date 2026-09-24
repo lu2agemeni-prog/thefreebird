@@ -6,7 +6,7 @@ import { DoctorDashboard } from '@/components/dashboards/DoctorDashboard';
 import { PatientDashboard } from '@/components/dashboards/PatientDashboard';
 import { SecretaryDashboard } from '@/components/dashboards/SecretaryDashboard';
 import { AccountantDashboard } from '@/components/dashboards/AccountantDashboard';
-import { HeartPulse, LogIn, Loader2, Calculator } from 'lucide-react';
+import { HeartPulse, LogIn, Loader2, Calculator, Radio } from 'lucide-react';
 import { MedicalNewsViewer } from '@/components/MedicalNewsViewer';
 import { PushNotificationBanner } from '@/components/PushNotificationBanner';
 import { useState } from 'react';
@@ -43,6 +43,13 @@ export default function HomePage() {
             <a href="/" className="flex items-center gap-3 px-4 py-3 bg-emerald-800 text-white rounded-xl transition-colors font-medium">
               <HeartPulse className="w-5 h-5" /> الرئيسية
             </a>
+            <a href="/queue/track" className="flex items-center justify-between px-4 py-3 text-emerald-100 hover:bg-emerald-600 hover:text-white rounded-xl transition-colors group">
+              <div className="flex items-center gap-3">
+                <Radio className="w-5 h-5 text-emerald-300 group-hover:text-white animate-pulse" />
+                <span>تتبع الدور المباشر</span>
+              </div>
+              <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">لايف</span>
+            </a>
             <a href="/book" className="flex items-center gap-3 px-4 py-3 text-emerald-100 hover:bg-emerald-600 hover:text-white rounded-xl transition-colors">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
               الحجز السريع
@@ -66,7 +73,7 @@ export default function HomePage() {
           </nav>
         </aside>
 
-        {/* Mobile Top Header (Logo) */}
+        {/* Mobile Top Header (Logo & Live Queue link) */}
         <div className="md:hidden bg-emerald-700 text-white p-4 flex items-center justify-between shadow-md">
           <div className="flex items-center gap-3">
              <div className="bg-white p-1 rounded-full">
@@ -76,6 +83,13 @@ export default function HomePage() {
              </div>
              <h1 className="text-xl font-bold">الطائر الحر</h1>
           </div>
+          <a
+            href="/queue/track"
+            className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 border border-white/20 px-3 py-1.5 rounded-xl text-xs font-bold text-white shadow-xs"
+          >
+            <Radio className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
+            <span>تتبع الدور لايف</span>
+          </a>
         </div>
 
         {/* Main Content Area */}
@@ -119,6 +133,14 @@ export default function HomePage() {
                   >
                     <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                     احجز موعدك الآن مجاناً
+                  </a>
+
+                  <a 
+                    href="/queue/track"
+                    className="flex items-center justify-center gap-2 md:gap-3 w-full bg-emerald-50 text-emerald-800 font-bold text-sm md:text-base py-3 px-4 rounded-2xl border border-emerald-200 hover:bg-emerald-100 transition-all shadow-xs"
+                  >
+                    <Radio className="w-4 h-4 md:w-5 md:h-5 text-emerald-600 animate-pulse" />
+                    تتبع دورك في صالة الانتظار من هاتفك
                   </a>
                 </div>
               </div>

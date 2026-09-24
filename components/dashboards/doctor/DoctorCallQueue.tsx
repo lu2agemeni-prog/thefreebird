@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
-import { Activity, Volume2, Users, Loader2, Hash, Lock, BellRing, CheckCircle2 } from 'lucide-react';
+import { Activity, Volume2, Users, Loader2, Hash, Lock, BellRing, CheckCircle2, Clock, ListChecks } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
@@ -22,6 +22,22 @@ export function DoctorCallQueue() {
   const [callInProgress, setCallInProgress] = useState(false);
   const [specificToken, setSpecificToken] = useState('');
   const [secretaryCallSent, setSecretaryCallSent] = useState(false);
+  const [completedToday, setCompletedToday] = useState<any[]>([]);
+  const [showCompleted, setShowCompleted] = useState(false);
+
+  const fetchCompletedToday = async () => {
+    if (!doctorClinicId) return;
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const { data } = await supabase
+      .from('call_queue')
+      .select('*')
+      .eq('clinic_id', doctorClinicId)
+      .eq('status', 'completed')
+      .gte('updated_at', todayStart.toISOString())
+      .order('updated_at', { ascending: false });
+    if (data) setCompletedToday(data);
+  };
 
   const fetchQueue = async () => {
     setQueueLoadError(null);
@@ -36,6 +52,7 @@ export function DoctorCallQueue() {
     } else {
       setQueue(data || []);
     }
+    fetchCompletedToday();
   };
 
   const fetchDoctorClinic = async () => {
@@ -288,14 +305,26 @@ export function DoctorCallQueue() {
                             {p.created_at ? new Date(p.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''}
                           </div>
                     </div>
-                    <button
-                      onClick={() => completePatient(p.id)}
-                      className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-sm"
-                    >
-                      إنهاء المقابلة
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <button
+                        onClick={() => completePatient(p.id)}
+                        className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-blue-700 shadow-sm text-sm flex items-center justify-center gap-1.5 transition-all"
+                        title="تسجيل انتهاء المقابلة وخروج المريض"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>انتهت المقابلة (اكتمال)</span>
+                      </button>
+                      <button
+                        onClick={() => updateStatus(p.id, 'waiting')}
+                        className="bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-200 px-4 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-all"
+                        title="إعادة المريض لقيد الانتظار"
+                      >
+                        <Clock className="w-4 h-4 text-amber-600" />
+                        <span>إعادة لقيد الانتظار</span>
+                      </button>
                     </div>
-                  ))}
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
@@ -312,35 +341,46 @@ export function DoctorCallQueue() {
             ) : (
               <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
                 {waiting.map(p => (
-                  <div key={p.id} className="bg-white border border-gray-200 p-4 rounded-xl flex items-center justify-between hover:border-orange-200 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className="bg-orange-100 text-orange-800 w-12 h-12 rounded-full flex items-center justify-center font-black text-xl">
+                  <div key={p.id} className="bg-white border border-gray-200 p-4 rounded-xl flex items-center justify-between hover:border-orange-200 transition-colors gap-2">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="bg-orange-100 text-orange-800 w-11 h-11 rounded-full flex items-center justify-center font-black text-lg shrink-0">
                         {p.token_number}
                       </div>
-                      <div className="font-bold text-gray-800">{p.patient_name}</div>
+                      <div className="font-bold text-gray-800 truncate">{p.patient_name}</div>
                     </div>
-      <button
-                      onClick={async () => {
-                        if (!doctorClinicId) return;
-                        setCallInProgress(true);
-                        setActionError(null);
-                        const { data, error } = await supabase.rpc('call_specific_in_queue', {
-                          p_clinic_id: doctorClinicId,
-                          p_token: p.token_number,
-                        });
-                        setCallInProgress(false);
-                        if (error) {
-                          setActionError(getFriendlyErrorMessage(error, 'تعذر نداء هذا المريض.'));
-                          return;
-                        }
-                        fetchQueue();
-                        if (clinic && data) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
-                      }}
-                      disabled={callInProgress}
-                      className="bg-orange-100 text-orange-700 px-4 py-2 rounded-lg font-bold hover:bg-orange-200 disabled:opacity-50"
-                    >
-                      نداء المريض
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={async () => {
+                          if (!doctorClinicId) return;
+                          setCallInProgress(true);
+                          setActionError(null);
+                          const { data, error } = await supabase.rpc('call_specific_in_queue', {
+                            p_clinic_id: doctorClinicId,
+                            p_token: p.token_number,
+                          });
+                          setCallInProgress(false);
+                          if (error) {
+                            setActionError(getFriendlyErrorMessage(error, 'تعذر نداء هذا المريض.'));
+                            return;
+                          }
+                          fetchQueue();
+                          if (clinic && data) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
+                        }}
+                        disabled={callInProgress}
+                        className="bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg font-bold hover:bg-orange-200 disabled:opacity-50 text-xs flex items-center gap-1"
+                      >
+                        <Volume2 className="w-3.5 h-3.5" />
+                        نداء
+                      </button>
+                      <button
+                        onClick={() => completePatient(p.id)}
+                        className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1.5 rounded-lg font-bold hover:bg-emerald-100 text-xs flex items-center gap-1"
+                        title="تسجيل انتهاء المقابلة مباشرة إذا كشف المريض بالفعل"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        انتهت المقابلة
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -348,6 +388,55 @@ export function DoctorCallQueue() {
           </CardContent>
         </Card>
       </div>
+
+      {/* قسم الزيارات المكتملة اليوم بالعيادة مع إمكانية استعادة الدور للانتظار */}
+      <Card className="border-gray-200 shadow-xs">
+        <CardContent className="p-4">
+          <button
+            onClick={() => setShowCompleted(s => !s)}
+            className="w-full flex items-center justify-between"
+          >
+            <h3 className="font-bold text-gray-700 text-sm flex items-center gap-2">
+              <ListChecks className="w-4 h-4 text-emerald-600" />
+              مكتملون اليوم بالعيادة
+              <span className="text-xs bg-emerald-100 text-emerald-700 font-black px-2 py-0.5 rounded-full" dir="ltr">
+                {completedToday.length}
+              </span>
+            </h3>
+            <span className="text-xs text-gray-400 font-bold">{showCompleted ? 'إخفاء' : 'عرض'}</span>
+          </button>
+
+          {showCompleted && (
+            <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pt-2 border-t border-gray-100">
+              {completedToday.map(p => (
+                <div key={p.id} className="p-2.5 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xs font-black bg-white border border-gray-200 text-gray-700 px-2 py-1 rounded" dir="ltr">
+                      #{p.token_number}
+                    </span>
+                    <span className="font-bold text-gray-800 text-sm">{p.patient_name}</span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      انتهت الزيارة
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => updateStatus(p.id, 'waiting')}
+                    className="text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+                    title="إعادة المريض لقائمة الانتظار في حال العودة للاستشارة أو الكشف"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    إعادة لقيد الانتظار
+                  </button>
+                </div>
+              ))}
+              {completedToday.length === 0 && (
+                <p className="text-center text-sm text-gray-400 py-4">لا توجد زيارات مكتملة بعد اليوم</p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
