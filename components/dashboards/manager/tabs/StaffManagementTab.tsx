@@ -40,15 +40,39 @@ export function StaffManagementTab() {
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
-    if (search.trim()) params.set('q', search.trim());
-    const { data, error } = await authFetchJson(`/api/manager/profiles?${params.toString()}`);
-    if (error) setError(error);
-    else {
-      setUsers(data.rows || []);
-      setTotal(data.total || 0);
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    try {
+      let query = supabase
+        .from('profiles')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false });
+
+      if (search.trim()) {
+        const q = search.trim();
+        query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,phone.ilike.%${q}%,patient_code.ilike.%${q}%`);
+      }
+
+      const { data, count, error: sbError } = await query.range(from, to);
+      if (!sbError && data) {
+        setUsers(data);
+        setTotal(count || 0);
+      } else {
+        const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+        if (search.trim()) params.set('q', search.trim());
+        const { data: apiData, error: apiErr } = await authFetchJson(`/api/manager/profiles?${params.toString()}`);
+        if (apiErr) setError(apiErr);
+        else {
+          setUsers(apiData?.rows || []);
+          setTotal(apiData?.total || 0);
+        }
+      }
+    } catch (e) {
+      setError('تعذر تحميل المستخدمين.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [page, search]);
 
   useEffect(() => { const t = setTimeout(fetchUsers, 0); return () => clearTimeout(t); }, [fetchUsers]);

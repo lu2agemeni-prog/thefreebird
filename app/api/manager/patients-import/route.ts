@@ -26,7 +26,7 @@ function normalizePhone(raw: unknown): string | null {
   return digits;
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   const auth = await requireRole(request, ['manager', 'secretary']);
   if ('error' in auth) return auth.error;
   const { supabase, profile } = auth;

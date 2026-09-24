@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, parsePaginationParams } from '@/lib/api-auth';
 
-export async function GET(request: NextRequest) {
+export async function GET(request: NextRequest): Promise<NextResponse> {
   const auth = await requireRole(request, ['manager', 'accountant']);
   if ('error' in auth) return auth.error;
   const { supabase } = auth;

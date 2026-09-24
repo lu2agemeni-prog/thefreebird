@@ -8,8 +8,17 @@
 import { supabase } from './supabase';
 
 export async function authFetch(path: string, options: RequestInit = {}) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
+  let token: string | undefined;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    token = session?.access_token;
+    if (!token) {
+      const { data: { session: refreshed } } = await supabase.auth.refreshSession();
+      token = refreshed?.access_token;
+    }
+  } catch (err) {
+    // Ignore session lookup failures in preview or guest mode
+  }
 
   const headers = new Headers(options.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
