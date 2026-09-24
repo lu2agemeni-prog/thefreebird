@@ -11,7 +11,7 @@
 // الصور "news" الموجود أصلًا (مفيش داعي لعمل bucket جديد).
 // ============================================================================
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Upload, Pencil, X, CheckCircle, Loader2, Percent, Clock, Building, PauseCircle, PlayCircle } from 'lucide-react';
+import { Upload, Pencil, X, CheckCircle, Loader2, Percent, Clock, Building, PauseCircle, PlayCircle, Megaphone, Bell, Sparkles } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { NewsImage } from '@/components/ui/news-image';
@@ -72,16 +72,19 @@ export function OffersTab() {
   const [error, setError] = useState<string | null>(null);
 
   const [form, setForm] = useState<OfferFormState>(emptyForm());
+  const [notifyUsers, setNotifyUsers] = useState(true);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createSuccessMsg, setCreateSuccessMsg] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<OfferFormState>(emptyForm());
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [broadcastingOfferId, setBroadcastingOfferId] = useState<string | null>(null);
 
   const fetchClinics = useCallback(async () => {
     const { data } = await supabase.from('clinics').select('id, name').limit(FETCH_CAP);
@@ -137,6 +140,7 @@ export function OffersTab() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateError(null);
+    setCreateSuccessMsg(null);
     if (!form.title.trim() || !form.description.trim()) {
       setCreateError('يرجى إدخال عنوان العرض ونص الإعلان.');
       return;
@@ -160,13 +164,107 @@ export function OffersTab() {
       is_active: true,
       created_by: user?.id || null,
     }]);
-    setCreating(false);
+
     if (error) {
+      setCreating(false);
       setCreateError(getFriendlyErrorMessage(error, 'تعذر نشر العرض.'));
       return;
     }
+
+    // إرسال إشعار لجميع المستخدمين عند إنشاء العرض
+    let notifSentCount = 0;
+    if (notifyUsers) {
+      const discountText = form.discountPercent ? ` (خصم ${form.discountPercent}%)` : '';
+      const notifTitle = `🔥 عرض وخصم جديد: ${form.title.trim()}${discountText}`;
+      const notifMessage = form.description.trim();
+      const notifLink = '/?tab=offers';
+
+      try {
+        // 1. استدعاء دالة البث الرسمية broadcast_notification (تسجل الإشعار الجماعي وترسله للمستخدمين)
+        const { data: rpcCount, error: rpcErr } = await supabase.rpc('broadcast_notification', {
+          p_target: 'all',
+          p_user_id: null,
+          p_title: notifTitle,
+          p_message: notifMessage,
+          p_link: notifLink,
+        });
+
+        if (!rpcErr && typeof rpcCount === 'number') {
+          notifSentCount = rpcCount;
+        } else {
+          // إجراء احتياطي مباشر: إدراج في جدول notifications لجميع المستخدمين المسجلين
+          const { data: profiles } = await supabase.from('profiles').select('id');
+          if (profiles && profiles.length > 0) {
+            const rows = profiles.map((p) => ({
+              user_id: p.id,
+              title: notifTitle,
+              message: notifMessage,
+              type: 'offer',
+              link: notifLink,
+              is_read: false,
+            }));
+            const { error: insErr } = await supabase.from('notifications').insert(rows);
+            if (!insErr) {
+              notifSentCount = profiles.length;
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to broadcast offer notification:', err);
+      }
+    }
+
+    setCreating(false);
     setForm(emptyForm());
+    setCreateSuccessMsg(
+      notifyUsers && notifSentCount > 0
+        ? `تم نشر العرض بنجاح وإرسال إشعار فوري لجميع المستخدمين (${notifSentCount} مستخدم) 🔔`
+        : 'تم نشر العرض بنجاح!'
+    );
+    setTimeout(() => setCreateSuccessMsg(null), 8000);
     fetchOffers();
+  };
+
+  const handleBroadcastOffer = async (offer: any) => {
+    setBroadcastingOfferId(offer.id);
+    const discountText = offer.discount_percent != null ? ` (خصم ${offer.discount_percent}%)` : '';
+    const notifTitle = `🔥 تذكير بعرض خاص: ${offer.title}${discountText}`;
+    const notifMessage = offer.description;
+    const notifLink = '/?tab=offers';
+
+    try {
+      const { data: rpcCount, error: rpcErr } = await supabase.rpc('broadcast_notification', {
+        p_target: 'all',
+        p_user_id: null,
+        p_title: notifTitle,
+        p_message: notifMessage,
+        p_link: notifLink,
+      });
+
+      if (!rpcErr && typeof rpcCount === 'number') {
+        alert(`تم إرسال إشعار العرض بنجاح إلى ${rpcCount} مستخدم في التطبيق!`);
+      } else {
+        const { data: profiles } = await supabase.from('profiles').select('id');
+        if (profiles && profiles.length > 0) {
+          const rows = profiles.map((p) => ({
+            user_id: p.id,
+            title: notifTitle,
+            message: notifMessage,
+            type: 'offer',
+            link: notifLink,
+            is_read: false,
+          }));
+          await supabase.from('notifications').insert(rows);
+          alert(`تم إرسال إشعار العرض بنجاح إلى ${profiles.length} مستخدم!`);
+        } else {
+          alert('تعذر إرسال الإشعار لعدم توفر حسابات مستخدمين.');
+        }
+      }
+    } catch (err) {
+      alert('حدث خطأ أثناء إرسال الإشعار.');
+    } finally {
+      setBroadcastingOfferId(null);
+    }
   };
 
   const startEdit = (offer: any) => {
@@ -297,9 +395,44 @@ export function OffersTab() {
 
             {createError && <InlineError message={createError} />}
 
-            <button type="submit" disabled={creating} className="bg-emerald-600 text-white font-bold px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 disabled:opacity-50">
-              {creating ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
-              نشر العرض
+            {createSuccessMsg && (
+              <div className="p-4 bg-emerald-50 border-2 border-emerald-300 text-emerald-900 rounded-xl text-sm font-bold flex items-center gap-2 animate-in fade-in">
+                <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span>{createSuccessMsg}</span>
+              </div>
+            )}
+
+            <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3.5 flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="notifyUsersCheckbox"
+                checked={notifyUsers}
+                onChange={(e) => setNotifyUsers(e.target.checked)}
+                className="mt-1 w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer"
+              />
+              <label htmlFor="notifyUsersCheckbox" className="text-sm cursor-pointer select-none">
+                <span className="font-bold text-emerald-950 flex items-center gap-1.5">
+                  <Megaphone className="w-4 h-4 text-emerald-600" />
+                  إرسال إشعار فوري لجميع المستخدمين بصدور هذا العرض
+                </span>
+                <span className="block text-xs text-emerald-700 mt-0.5">
+                  سيصل تنبيه في جرس الإشعارات لكل مستخدم في التطبيق، إضافة لإشعار Push على الموبايل للإعلان عن هذا الخصم وتشجيعهم على الحجز.
+                </span>
+              </label>
+            </div>
+
+            <button type="submit" disabled={creating} className="bg-emerald-600 text-white font-bold px-6 py-2.5 rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 disabled:opacity-50">
+              {creating ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  جاري نشر العرض وإرسال الإشعارات...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-5 h-5" />
+                  نشر العرض {notifyUsers && 'وإشعار المستخدمين'}
+                </>
+              )}
             </button>
           </form>
         </CardContent>
@@ -404,7 +537,20 @@ export function OffersTab() {
                         <span className="text-xs text-gray-400" dir="ltr">
                           {status.label === 'ساري الآن' ? formatRemaining(offer.ends_at, now) : `انتهى في ${new Date(offer.ends_at).toLocaleString('ar-EG')}`}
                         </span>
-                        <div className="flex gap-3 items-center">
+                        <div className="flex gap-3 items-center flex-wrap">
+                          <button
+                            onClick={() => handleBroadcastOffer(offer)}
+                            disabled={broadcastingOfferId === offer.id}
+                            title="إرسال إشعار فوري لجميع المستخدمين بهذا العرض"
+                            className="text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors disabled:opacity-50"
+                          >
+                            {broadcastingOfferId === offer.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Megaphone className="w-3.5 h-3.5" />
+                            )}
+                            إرسال إشعار للكل
+                          </button>
                           <button onClick={() => toggleActive(offer)} disabled={busyId === offer.id} className="text-amber-600 text-sm font-bold hover:text-amber-800 flex items-center gap-1 disabled:opacity-50">
                             {offer.is_active ? <><PauseCircle className="w-4 h-4" /> إيقاف الآن</> : <><PlayCircle className="w-4 h-4" /> تفعيل</>}
                           </button>

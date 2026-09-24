@@ -34,9 +34,42 @@ const basePatientNav: SidebarItem[] = [
 ];
 
 export function PatientDashboard({ user }: { user?: any }) {
-  const [activeTab, setActiveTab] = useState('appointments');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const urlTab = new URLSearchParams(window.location.search).get('tab');
+      if (urlTab && basePatientNav.some(n => n.id === urlTab)) return urlTab;
+    }
+    return 'appointments';
+  });
   const [activeOffers, setActiveOffers] = useState<PatientOffer[]>([]);
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
+
+  // مزامنة التبويب النشط إذا تم الضغط على رابط في إشعار أو تغيير الرابط
+  useEffect(() => {
+    const handleUrlTab = (e?: Event) => {
+      let targetTab: string | null = null;
+      if (e && (e as CustomEvent).detail && typeof (e as CustomEvent).detail === 'string') {
+        const detailUrl = (e as CustomEvent).detail;
+        const qIndex = detailUrl.indexOf('?');
+        if (qIndex !== -1) {
+          targetTab = new URLSearchParams(detailUrl.slice(qIndex)).get('tab');
+        }
+      }
+      if (!targetTab && typeof window !== 'undefined') {
+        targetTab = new URLSearchParams(window.location.search).get('tab');
+      }
+      if (targetTab && basePatientNav.some(n => n.id === targetTab)) {
+        setActiveTab(targetTab);
+      }
+    };
+
+    window.addEventListener('popstate', handleUrlTab);
+    window.addEventListener('app-route-change', handleUrlTab);
+    return () => {
+      window.removeEventListener('popstate', handleUrlTab);
+      window.removeEventListener('app-route-change', handleUrlTab);
+    };
+  }, []);
 
   // جلب العروض السارية والمفعلة للتحقق من وجود عروض نشطة
   const fetchActiveOffers = useCallback(async () => {

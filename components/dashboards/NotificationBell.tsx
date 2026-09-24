@@ -163,6 +163,9 @@ export function NotificationBell() {
     if (notif.link) {
       setIsOpen(false);
       router.push(notif.link);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app-route-change', { detail: notif.link }));
+      }
     }
   };
 

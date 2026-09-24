@@ -168,3 +168,33 @@ CREATE TRIGGER on_new_medical_news
   AFTER INSERT ON public.medical_news
   FOR EACH ROW EXECUTE PROCEDURE public.notify_new_medical_news();
 
+-- 8. Notify All Users on New Offer / Discount
+DROP TRIGGER IF EXISTS on_new_offer ON public.offers;
+CREATE OR REPLACE FUNCTION public.notify_new_offer()
+RETURNS TRIGGER AS $$
+DECLARE
+  discount_txt TEXT := '';
+BEGIN
+  IF NEW.is_active = true THEN
+    IF NEW.discount_percent IS NOT NULL THEN
+      discount_txt := ' (خصم ' || NEW.discount_percent || '%)';
+    END IF;
+
+    INSERT INTO notifications (user_id, title, message, type, link)
+    SELECT 
+      id, 
+      '🔥 عرض وخصم جديد: ' || NEW.title || discount_txt, 
+      NEW.description, 
+      'offer', 
+      '/?tab=offers'
+    FROM profiles;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_new_offer
+  AFTER INSERT ON public.offers
+  FOR EACH ROW EXECUTE PROCEDURE public.notify_new_offer();
+
