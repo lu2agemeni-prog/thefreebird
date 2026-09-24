@@ -1,18 +1,20 @@
 'use client';
 import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
-import { Users, Activity, Calendar, FlaskConical, User } from 'lucide-react';
+import { Users, Activity, Calendar, FlaskConical, User, Printer } from 'lucide-react';
 
 import { SecretaryAppointments } from './secretary/SecretaryAppointments';
 import { SecretaryPatients } from './secretary/SecretaryPatients';
 import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
 import { LabTab } from './shared/LabTab';
+import { LabPrintTab } from './shared/LabPrintTab';
 import { AccountProfileTab } from './shared/AccountProfileTab';
 
 const secretaryNav: SidebarItem[] = [
   { name: 'إدارة المواعيد', id: 'appointments', icon: Calendar },
   { name: 'دليل المرضى', id: 'patients', icon: Users },
   { name: 'النداء الآلي', id: 'call_queue', icon: Activity },
+  { name: 'طباعة معمل', id: 'lab_print', icon: Printer },
   { name: 'المعمل', id: 'lab', icon: FlaskConical },
   { name: 'الملف الشخصي', id: 'profile', icon: User },
 ];
@@ -25,6 +27,7 @@ export function SecretaryDashboard() {
       case 'appointments': return <SecretaryAppointments />;
       case 'patients': return <SecretaryPatients />;
       case 'call_queue': return <SecretaryCallQueue />;
+      case 'lab_print': return <LabPrintTab />;
       case 'lab': return <LabTab />;
       case 'profile': return <AccountProfileTab />;
       default: return null;

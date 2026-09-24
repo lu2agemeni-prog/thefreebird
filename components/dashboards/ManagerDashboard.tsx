@@ -13,7 +13,7 @@ import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
 import {
   Building, Calculator, Stethoscope, Activity, QrCode, Shield,
-  BarChart, FileText, Newspaper, List, FlaskConical, Wallet, Megaphone, User, Users, Percent,
+  BarChart, FileText, Newspaper, List, FlaskConical, Wallet, Megaphone, User, Users, Percent, Printer,
 } from 'lucide-react';
 import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
 import { QueueMediaManager } from './manager/QueueMediaManager';
@@ -30,6 +30,7 @@ import { OffersTab } from './manager/tabs/OffersTab';
 import { FinancialsTab } from './manager/tabs/FinancialsTab';
 import { ReportsTab } from './manager/tabs/ReportsTab';
 import { LabTab } from './shared/LabTab';
+import { LabPrintTab } from './shared/LabPrintTab';
 import { LabAccountsTab } from './manager/tabs/LabAccountsTab';
 import { AdditionalAccountsTab } from './manager/tabs/AdditionalAccountsTab';
 import { BroadcastNotificationsTab } from './manager/tabs/BroadcastNotificationsTab';
@@ -45,6 +46,7 @@ const managerNav: SidebarItem[] = [
   { name: 'الخدمات والأسعار', id: 'services', icon: List },
   { name: 'النداء الآلي', id: 'call_queue', icon: Activity },
   { name: 'وسائط شاشة النداء', id: 'queue_media', icon: List },
+  { name: 'طباعة معمل', id: 'lab_print', icon: Printer },
   { name: 'المعمل', id: 'lab', icon: FlaskConical },
   { name: 'حسابات المعمل', id: 'lab_accounts', icon: FlaskConical },
   { name: 'الحسابات الإضافية', id: 'additional_accounts', icon: Wallet },
@@ -78,6 +80,7 @@ export function ManagerDashboard() {
           {activeTab === 'medical_news' && <MedicalNewsTab />}
           {activeTab === 'call_queue' && <SecretaryCallQueue />}
           {activeTab === 'queue_media' && <QueueMediaManager />}
+          {activeTab === 'lab_print' && <LabPrintTab />}
           {activeTab === 'lab' && <LabTab />}
           {activeTab === 'lab_accounts' && <LabAccountsTab />}
           {activeTab === 'additional_accounts' && <AdditionalAccountsTab />}

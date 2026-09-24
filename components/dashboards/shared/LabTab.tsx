@@ -8,7 +8,7 @@
 // إدخال القيمة، والإرسال. المريض بياخد إشعار تلقائي (trigger في القاعدة).
 // ============================================================================
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { FlaskConical, Search, X, Loader2, CheckCircle2, Trash2, User } from 'lucide-react';
+import { FlaskConical, Search, X, Loader2, CheckCircle2, Trash2, User, Printer } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { supabase } from '@/lib/supabase';
@@ -188,6 +188,21 @@ export function LabTab() {
 
   return (
     <div className="space-y-6">
+      {/* تنويه للتبويب الجديد المخصص للطباعة والقوالب الجاهزة */}
+      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+            <Printer className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="font-bold text-emerald-950 text-sm">ميزة جديدة: تبويب «طباعة معمل» وقوالب التحاليل الرسمية</h4>
+            <p className="text-xs text-emerald-800 mt-0.5">
+              يتوفر الآن تبويب «طباعة معمل» في القائمة الجانبية مع قوالب جاهزة (السكر التراكمي، صورة الدم، وظائف كلى وكبد) مهيأة للطباعة على صفحة A4 واحدة وهامش 4 سم للورق المروّس.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
