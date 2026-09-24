@@ -3,8 +3,8 @@
 // ============================================================================
 // components/dashboards/shared/LabPrintTab.tsx
 // تبويب "طباعة معمل" — مشترك بين السكرتارية والمدير
-// قوالب تحاليل جاهزة للطباعة مع هوامش A4 مخصصة (4 سم فارغ بالأعلى للورق المروّس)
-// وخيارات طباعة، إرسال للمريض عبر التطبيق، ومشاركة واتساب.
+// تقرير طبي احترافي باللغة الإنجليزية الطبية حصرياً من اليسار لليمين (LTR)
+// العربي فقط لاسم المريض واسم الطبيب، ومقاس A4 صفحة واحدة بدقة مع هامش علوي 4 سم فارغ.
 // ============================================================================
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -14,8 +14,6 @@ import {
   Send,
   Search,
   User,
-  Calendar,
-  Clock,
   Sparkles,
   CheckCircle2,
   AlertCircle,
@@ -24,11 +22,9 @@ import {
   RefreshCw,
   FlaskConical,
   X,
-  Stethoscope,
   Plus,
   Trash2,
   Sliders,
-  ChevronDown,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -61,7 +57,7 @@ export function LabPrintTab() {
 
   // 2. بيانات رأس التقرير (مريض، طبيب، تاريخ، عمر)
   const [patientSearch, setPatientSearch] = useState('');
-  const [isSearchingPatient, setIsSearchingPatient] = useState(false);
+  const [, setIsSearchingPatient] = useState(false);
   const [patientSearchResults, setPatientSearchResults] = useState<RegisteredPatient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<RegisteredPatient | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -75,7 +71,7 @@ export function LabPrintTab() {
   const [customDoctorName, setCustomDoctorName] = useState('');
   const [doctorsList, setDoctorsList] = useState<DoctorProfile[]>([]);
   const [sampleDate, setSampleDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const [reportDate, setReportDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [reportDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [sampleId, setSampleId] = useState<string>(() => `LAB-${Math.floor(100000 + Math.random() * 900000)}`);
 
   // 3. قيم نتائج التحليل
@@ -86,22 +82,24 @@ export function LabPrintTab() {
     });
     return initial;
   });
-  const [clinicalNotes, setClinicalNotes] = useState<string>(LAB_TEMPLATES[0].notesDefault || '');
-  const [labTechnician, setLabTechnician] = useState<string>('أخصائي التحاليل الطبية');
+  const [clinicalNotes, setClinicalNotes] = useState<string>(
+    LAB_TEMPLATES[0].notesDefaultEn || LAB_TEMPLATES[0].notesDefault || ''
+  );
+  const [labTechnicianEn] = useState<string>('Clinical Laboratory Specialist');
 
   // خيارات حقول القالب المخصص
   const [customRows, setCustomRows] = useState<
-    Array<{ id: string; name: string; result: string; unit: string; range: string; status: 'normal' | 'high' | 'low' }>
+    Array<{ id: string; name: string; result: string; unit: string; range: string }>
   >([
-    { id: '1', name: 'الفحص المخصص 1', result: '', unit: '', range: 'Normal', status: 'normal' },
+    { id: '1', name: 'Investigation 1', result: '', unit: '', range: 'Normal' },
   ]);
 
-  // 4. خيارات الطباعة والعرض
-  const [leaveLetterheadMargin, setLeaveLetterheadMargin] = useState<boolean>(true); // 4cm فارغ بالأعلى
+  // 4. خيارات الطباعة والعرض (هامش 4 سم فارغ افتراضياً)
+  const [leaveLetterheadMargin, setLeaveLetterheadMargin] = useState<boolean>(true);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [isSendingToPatient, setIsSendingToPatient] = useState(false);
 
-  // اختيار قالب وإعادة تهيئة الحقول مباشرة
+  // اختيار قالب وإعادة تهيئة الحقول مباشرة بالقيم الإنجليزية
   const handleSelectTemplate = (tmplId: string) => {
     setSelectedTemplateId(tmplId);
     const tmpl = LAB_TEMPLATES.find((t) => t.id === tmplId) || LAB_TEMPLATES[0];
@@ -110,7 +108,7 @@ export function LabPrintTab() {
       initial[f.id] = f.defaultValue !== undefined ? String(f.defaultValue) : '';
     });
     setFieldValues(initial);
-    setClinicalNotes(tmpl.notesDefault || '');
+    setClinicalNotes(tmpl.notesDefaultEn || tmpl.notesDefault || '');
   };
 
   // تعديل قيمة حقل مع الحساب التلقائي للسكر التراكمي
@@ -180,12 +178,11 @@ export function LabPrintTab() {
     if (p.gender === 'female' || p.gender === 'أنثى') setPatientGender('أنثى');
     else if (p.gender === 'male' || p.gender === 'ذكر') setPatientGender('ذكر');
 
-    // حساب العمر إذا كان تاريخ الميلاد متاح
     if (p.birth_date) {
       const birthYear = new Date(p.birth_date).getFullYear();
       const currentYear = new Date().getFullYear();
       if (birthYear > 1900 && currentYear >= birthYear) {
-        setPatientAge(`${currentYear - birthYear} سنة`);
+        setPatientAge(`${currentYear - birthYear}`);
       }
     }
     setPatientSearch('');
@@ -199,8 +196,25 @@ export function LabPrintTab() {
     setPatientAge('');
   };
 
-  // اسم الطبيب الفعلي
-  const effectiveDoctorName = doctorMode === 'select' ? selectedDoctorId || 'طبيب المركز' : customDoctorName || 'د. استشاري المعمل';
+  // اسم الطبيب الفعلي بالعربي
+  const effectiveDoctorName =
+    doctorMode === 'select'
+      ? selectedDoctorId || 'طبيب المركز'
+      : customDoctorName || 'د. استشاري المعمل';
+
+  // صياغة العمر بالإنجليزية للتقرير
+  const formattedAgeEn = useMemo(() => {
+    if (!patientAge) return 'Not Specified';
+    const num = patientAge.replace(/[^0-9]/g, '');
+    return num ? `${num} Yrs` : patientAge;
+  }, [patientAge]);
+
+  // صياغة الجنس بالإنجليزية للتقرير
+  const formattedGenderEn = useMemo(() => {
+    if (patientGender === 'ذكر') return 'Male';
+    if (patientGender === 'أنثى') return 'Female';
+    return '---';
+  }, [patientGender]);
 
   // تقييم النتيجة للقالب الحالي
   const currentInterpretation = useMemo(() => {
@@ -225,7 +239,7 @@ export function LabPrintTab() {
     if (!selectedPatient) {
       setStatusMessage({
         type: 'info',
-        text: 'تنبيه: لإرسال النتيجة إلى تطبيق المريض، يجب اختيار مريض مسجل بحساب في المنظومة من شريط البحث. يمكنك الطباعة أو المشاركة بالواتساب حالياً للمرضى غير المسجلين.',
+        text: 'تنبيه: لإرسال النتيجة إلى تطبيق المريض، يرجى اختيار مريض مسجل من شريط البحث. يمكنك الطباعة أو المشاركة بالواتساب حالياً للمرضى غير المسجلين.',
       });
       return;
     }
@@ -234,13 +248,11 @@ export function LabPrintTab() {
     setStatusMessage(null);
 
     try {
-      // حفظ في جدول lab_results
       const numericVal = parseFloat(fieldValues['hba1c_val'] || Object.values(fieldValues)[0] || '0');
-      const formattedNotes = `تقرير فحص ${currentTemplate.titleAr} (${currentTemplate.titleEn}) - النتيجة: ${
-        fieldValues['hba1c_val'] ? fieldValues['hba1c_val'] + '%' : Object.values(fieldValues)[0] || 'مكتمل'
-      }. الطبيب المعالج: ${effectiveDoctorName}. ملاحظات المعمل: ${clinicalNotes}`;
+      const formattedNotes = `Clinical Laboratory Report: ${currentTemplate.titleEn} (${currentTemplate.titleAr}) - Result: ${
+        fieldValues['hba1c_val'] ? fieldValues['hba1c_val'] + '%' : Object.values(fieldValues)[0] || 'Verified'
+      }. Referring Physician: ${effectiveDoctorName}. Notes: ${clinicalNotes}`;
 
-      // إدراج النتيجة
       const { error: labError } = await supabase.from('lab_results').insert([
         {
           patient_id: selectedPatient.id,
@@ -254,12 +266,11 @@ export function LabPrintTab() {
         console.warn('lab_results insert notice:', labError.message);
       }
 
-      // إشعار المريض
       await supabase.from('notifications').insert([
         {
           user_id: selectedPatient.id,
           title: `نتيجة ${currentTemplate.titleAr} جاهزة 🔬`,
-          message: `أصدر معمل المركز نتيجة فحص ${currentTemplate.titleAr} الخاصة بك (${patientName}). يمكنك مراجعة تفاصيل الفحص الآن.`,
+          message: `أصدر مختبر المركز نتيجة فحص ${currentTemplate.titleEn} (${patientName}). يمكنك مراجعة تقرير الفحص المعتمد الآن.`,
           type: 'lab',
           link: '/lab-results',
         },
@@ -267,7 +278,7 @@ export function LabPrintTab() {
 
       setStatusMessage({
         type: 'success',
-        text: `تم إرسال نتيجة ${currentTemplate.titleAr} إلى حساب المريض (${patientName}) وإشعاره في التطبيق بنجاح!`,
+        text: `تم إرسال نتيجة ${currentTemplate.titleAr} إلى حساب المريض (${patientName}) بنجاح!`,
       });
     } catch (err: any) {
       setStatusMessage({ type: 'error', text: getFriendlyErrorMessage(err, 'تعذر إرسال النتيجة إلى حساب المريض.') });
@@ -283,18 +294,21 @@ export function LabPrintTab() {
 
     let resultSummary = '';
     if (selectedTemplateId === 'hba1c') {
-      resultSummary = `*نتيجة السكر التراكمي (HbA1c):* ${fieldValues['hba1c_val'] || '---'} %\n*متوسط الجلوكوز التقديري (eAG):* ${
+      resultSummary = `*HbA1c (Glycosylated Hemoglobin):* ${fieldValues['hba1c_val'] || '---'} %\n*eAG (Estimated Average Glucose):* ${
         fieldValues['eag_val'] || '---'
-      } mg/dL\n*المعدل الطبيعي للأصحاء:* 4.0 - 5.6 %`;
+      } mg/dL\n*Reference Interval (Non-diabetic):* < 5.7 %`;
     } else if (selectedTemplateId === 'custom') {
       resultSummary = customRows.map((r) => `*${r.name}:* ${r.result} ${r.unit} (${r.range})`).join('\n');
     } else {
-      resultSummary = currentTemplate.fields.map((f) => `*${f.nameAr}:* ${fieldValues[f.id] || '---'} ${f.unit}`).join('\n');
+      resultSummary = currentTemplate.fields
+        .slice(0, 10)
+        .map((f) => `*${f.nameEn}:* ${fieldValues[f.id] || '---'} ${f.unit ? f.unit + ' ' : ''}(Ref: ${f.normalRange})`)
+        .join('\n');
     }
 
-    const message = `🏥 *تقرير نتائج التحاليل الطبية*\n${greeting}: *${patientName || 'المحترم'}*\n👨‍⚕️ *الطبيب المعالج:* ${effectiveDoctorName}\n🔬 *نوع الفحص:* ${currentTemplate.titleAr} (${currentTemplate.titleEn})\n📅 *تاريخ سحب العينة:* ${sampleDate}\n🔢 *رقم العينة:* ${sampleId}\n\n📊 *النتائج المخبرية:*\n${resultSummary}\n\n📝 *ملاحظات المعمل:* ${
-      clinicalNotes || 'النتيجة معتمدة مخبرياً.'
-    }\n\nنتمنى لكم دوام الصحة والعافية!`;
+    const message = `🏥 *Clinical Laboratory Report*\n${greeting}: *${patientName || 'المحترم'}*\n👨‍⚕️ *Referring Doctor:* ${effectiveDoctorName}\n🔬 *Investigation:* ${currentTemplate.titleEn}\n📅 *Date of Collection:* ${sampleDate}\n🔢 *Sample ID:* ${sampleId}\n\n📊 *Laboratory Findings:*\n${resultSummary}\n\n📝 *Clinical Remarks:* ${
+      clinicalNotes || 'Results verified and validated according to laboratory standard operating procedures.'
+    }\n\nمع تمنياتنا لكم بدوام الصحة والعافية!`;
 
     const url = cleanPhone
       ? `https://api.whatsapp.com/send?phone=${cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone}&text=${encodeURIComponent(message)}`
@@ -305,33 +319,51 @@ export function LabPrintTab() {
 
   // 4. نسخ ملخص التقرير
   const handleCopySummary = () => {
-    let text = `تقرير معمل: ${currentTemplate.titleAr}\nالمريض: ${patientName || '---'}\nالطبيب: ${effectiveDoctorName}\nتاريخ السحب: ${sampleDate}\n`;
+    let text = `CLINICAL LABORATORY REPORT\nInvestigation: ${currentTemplate.titleEn}\nPatient Name: ${patientName || '---'}\nReferring Doctor: ${effectiveDoctorName}\nDate of Collection: ${sampleDate}\nSample ID: ${sampleId}\n\nFINDINGS:\n`;
     if (selectedTemplateId === 'hba1c') {
-      text += `HbA1c: ${fieldValues['hba1c_val']} % | eAG: ${fieldValues['eag_val']} mg/dL\n`;
+      text += `HbA1c: ${fieldValues['hba1c_val']} % | eAG: ${fieldValues['eag_val']} mg/dL (Ref: < 5.7 %)\n`;
+    } else if (selectedTemplateId === 'custom') {
+      customRows.forEach((r) => {
+        text += `${r.name}: ${r.result} ${r.unit} (Ref: ${r.range})\n`;
+      });
     } else {
       currentTemplate.fields.forEach((f) => {
-        text += `${f.nameAr}: ${fieldValues[f.id]} ${f.unit} (طبيعي: ${f.normalRange})\n`;
+        text += `${f.nameEn}: ${fieldValues[f.id]} ${f.unit} (Ref: ${f.normalRange})\n`;
       });
     }
-    if (clinicalNotes) text += `ملاحظات: ${clinicalNotes}\n`;
+    if (clinicalNotes) text += `\nClinical Notes: ${clinicalNotes}\n`;
     navigator.clipboard.writeText(text);
-    setStatusMessage({ type: 'success', text: 'تم نسخ ملخص التقرير للحافظة.' });
+    setStatusMessage({ type: 'success', text: 'تم نسخ ملخص التقرير الطبي باللغة الإنجليزية للحافظة.' });
   };
+
+  // فصل حقول تحليل البول لتصميم الأعمدة المزدوجة المتراصة (2-Column Ultra Compact)
+  const urinePhysicalFields = useMemo(
+    () => currentTemplate.fields.filter((f) => f.section === 'physical'),
+    [currentTemplate]
+  );
+  const urineChemicalFields = useMemo(
+    () => currentTemplate.fields.filter((f) => f.section === 'chemical'),
+    [currentTemplate]
+  );
+  const urineMicroscopicFields = useMemo(
+    () => currentTemplate.fields.filter((f) => f.section === 'microscopic'),
+    [currentTemplate]
+  );
 
   return (
     <div className="space-y-6" dir="rtl">
       {/* رأس الصفحة التعريفي */}
       <div className="bg-white border rounded-2xl p-5 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-emerald-700 font-black text-xl md:text-2xl">
+          <div className="flex items-center gap-2 text-emerald-800 font-black text-xl md:text-2xl">
             <FlaskConical className="w-7 h-7 text-emerald-600 shrink-0" />
             <h1>قوالب طباعة نتائج المعمل</h1>
-            <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full">
-              جاهز للورق المروّس A4
+            <span className="text-xs bg-emerald-100 text-emerald-900 font-bold px-2.5 py-0.5 rounded-full">
+              English LTR Report • A4 Single Page
             </span>
           </div>
           <p className="text-sm text-gray-500 mt-1">
-            إعداد وطباعة تقارير التحاليل بدقة عالية مع هامش علوي 4 سم فارغ مخصص لورق العيادة المروّس وخيار الإرسال للمريض مباشرة.
+            التقارير مطبوعة باللغة الإنجليزية الطبية المعتمدة (من اليسار لليمين LTR)، مع إبقاء اسم المريض والطبيب بالعربي، وملاءمة مثالية لصفحة A4 واحدة وهامش علوي 4 سم للورق المروّس.
           </p>
         </div>
 
@@ -339,10 +371,10 @@ export function LabPrintTab() {
         <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
           <button
             onClick={handlePrint}
-            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-xl shadow-xs transition-colors"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-5 py-2.5 rounded-xl shadow-xs transition-colors"
           >
             <Printer className="w-4 h-4" />
-            <span>طباعة التقرير (A4)</span>
+            <span>طباعة التقرير (A4 صفحة واحدة)</span>
           </button>
 
           <button
@@ -406,12 +438,13 @@ export function LabPrintTab() {
                 onClick={() => handleSelectTemplate(tmpl.id)}
                 className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 ${
                   isSelected
-                    ? 'bg-emerald-700 text-white shadow-xs scale-102 ring-2 ring-emerald-300'
+                    ? 'bg-emerald-800 text-white shadow-xs scale-102 ring-2 ring-emerald-300'
                     : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
                 }`}
               >
                 {tmpl.id === 'hba1c' && <span>⭐</span>}
                 <span>{tmpl.titleAr}</span>
+                <span className="text-[10px] opacity-75 font-mono">({tmpl.titleEn})</span>
               </button>
             );
           })}
@@ -426,7 +459,7 @@ export function LabPrintTab() {
           <div className="bg-white border rounded-2xl p-5 shadow-xs space-y-4">
             <h3 className="font-black text-gray-800 text-base flex items-center gap-2 border-b pb-3">
               <User className="w-4 h-4 text-emerald-600" />
-              بيانات المريض والفحص
+              بيانات المريض والفحص (العربي لاسم المريض والطبيب)
             </h3>
 
             {/* البحث عن مريض مسجل */}
@@ -454,10 +487,14 @@ export function LabPrintTab() {
                           className="w-full text-right p-2.5 hover:bg-emerald-50 text-xs transition-colors flex items-center justify-between"
                         >
                           <div>
-                            <p className="font-bold text-gray-800">{p.first_name} {p.last_name}</p>
+                            <p className="font-bold text-gray-800">
+                              {p.first_name} {p.last_name}
+                            </p>
                             <p className="text-gray-400 font-mono text-[11px]">{p.patient_code || 'بدون كود'}</p>
                           </div>
-                          <span className="text-gray-500 text-xs" dir="ltr">{p.phone}</span>
+                          <span className="text-gray-500 text-xs" dir="ltr">
+                            {p.phone}
+                          </span>
                         </button>
                       ))}
                     </div>
@@ -471,7 +508,9 @@ export function LabPrintTab() {
                       <p className="text-xs font-bold text-emerald-950">
                         {selectedPatient.first_name} {selectedPatient.last_name}
                       </p>
-                      <p className="text-[11px] text-emerald-700" dir="ltr">{selectedPatient.phone}</p>
+                      <p className="text-[11px] text-emerald-700" dir="ltr">
+                        {selectedPatient.phone}
+                      </p>
                     </div>
                   </div>
                   <button
@@ -487,7 +526,9 @@ export function LabPrintTab() {
             {/* اسم المريض وعمره */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-bold text-gray-700 mb-1 block">اسم المريض: *</label>
+                <label className="text-xs font-bold text-gray-700 mb-1 block">
+                  اسم المريض (بالعربي): *
+                </label>
                 <input
                   type="text"
                   value={patientName}
@@ -498,12 +539,12 @@ export function LabPrintTab() {
               </div>
 
               <div>
-                <label className="text-xs font-bold text-gray-700 mb-1 block">عمر المريض (اختياري):</label>
+                <label className="text-xs font-bold text-gray-700 mb-1 block">عمر المريض (Age):</label>
                 <input
                   type="text"
                   value={patientAge}
                   onChange={(e) => setPatientAge(e.target.value)}
-                  placeholder="مثال: 45 سنة"
+                  placeholder="مثال: 45 سنة أو 45"
                   className="w-full px-3 py-2 text-sm border rounded-xl outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
@@ -512,7 +553,7 @@ export function LabPrintTab() {
             {/* الطبيب المعالج (اختيار أو كتابة يدوية) */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-bold text-gray-700">اسم الطبيب المعالج: *</label>
+                <label className="text-xs font-bold text-gray-700">اسم الطبيب المعالج (بالعربي): *</label>
                 <button
                   type="button"
                   onClick={() => setDoctorMode(doctorMode === 'select' ? 'custom' : 'select')}
@@ -561,7 +602,7 @@ export function LabPrintTab() {
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-bold text-gray-700">رقم العينة / الباركود:</label>
+                  <label className="text-xs font-bold text-gray-700">رقم العينة (Sample ID):</label>
                   <button
                     type="button"
                     onClick={() => setSampleId(`LAB-${Math.floor(100000 + Math.random() * 900000)}`)}
@@ -583,7 +624,7 @@ export function LabPrintTab() {
             {/* الجنس ورقم الهاتف للمشاركة */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-bold text-gray-700 mb-1 block">الجنس:</label>
+                <label className="text-xs font-bold text-gray-700 mb-1 block">الجنس (Gender):</label>
                 <select
                   value={patientGender}
                   onChange={(e) => setPatientGender(e.target.value as any)}
@@ -613,24 +654,20 @@ export function LabPrintTab() {
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="font-black text-gray-800 text-base flex items-center gap-2">
                 <Sliders className="w-4 h-4 text-emerald-600" />
-                قيم ونتائج: {currentTemplate.titleAr}
+                نتائج الفحص: {currentTemplate.titleAr}
               </h3>
-              <span className="text-[11px] text-gray-500 font-mono">{currentTemplate.titleEn}</span>
+              <span className="text-[11px] text-gray-500 font-mono font-bold">{currentTemplate.titleEn}</span>
             </div>
 
             {/* إدخال قيم القالب العادي */}
             {selectedTemplateId !== 'custom' ? (
-              <div className="space-y-3">
+              <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
                 {currentTemplate.fields.map((field) => (
-                  <div key={field.id} className="p-3 bg-gray-50/70 border rounded-xl space-y-1.5">
+                  <div key={field.id} className="p-2.5 bg-gray-50/80 border rounded-xl space-y-1">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-gray-800">
-                        {field.nameAr}
-                        {field.id === 'eag_val' && (
-                          <span className="mr-2 text-[11px] text-emerald-600 font-normal">
-                            (يُحسب تلقائياً من التراكمي)
-                          </span>
-                        )}
+                      <label className="text-xs font-bold text-gray-800 flex items-center gap-1">
+                        <span>{field.nameEn}</span>
+                        <span className="text-[10px] text-gray-400 font-normal">({field.nameAr})</span>
                       </label>
                       <span className="text-xs font-mono text-gray-500">{field.unit}</span>
                     </div>
@@ -640,11 +677,11 @@ export function LabPrintTab() {
                         type="text"
                         value={fieldValues[field.id] || ''}
                         onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
-                        placeholder={field.unit ? `القيمة بـ ${field.unit}` : 'أدخل النتيجة'}
+                        placeholder="Result"
                         className="flex-1 px-3 py-1.5 text-sm border rounded-lg bg-white outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
                       />
-                      <span className="text-[11px] text-gray-500 bg-white px-2 py-1.5 border rounded-lg shrink-0">
-                        طبيعي: {field.normalRange}
+                      <span className="text-[10px] text-gray-500 bg-white px-2 py-1.5 border rounded-lg shrink-0 font-mono">
+                        Ref: {field.normalRange}
                       </span>
                     </div>
                   </div>
@@ -656,7 +693,7 @@ export function LabPrintTab() {
                 {customRows.map((row, idx) => (
                   <div key={row.id} className="p-3 bg-gray-50 border rounded-xl space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-gray-600">فحص #{idx + 1}</span>
+                      <span className="text-xs font-bold text-gray-600">Investigation #{idx + 1}</span>
                       {customRows.length > 1 && (
                         <button
                           type="button"
@@ -676,7 +713,7 @@ export function LabPrintTab() {
                           updated[idx].name = e.target.value;
                           setCustomRows(updated);
                         }}
-                        placeholder="اسم التحليل"
+                        placeholder="Investigation Name (En)"
                         className="px-2.5 py-1.5 text-xs border rounded-lg bg-white"
                       />
                       <input
@@ -687,7 +724,7 @@ export function LabPrintTab() {
                           updated[idx].result = e.target.value;
                           setCustomRows(updated);
                         }}
-                        placeholder="النتيجة"
+                        placeholder="Result"
                         className="px-2.5 py-1.5 text-xs border rounded-lg bg-white font-bold"
                       />
                       <input
@@ -698,7 +735,7 @@ export function LabPrintTab() {
                           updated[idx].unit = e.target.value;
                           setCustomRows(updated);
                         }}
-                        placeholder="الوحدة (mg/dL)"
+                        placeholder="Unit (mg/dL, %)"
                         className="px-2.5 py-1.5 text-xs border rounded-lg bg-white"
                       />
                       <input
@@ -709,7 +746,7 @@ export function LabPrintTab() {
                           updated[idx].range = e.target.value;
                           setCustomRows(updated);
                         }}
-                        placeholder="المعدل المرجعي"
+                        placeholder="Reference Range"
                         className="px-2.5 py-1.5 text-xs border rounded-lg bg-white"
                       />
                     </div>
@@ -726,8 +763,7 @@ export function LabPrintTab() {
                         name: '',
                         result: '',
                         unit: '',
-                        range: '',
-                        status: 'normal',
+                        range: 'Normal',
                       },
                     ])
                   }
@@ -760,17 +796,17 @@ export function LabPrintTab() {
               </div>
             )}
 
-            {/* ملاحظات التقرير المعملية */}
+            {/* ملاحظات التقرير المعملية (باللغة الإنجليزية) */}
             <div>
               <label className="text-xs font-bold text-gray-700 mb-1 block">
-                ملاحظات وتوصيات المعمل الإكلينيكية:
+                ملاحظات المعمل الطبية (Clinical Notes & Remarks):
               </label>
               <textarea
                 rows={2}
                 value={clinicalNotes}
                 onChange={(e) => setClinicalNotes(e.target.value)}
-                placeholder="ملاحظات تظهر أسفل نتائج الفحص..."
-                className="w-full p-2.5 text-xs border rounded-xl outline-none focus:ring-2 focus:ring-emerald-500"
+                placeholder="Clinical remarks to appear on the printed report..."
+                className="w-full p-2.5 text-xs border rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-sans"
               />
             </div>
 
@@ -784,11 +820,11 @@ export function LabPrintTab() {
                   className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500"
                 />
                 <span className="text-xs font-bold text-amber-900">
-                  ترك مسافة فارغة 4 سم بالأعلى (مخصصة للورق المروّس للعيادة)
+                  ترك مسافة فارغة 4 سم بالأعلى (مخصصة للورق المروّس المطبوع مسبقاً)
                 </span>
               </label>
               <p className="text-[11px] text-amber-800 leading-normal pr-6">
-                عند تحديد هذا الخيار، يتم ترك أعلى 4 سم من صفحة A4 فارغاً تماماً لتطابق ورقة المركز المطبوعة مسبقاً، وتستوعب الصفحة الواحدة كافة النتائج بدقة.
+                عند تحديد هذا الخيار، يتم ترك أعلى 4 سم من صفحة A4 فارغاً تماماً ليطابق ترويسة ورق المركز، وتستوعب الصفحة الواحدة كافة النتائج بدقة باللغة الإنجليزية.
               </p>
             </div>
           </div>
@@ -800,7 +836,7 @@ export function LabPrintTab() {
             <div className="flex items-center justify-between text-xs text-gray-500 px-1">
               <div className="flex items-center gap-2 font-bold text-gray-700">
                 <FileText className="w-4 h-4 text-emerald-600" />
-                <span>معاينة ورقة الطباعة (A4 صفحة واحدة):</span>
+                <span>معاينة التقرير الطبي A4 (English LTR • صفحة واحدة):</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -809,12 +845,12 @@ export function LabPrintTab() {
                   className="text-gray-500 hover:text-emerald-700 font-bold flex items-center gap-1"
                 >
                   <Copy className="w-3.5 h-3.5" />
-                  <span>نسخ التقرير</span>
+                  <span>نسخ</span>
                 </button>
                 <button
                   type="button"
                   onClick={handlePrint}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-lg flex items-center gap-1 shadow-xs"
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-1 rounded-lg flex items-center gap-1 shadow-xs"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>طباعة الآن</span>
@@ -822,78 +858,95 @@ export function LabPrintTab() {
               </div>
             </div>
 
-            {/* ورقة A4 التفاعلية للطباعة */}
-            <div className="bg-gray-200/80 p-3 sm:p-5 rounded-2xl overflow-x-auto shadow-inner flex justify-center">
+            {/* ورقة A4 التفاعلية للطباعة - English Medical LTR Only */}
+            <div className="bg-gray-200/90 p-3 sm:p-5 rounded-2xl overflow-x-auto shadow-inner flex justify-center">
               <div
                 id="printable-lab-report"
-                className={`bg-white text-black shadow-md border border-gray-300 w-[210mm] min-w-[210mm] max-w-[210mm] h-[297mm] max-h-[297mm] px-[14mm] pb-[10mm] flex flex-col justify-between box-border select-none print:shadow-none print:border-none print:m-0 ${
-                  leaveLetterheadMargin ? 'pt-[40mm]' : 'pt-[12mm]'
+                dir="ltr"
+                className={`bg-white text-slate-900 shadow-md border border-gray-300 w-[210mm] min-w-[210mm] max-w-[210mm] h-[297mm] max-h-[297mm] px-[12mm] pb-[8mm] flex flex-col justify-between box-border select-none print:shadow-none print:border-none print:m-0 font-sans ${
+                  leaveLetterheadMargin ? 'pt-[40mm]' : 'pt-[10mm]'
                 }`}
-                style={{ direction: 'rtl' }}
+                style={{ direction: 'ltr', textAlign: 'left' }}
               >
                 {/* 1. الترويسة العليا (في حال عدم تفعيل هامش الـ 4 سم للورق المروّس) */}
                 {!leaveLetterheadMargin ? (
-                  <div className="border-b-2 border-emerald-800 pb-3 mb-3 flex items-center justify-between">
+                  <div className="border-b-2 border-slate-800 pb-2 mb-2 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-emerald-800 text-white flex items-center justify-center font-black text-xl">
+                      <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-lg">
                         🔬
                       </div>
                       <div>
-                        <h2 className="font-black text-lg text-emerald-900 leading-tight">
-                          مجمع الطائر الحر الطبي - قسم التحاليل
+                        <h2 className="font-black text-base text-slate-900 leading-tight uppercase tracking-wider">
+                          Central Diagnostic Clinical Laboratories
                         </h2>
-                        <p className="text-[11px] text-gray-600">Free Bird Specialized Clinical Laboratories</p>
+                        <p className="text-[10px] text-slate-600">
+                          Accredited Medical Testing & Automated Pathology Department
+                        </p>
                       </div>
                     </div>
-                    <div className="text-left text-[10px] text-gray-500 font-mono leading-tight">
-                      <p>Accredited Quality Standards</p>
+                    <div className="text-right text-[9px] text-slate-500 font-mono leading-tight">
+                      <p>ISO 15189 Quality Standards</p>
                       <p>Automated Diagnostic Systems</p>
                     </div>
                   </div>
                 ) : (
                   // خط إرشادي بصري يظهر على الشاشة فقط ليبيّن مساحة الـ 4 سم الفارغة
-                  <div className="print:hidden border-b border-dashed border-amber-300 text-amber-700 text-[10px] pb-1 mb-2 text-center bg-amber-50/50 rounded-md">
-                    [مساحة 4 سم فارغة مخصصة لترويسة الورق المروّس للعيادة / Letterhead Margin]
+                  <div className="print:hidden border-b border-dashed border-amber-400 text-amber-800 text-[10px] pb-1 mb-2 text-center bg-amber-50/70 rounded-md font-mono">
+                    [ 4.0 cm Blank Letterhead Margin for Clinic Pre-printed Paper ]
                   </div>
                 )}
 
-                {/* 2. جدول بيانات المريض والطبيب (مطابق للصورة الطبية المرفقة) */}
-                <div className="border-2 border-gray-800 rounded-lg overflow-hidden mb-3 text-xs">
+                {/* 2. جدول بيانات المريض والطبيب (Arabic only for Patient & Doctor Names, rest in English) */}
+                <div className="border border-slate-400 rounded-md overflow-hidden mb-2 text-xs">
                   <table className="w-full border-collapse">
                     <tbody>
-                      <tr className="border-b border-gray-300">
-                        <td className="w-1/2 p-2 border-l border-gray-300 bg-gray-50/50">
-                          <span className="text-gray-500 block text-[10px]">اسم المريض / Patient Name:</span>
-                          <span className="font-black text-sm text-gray-900">{patientName || '....................................'}</span>
+                      <tr className="border-b border-slate-300">
+                        <td className="w-1/2 p-2 border-r border-slate-300 bg-slate-50/60">
+                          <span className="text-[9.5px] uppercase font-bold text-slate-500 block tracking-wider mb-0.5">
+                            Patient Name
+                          </span>
+                          <span className="font-black text-sm text-slate-950 block" dir="rtl">
+                            {patientName || '....................................'}
+                          </span>
                         </td>
-                        <td className="w-1/2 p-2 bg-gray-50/50">
-                          <span className="text-gray-500 block text-[10px]">الطبيب المعالج / Referring Doctor:</span>
-                          <span className="font-black text-sm text-gray-900">{effectiveDoctorName}</span>
+                        <td className="w-1/2 p-2 bg-slate-50/60">
+                          <span className="text-[9.5px] uppercase font-bold text-slate-500 block tracking-wider mb-0.5">
+                            Referring Doctor / Physician
+                          </span>
+                          <span className="font-black text-sm text-slate-950 block" dir="rtl">
+                            {effectiveDoctorName}
+                          </span>
                         </td>
                       </tr>
-                      <tr className="border-b border-gray-300">
-                        <td className="p-2 border-l border-gray-300">
-                          <span className="text-gray-500 block text-[10px]">العمر / Age:</span>
-                          <span className="font-bold text-gray-800">{patientAge || 'غير محدد'}</span>
+                      <tr className="border-b border-slate-300">
+                        <td className="p-1.5 border-r border-slate-300">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase">Age:</span>
+                            <span className="font-bold text-slate-900 text-xs font-mono">{formattedAgeEn}</span>
+                          </div>
                         </td>
-                        <td className="p-2">
-                          <span className="text-gray-500 block text-[10px]">تاريخ سحب العينة / Sampling Date:</span>
-                          <span className="font-bold text-gray-800 font-mono">{sampleDate}</span>
+                        <td className="p-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase">Sampling Date:</span>
+                            <span className="font-bold text-slate-900 text-xs font-mono">{sampleDate}</span>
+                          </div>
                         </td>
                       </tr>
                       <tr>
-                        <td className="p-2 border-l border-gray-300">
-                          <span className="text-gray-500 block text-[10px]">الجنس / Gender:</span>
-                          <span className="font-bold text-gray-800">{patientGender || '---'}</span>
+                        <td className="p-1.5 border-r border-slate-300">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase">Gender:</span>
+                            <span className="font-bold text-slate-900 text-xs">{formattedGenderEn}</span>
+                          </div>
                         </td>
-                        <td className="p-2">
+                        <td className="p-1.5">
                           <div className="flex items-center justify-between">
                             <div>
-                              <span className="text-gray-500 block text-[10px]">رقم العينة / Sample ID:</span>
-                              <span className="font-mono font-bold text-gray-800">{sampleId}</span>
+                              <span className="text-[10px] font-bold text-slate-500 uppercase">Sample ID: </span>
+                              <span className="font-mono font-bold text-xs text-slate-900">{sampleId}</span>
                             </div>
-                            <div className="text-left font-mono text-[9px] text-gray-400">
-                              REP: {reportDate}
+                            <div className="text-[9px] text-slate-400 font-mono">
+                              REPORTED: {reportDate}
                             </div>
                           </div>
                         </td>
@@ -903,147 +956,261 @@ export function LabPrintTab() {
                 </div>
 
                 {/* 3. شريط عنوان التقرير الطبي */}
-                <div className="bg-gray-800 text-white py-1.5 px-3 rounded-md mb-3 flex items-center justify-between text-xs">
-                  <div className="font-black tracking-wide text-sm flex items-center gap-1.5">
+                <div className="bg-slate-900 text-white py-1 px-3 rounded-md mb-2 flex items-center justify-between text-xs">
+                  <div className="font-black tracking-wide text-xs uppercase flex items-center gap-1.5">
                     <span>🔬</span>
-                    <span>{currentTemplate.titleAr}</span>
+                    <span>{currentTemplate.titleEn}</span>
                   </div>
-                  <div className="font-mono text-[11px] font-bold tracking-wider opacity-90">
-                    {currentTemplate.titleEn}
-                  </div>
+                  {currentTemplate.methodology && (
+                    <div className="font-mono text-[9px] text-slate-300">
+                      Method: {currentTemplate.methodology}
+                    </div>
+                  )}
                 </div>
 
-                {/* 4. جدول النتائج المخبرية الرسمية */}
+                {/* 4. جداول النتائج المخبرية الرسمية */}
                 <div className="flex-1 flex flex-col justify-start">
-                  <div className="border border-gray-400 rounded-lg overflow-hidden mb-3">
-                    <table className="w-full text-right border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-gray-100 border-b border-gray-400 text-gray-800 text-[11px] font-bold">
-                          <th className="p-2 border-l border-gray-300">الفحص المطلوب (Test Name)</th>
-                          <th className="p-2 border-l border-gray-300 text-center">النتيجة (Result)</th>
-                          <th className="p-2 border-l border-gray-300 text-center">الوحدة (Unit)</th>
-                          <th className="p-2 text-center">المعدل الطبيعي (Reference Range)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {selectedTemplateId !== 'custom' ? (
-                          currentTemplate.fields.map((field) => {
-                            const val = fieldValues[field.id] || '---';
-                            return (
-                              <tr key={field.id} className="hover:bg-gray-50/50">
-                                <td className="p-2.5 border-l border-gray-200 font-bold text-gray-900">
-                                  <div className="leading-tight">{field.nameAr}</div>
-                                  <div className="text-[10px] text-gray-500 font-mono font-normal">
+                  {/* أ) إذا كان الفحص هو تحليل البول الكامل (Urinalysis): عرض متراص على عمودين لتتسع صفحة A4 واحدة تماماً */}
+                  {selectedTemplateId === 'urinalysis' ? (
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      {/* العمود الأيسر: الفحص الفيزيائي والكيميائي */}
+                      <div className="space-y-1.5">
+                        {/* الفحص الفيزيائي */}
+                        <div className="border border-slate-400 rounded overflow-hidden">
+                          <div className="bg-slate-800 text-white text-[9px] font-bold py-0.5 px-2 uppercase tracking-wider">
+                            Physical Examination
+                          </div>
+                          <table className="w-full text-left border-collapse text-[10px]">
+                            <thead>
+                              <tr className="bg-slate-100 border-b border-slate-300 text-slate-700 text-[8.5px] font-bold uppercase">
+                                <th className="py-0.5 px-1.5 border-r border-slate-200">Parameter</th>
+                                <th className="py-0.5 px-1.5 border-r border-slate-200 text-center">Result</th>
+                                <th className="py-0.5 px-1.5 text-center">Reference</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                              {urinePhysicalFields.map((field) => (
+                                <tr key={field.id} className="hover:bg-slate-50">
+                                  <td className="py-0.5 px-1.5 border-r border-slate-200 font-semibold text-slate-900">
                                     {field.nameEn}
-                                  </div>
+                                  </td>
+                                  <td className="py-0.5 px-1.5 border-r border-slate-200 text-center font-bold font-mono text-slate-950">
+                                    {fieldValues[field.id] || '---'}
+                                  </td>
+                                  <td className="py-0.5 px-1.5 text-center text-[8.5px] text-slate-600 font-mono">
+                                    {field.normalRange}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* الفحص الكيميائي */}
+                        <div className="border border-slate-400 rounded overflow-hidden">
+                          <div className="bg-slate-800 text-white text-[9px] font-bold py-0.5 px-2 uppercase tracking-wider">
+                            Chemical Examination
+                          </div>
+                          <table className="w-full text-left border-collapse text-[10px]">
+                            <thead>
+                              <tr className="bg-slate-100 border-b border-slate-300 text-slate-700 text-[8.5px] font-bold uppercase">
+                                <th className="py-0.5 px-1.5 border-r border-slate-200">Parameter</th>
+                                <th className="py-0.5 px-1.5 border-r border-slate-200 text-center">Result</th>
+                                <th className="py-0.5 px-1.5 text-center">Reference</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                              {urineChemicalFields.map((field) => (
+                                <tr key={field.id} className="hover:bg-slate-50">
+                                  <td className="py-0.5 px-1.5 border-r border-slate-200 font-semibold text-slate-900">
+                                    {field.nameEn}
+                                  </td>
+                                  <td className="py-0.5 px-1.5 border-r border-slate-200 text-center font-bold font-mono text-slate-950">
+                                    {fieldValues[field.id] || '---'}
+                                  </td>
+                                  <td className="py-0.5 px-1.5 text-center text-[8.5px] text-slate-600 font-mono">
+                                    {field.normalRange}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* العمود الأيمن: الفحص المجهري */}
+                      <div>
+                        <div className="border border-slate-400 rounded overflow-hidden h-full flex flex-col">
+                          <div className="bg-slate-800 text-white text-[9px] font-bold py-0.5 px-2 uppercase tracking-wider">
+                            Microscopic Examination (Deposit / HPF)
+                          </div>
+                          <table className="w-full text-left border-collapse text-[10px] flex-1">
+                            <thead>
+                              <tr className="bg-slate-100 border-b border-slate-300 text-slate-700 text-[8.5px] font-bold uppercase">
+                                <th className="py-0.5 px-1.5 border-r border-slate-200">Parameter</th>
+                                <th className="py-0.5 px-1.5 border-r border-slate-200 text-center">Result</th>
+                                <th className="py-0.5 px-1.5 border-r border-slate-200 text-center">Unit</th>
+                                <th className="py-0.5 px-1.5 text-center">Reference</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                              {urineMicroscopicFields.map((field) => (
+                                <tr key={field.id} className="hover:bg-slate-50">
+                                  <td className="py-0.5 px-1.5 border-r border-slate-200 font-semibold text-slate-900">
+                                    {field.nameEn}
+                                  </td>
+                                  <td className="py-0.5 px-1.5 border-r border-slate-200 text-center font-bold font-mono text-slate-950">
+                                    {fieldValues[field.id] || '---'}
+                                  </td>
+                                  <td className="py-0.5 px-1.5 border-r border-slate-200 text-center text-[8.5px] text-slate-500 font-mono">
+                                    {field.unit || '-'}
+                                  </td>
+                                  <td className="py-0.5 px-1.5 text-center text-[8.5px] text-slate-600 font-mono">
+                                    {field.normalRange}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <div className="bg-slate-50 p-1 border-t border-slate-300 text-[8px] text-slate-500 font-mono">
+                            * HPF: High Power Field (400x). Centrifuged urine deposit examination.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ب) بقية التحاليل (HbA1c, CBC, RFT, LFT, Lipid, Thyroid, Vitamins, Custom): جدول رئيسي متراص وأنيق */
+                    <div className="border border-slate-400 rounded overflow-hidden mb-2">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-100 border-b border-slate-300 text-slate-800 text-[9.5px] font-bold uppercase tracking-wider">
+                            <th className="py-1 px-2 border-r border-slate-200">Investigation / Parameter</th>
+                            <th className="py-1 px-2 border-r border-slate-200 text-center">Result</th>
+                            <th className="py-1 px-2 border-r border-slate-200 text-center">Unit</th>
+                            <th className="py-1 px-2 text-center">Biological Reference Interval</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {selectedTemplateId !== 'custom' ? (
+                            currentTemplate.fields.map((field) => {
+                              const val = fieldValues[field.id] || '---';
+                              return (
+                                <tr key={field.id} className="hover:bg-slate-50/60">
+                                  <td className="py-1 px-2 border-r border-slate-200 font-semibold text-slate-900 text-xs">
+                                    {field.nameEn}
+                                  </td>
+                                  <td className="py-1 px-2 border-r border-slate-200 text-center font-bold text-sm text-slate-950 font-mono">
+                                    {val}
+                                  </td>
+                                  <td className="py-1 px-2 border-r border-slate-200 text-center font-mono text-slate-600 text-[10px]">
+                                    {field.unit || '-'}
+                                  </td>
+                                  <td className="py-1 px-2 text-center text-[10px] font-mono text-slate-700">
+                                    {field.normalRange}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            customRows.map((row) => (
+                              <tr key={row.id}>
+                                <td className="py-1 px-2 border-r border-slate-200 font-semibold text-slate-900 text-xs">
+                                  {row.name || 'Investigation'}
                                 </td>
-                                <td className="p-2.5 border-l border-gray-200 text-center font-black text-base text-gray-900 font-mono">
-                                  {val}
+                                <td className="py-1 px-2 border-r border-slate-200 text-center font-bold text-sm text-slate-950 font-mono">
+                                  {row.result || '---'}
                                 </td>
-                                <td className="p-2.5 border-l border-gray-200 text-center font-mono text-gray-600 text-[11px]">
-                                  {field.unit}
+                                <td className="py-1 px-2 border-r border-slate-200 text-center font-mono text-slate-600 text-[10px]">
+                                  {row.unit || '-'}
                                 </td>
-                                <td className="p-2.5 text-center text-[11px] font-mono text-gray-700">
-                                  {field.normalRange}
+                                <td className="py-1 px-2 text-center text-[10px] font-mono text-slate-700">
+                                  {row.range || '---'}
                                 </td>
                               </tr>
-                            );
-                          })
-                        ) : (
-                          customRows.map((row) => (
-                            <tr key={row.id}>
-                              <td className="p-2.5 border-l border-gray-200 font-bold text-gray-900">
-                                {row.name || 'فحص'}
-                              </td>
-                              <td className="p-2.5 border-l border-gray-200 text-center font-black text-base text-gray-900 font-mono">
-                                {row.result || '---'}
-                              </td>
-                              <td className="p-2.5 border-l border-gray-200 text-center font-mono text-gray-600 text-[11px]">
-                                {row.unit || '---'}
-                              </td>
-                              <td className="p-2.5 text-center text-[11px] font-mono text-gray-700">
-                                {row.range || '---'}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
 
-                  {/* 5. جدول المستويات الإرشادية الخاص بالسكر التراكمي (ADA Guidelines) */}
+                  {/* 5. معايير التشخيص الإكلينيكية الخاصة بالسكر التراكمي (ADA Guidelines بالإنجليزية) */}
                   {selectedTemplateId === 'hba1c' && (
-                    <div className="border border-gray-300 rounded-lg p-2.5 bg-gray-50/60 mb-3 text-[10px]">
-                      <div className="font-bold text-gray-800 mb-1.5 text-[11px] border-b pb-1 flex items-center justify-between">
-                        <span>معايير التشخيص الإكلينيكية للسكر التراكمي (ADA / WHO Clinical Criteria):</span>
-                        <span className="font-mono text-[9px] text-gray-500">Method: {currentTemplate.methodology}</span>
+                    <div className="border border-slate-300 rounded-md p-2 bg-slate-50/70 mb-2 text-[10px]">
+                      <div className="font-bold text-slate-800 mb-1 text-[10px] border-b pb-0.5 flex items-center justify-between uppercase tracking-wider">
+                        <span>ADA / WHO Clinical Diagnostic Criteria for HbA1c</span>
+                        <span className="font-mono text-[8.5px] text-slate-500">Method: {currentTemplate.methodology}</span>
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="bg-white border rounded p-1.5">
-                          <span className="block font-bold text-emerald-700">طبيعي (Normal)</span>
-                          <span className="font-mono font-bold text-xs">4.0 - 5.6 %</span>
-                          <span className="text-[9px] text-gray-400 block">eAG: 70 - 114 mg/dL</span>
+                        <div className="bg-white border rounded p-1">
+                          <span className="block font-bold text-emerald-700 text-[9.5px]">Normal (Non-Diabetic)</span>
+                          <span className="font-mono font-bold text-xs text-slate-900">4.0 - 5.6 %</span>
+                          <span className="text-[8px] text-slate-400 block font-mono">eAG: 70 - 114 mg/dL</span>
                         </div>
-                        <div className="bg-white border rounded p-1.5">
-                          <span className="block font-bold text-amber-600">ما قبل السكري (Prediabetes)</span>
-                          <span className="font-mono font-bold text-xs">5.7 - 6.4 %</span>
-                          <span className="text-[9px] text-gray-400 block">eAG: 117 - 137 mg/dL</span>
+                        <div className="bg-white border rounded p-1">
+                          <span className="block font-bold text-amber-600 text-[9.5px]">Prediabetes (High Risk)</span>
+                          <span className="font-mono font-bold text-xs text-slate-900">5.7 - 6.4 %</span>
+                          <span className="text-[8px] text-slate-400 block font-mono">eAG: 117 - 137 mg/dL</span>
                         </div>
-                        <div className="bg-white border rounded p-1.5">
-                          <span className="block font-bold text-red-600">تشخيص سكري (Diabetic)</span>
-                          <span className="font-mono font-bold text-xs">&ge; 6.5 %</span>
-                          <span className="text-[9px] text-gray-400 block">eAG: &ge; 140 mg/dL</span>
+                        <div className="bg-white border rounded p-1">
+                          <span className="block font-bold text-red-600 text-[9.5px]">Diabetes Mellitus</span>
+                          <span className="font-mono font-bold text-xs text-slate-900">&ge; 6.5 %</span>
+                          <span className="text-[8px] text-slate-400 block font-mono">eAG: &ge; 140 mg/dL</span>
                         </div>
                       </div>
-                      <div className="mt-1.5 pt-1 border-t border-gray-200 text-gray-600 flex justify-between items-center text-[9px]">
-                        <span>* الهدف العلاجي لمرضى السكري (ADA Target): &lt; 7.0%</span>
-                        <span>تحكم ممتاز: 6.0 - 7.0% | تحكم متوسط: 7.1 - 8.0% | غير منضبط: &gt; 8.0%</span>
+                      <div className="mt-1 pt-0.5 border-t border-slate-200 text-slate-600 flex justify-between items-center text-[8px]">
+                        <span>* ADA Glycemic Target for Non-pregnant Adults with Diabetes: &lt; 7.0 %</span>
+                        <span>Good Control: 6.0 - 7.0% | Moderate: 7.1 - 8.0% | Action Suggested: &gt; 8.0%</span>
                       </div>
                     </div>
                   )}
 
-                  {/* 6. الملاحظات الطبية الإكلينيكية */}
-                  <div className="border border-gray-300 rounded-lg p-2.5 mb-3 text-xs bg-white">
-                    <span className="font-bold text-gray-700 block text-[11px] mb-1">
-                      الملاحظات والتوصيات الإكلينيكية (Clinical Notes):
+                  {/* 6. الملاحظات الطبية الإكلينيكية (Clinical Remarks) */}
+                  <div className="border border-slate-300 rounded-md p-1.5 mb-2 text-xs bg-white">
+                    <span className="font-bold text-slate-700 block text-[9.5px] uppercase tracking-wider mb-0.5">
+                      Clinical Notes & Remarks:
                     </span>
-                    <p className="text-gray-800 text-[11px] leading-relaxed">
-                      {clinicalNotes || 'لا توجد ملاحظات إضافية. تم فحص العينة وفق المعايير القياسية للمختبر.'}
+                    <p className="text-slate-800 text-[10px] leading-relaxed">
+                      {clinicalNotes || 'Results verified and validated according to laboratory standard operating procedures.'}
                     </p>
                   </div>
                 </div>
 
-                {/* 7. ذيل التقرير والاعتماد والتوقيع (Footer & Verification) */}
-                <div className="border-t-2 border-gray-800 pt-3 mt-auto">
+                {/* 7. ذيل التقرير والاعتماد والتوقيع بالإنجليزية (Footer & Verification) */}
+                <div className="border-t-2 border-slate-800 pt-2 mt-auto">
                   <div className="flex items-end justify-between text-xs">
                     {/* التوقيع الأول: أخصائي التحاليل */}
-                    <div className="text-center w-40">
-                      <p className="text-[10px] text-gray-500 mb-6">أخصائي التحاليل الطبية / Medical Technologist</p>
-                      <p className="font-bold text-gray-800 border-t border-dashed border-gray-400 pt-1 text-[11px]">
-                        {labTechnician}
+                    <div className="text-center w-44">
+                      <p className="text-[9px] uppercase font-bold text-slate-500 mb-5">
+                        Medical Technologist / Analyst
+                      </p>
+                      <p className="font-bold text-slate-900 border-t border-dashed border-slate-400 pt-0.5 text-[10px]">
+                        {labTechnicianEn}
                       </p>
                     </div>
 
                     {/* باركود توثيقي في المنتصف */}
-                    <div className="text-center font-mono text-[9px] text-gray-500">
-                      <div className="tracking-widest font-bold text-sm text-gray-800 mb-0.5">
+                    <div className="text-center font-mono text-[8px] text-slate-500">
+                      <div className="tracking-widest font-bold text-sm text-slate-900 mb-0.5">
                         ||||| | |||| || ||| |||||||
                       </div>
-                      <p>VERIFIED & AUTHENTICATED</p>
-                      <p className="text-[8px] text-gray-400">{sampleId}</p>
+                      <p className="font-bold text-slate-700 tracking-wider">ELECTRONICALLY VERIFIED</p>
+                      <p className="text-[8px] text-slate-400">{sampleId}</p>
                     </div>
 
                     {/* التوقيع الثاني: استشاري ومدير المعمل */}
-                    <div className="text-center w-40">
-                      <p className="text-[10px] text-gray-500 mb-6">مدير المختبر / Laboratory Director</p>
-                      <p className="font-bold text-gray-800 border-t border-dashed border-gray-400 pt-1 text-[11px]">
-                        ختم واعتماد المختبر
+                    <div className="text-center w-44">
+                      <p className="text-[9px] uppercase font-bold text-slate-500 mb-5">
+                        Laboratory Director / Consultant
+                      </p>
+                      <p className="font-bold text-slate-900 border-t border-dashed border-slate-400 pt-0.5 text-[10px]">
+                        Official Stamp & Signature
                       </p>
                     </div>
                   </div>
 
-                  <div className="mt-2 text-center text-[9px] text-gray-400 border-t pt-1">
-                    هذا التقرير صادر إلكترونياً ومعتمد رسمياً من قسم التحاليل الطبية والتشخيص المخبري.
+                  <div className="mt-1 text-center text-[8px] text-slate-400 border-t border-slate-100 pt-0.5 tracking-wide">
+                    This clinical laboratory report is an authentic electronic document generated by the Central Diagnostic Laboratory.
                   </div>
                 </div>
               </div>

@@ -366,9 +366,27 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
       }
 
       // 5) إضافة: نضيف صف لكل خدمة في patient_visits (visit_group_id موحّد)
+      //
+      // ملحوظة مهمة عن التسجيل المالي (income في transactions):
+      // جدول patient_visits عنده تريجر تلقائي (on_patient_visit_sync_transaction)
+      // بيعمل قيد مالي لوحده بمجرد ما paid_amount > 0، وبيسجّله بتاريخ
+      // visit_date بالظبط (مش بتاريخ الإضافة) — ده بيغطي الزيارات القديمة
+      // صح من غير أي كود إضافي هنا.
+      // لكن لزيارة النهارده الأساسية (مش إضافة خدمة لزيارة موجودة)، بنعمل
+      // كمان صف في call_queue وليه تريجر تاني (trg_sync_call_queue_payment)
+      // بيعمل قيد مالي منفصل — فلو سبنا paid_amount هنا كمان هيتسجل قيدين
+      // لنفس التحصيل. فبنستخدم skip_auto_transaction عشان نمنع تريجر
+      // patient_visits من عمل قيد في الحالة دي بس، ونسيب call_queue هو
+      // المصدر الوحيد للقيد المالي.
+      const willCreateQueueRow = isVisitToday && !patientLocked;
+      // ملحوظة إضافية: لو فيه أكتر من خدمة في نفس الزيارة، بس أول خدمة هي
+      // اللي بتتسجل كـ paid_amount في صف call_queue (والباقي بيروح
+      // queue_services اللي معهاش أي تريجر مالي خالص) — فالاستثناء من
+      // القيد التلقائي (skip_auto_transaction) لازم يكون لأول خدمة بس،
+      // عشان باقي الخدمات تتسجل ماليًا من تريجر patient_visits زي ما هو.
       const visitsToInsert: any[] = [];
-      const transactionsToInsert: any[] = [];
-      for (const line of filledLines) {
+      for (let i = 0; i < filledLines.length; i++) {
+        const line = filledLines[i];
         const resolved = await resolveLine(line);
         const svcName = resolved.customName
           || servicesCatalog.find(s => s.id === resolved.serviceId)?.name
@@ -386,36 +404,15 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
           paid_amount: paid,
           entered_by: user?.id || null,
           visit_group_id: groupId,
+          skip_auto_transaction: willCreateQueueRow && i === 0,
         });
-
-        // لو الزيارة بتاريخ سابق (مش بتدخل call_queue)، لازم نسجل الـ
-        // paid_amount كـ transaction عشان يظهر في التقارير المالية.
-        // زيارات اليوم بتتعامل معاها ترايقر sync_call_queue_payment_to_transactions
-        // على call_queue أوتوماتيك.
-        if (!isVisitToday && paid > 0) {
-          transactionsToInsert.push({
-            type: 'income',
-            category: 'تحصيل زيارة (إدخال يدوي)',
-            amount: paid,
-            description: `زيارة ${patient.name} — ${svcName || 'خدمة'} — بتاريخ ${visitDate}`,
-            user_id: user?.id || null,
-            clinic_id: clinicId,
-            created_at: `${visitDate}T${new Date().toISOString().slice(11, 19)}Z`,
-          });
-        }
       }
       const { error: visitErr } = await supabase.from('patient_visits').insert(visitsToInsert);
       if (visitErr) throw visitErr;
 
-      // سجّل transactions للزيارات القديمة (عشان التقارير المالية)
-      if (transactionsToInsert.length > 0) {
-        const { error: txErr } = await supabase.from('transactions').insert(transactionsToInsert);
-        if (txErr) console.warn('transactions insert warning:', txErr.message);
-      }
-
       // 6) لو الزيارة النهارده: نضيف سطر رئيسي في call_queue
       //    الخدمات الإضافية (أكتر من واحدة) بتدخل في queue_services.
-      if (isVisitToday && !patientLocked) {
+      if (willCreateQueueRow) {
         const firstLine = filledLines[0];
         const firstResolved = await resolveLine(firstLine);
 
