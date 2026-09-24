@@ -13,7 +13,7 @@ import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
 import {
   Building, Calculator, Stethoscope, Activity, QrCode, Shield,
-  BarChart, FileText, Newspaper, List, FlaskConical, Wallet, Megaphone, User, Users,
+  BarChart, FileText, Newspaper, List, FlaskConical, Wallet, Megaphone, User, Users, Percent,
 } from 'lucide-react';
 import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
 import { QueueMediaManager } from './manager/QueueMediaManager';
@@ -26,6 +26,7 @@ import { PatientGuideTab } from './manager/tabs/PatientGuideTab';
 import { QRCodesTab } from './manager/tabs/QRCodesTab';
 import { ServicesTab } from './manager/tabs/ServicesTab';
 import { MedicalNewsTab } from './manager/tabs/MedicalNewsTab';
+import { OffersTab } from './manager/tabs/OffersTab';
 import { FinancialsTab } from './manager/tabs/FinancialsTab';
 import { ReportsTab } from './manager/tabs/ReportsTab';
 import { LabTab } from './shared/LabTab';
@@ -47,6 +48,7 @@ const managerNav: SidebarItem[] = [
   { name: 'المعمل', id: 'lab', icon: FlaskConical },
   { name: 'حسابات المعمل', id: 'lab_accounts', icon: FlaskConical },
   { name: 'الحسابات الإضافية', id: 'additional_accounts', icon: Wallet },
+  { name: 'عروض وخصومات', id: 'offers', icon: Percent },
   { name: 'الإشعارات', id: 'notifications_broadcast', icon: Megaphone },
   { name: 'الملف الشخصي', id: 'profile', icon: User },
   { name: 'الماليات والأرباح', id: 'financials', icon: Calculator },
@@ -79,6 +81,7 @@ export function ManagerDashboard() {
           {activeTab === 'lab' && <LabTab />}
           {activeTab === 'lab_accounts' && <LabAccountsTab />}
           {activeTab === 'additional_accounts' && <AdditionalAccountsTab />}
+          {activeTab === 'offers' && <OffersTab />}
           {activeTab === 'notifications_broadcast' && <BroadcastNotificationsTab />}
           {activeTab === 'profile' && <AccountProfileTab />}
           {activeTab === 'financials' && <FinancialsTab />}

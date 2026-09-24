@@ -22,7 +22,15 @@ import {
 // لأن سياسة RLS تمنع المريض من رؤية مواعيد الآخرين.
 // ============================================================================
 
-export function PatientAppointments() {
+export function PatientAppointments({
+  initialClinicId,
+  initialNote,
+  onPrefillConsumed,
+}: {
+  initialClinicId?: string;
+  initialNote?: string;
+  onPrefillConsumed?: () => void;
+} = {}) {
   const { user } = useAuth();
   const [appointments, setAppointments] = useState<any[]>([]);
   const [clinics, setClinics] = useState<any[]>([]);
@@ -37,6 +45,20 @@ export function PatientAppointments() {
   const [selectedDoctor, setSelectedDoctor] = useState('');
   const [appointmentDate, setAppointmentDate] = useState('');
   const [appointmentTime, setAppointmentTime] = useState('');
+  const [bookingNote, setBookingNote] = useState('');
+
+  // تعبئة تلقائية لو المريض جاي من تبويب "خصومات وعروض" — بتتعمل مرة
+  // واحدة بس عند فتح الشاشة، وبعدين بنبلّغ الأب إنها اتستخدمت عشان ميفضلش
+  // يعبّي نفس البيانات تاني لو المريض رجع للتبويب ده تاني من غير عرض.
+  useEffect(() => {
+    if (initialClinicId || initialNote) {
+      if (initialClinicId) setSelectedClinic(initialClinicId);
+      if (initialNote) setBookingNote(initialNote);
+      setIsBooking(true);
+      onPrefillConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -95,6 +117,7 @@ export function PatientAppointments() {
         doctor_id: selectedDoctor || null,
         appointment_date: dateTime,
         status: 'pending',
+        notes: bookingNote.trim() || null,
       },
     ]);
 
@@ -104,6 +127,7 @@ export function PatientAppointments() {
       setSelectedDoctor('');
       setAppointmentDate('');
       setAppointmentTime('');
+      setBookingNote('');
       setTimeout(fetchAppointments, 0);
     } else {
       // أخطاء ودّية: تعارض موعد / خارج أيام عمل الطبيب / غيرها
@@ -122,6 +146,7 @@ export function PatientAppointments() {
           onClick={() => {
             setIsBooking(!isBooking);
             setBookingError(null);
+            if (isBooking) setBookingNote('');
           }}
           className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-emerald-700 transition-colors"
         >
@@ -209,6 +234,23 @@ export function PatientAppointments() {
                       required
                     />
                   </div>
+                </div>
+
+                {bookingNote && (
+                  <div className="bg-rose-50 border border-rose-200 rounded-lg px-4 py-2.5 text-sm text-rose-700 font-bold">
+                    🏷️ الحجز ده مرتبط بعرض: {bookingNote}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">ملاحظات (اختياري)</label>
+                  <textarea
+                    value={bookingNote}
+                    onChange={(e) => setBookingNote(e.target.value)}
+                    rows={2}
+                    className="w-full border rounded-lg p-3 resize-none"
+                    placeholder="أي ملاحظات إضافية تخص الحجز..."
+                  />
                 </div>
 
                 <InlineError message={bookingError} />

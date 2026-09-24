@@ -1,10 +1,11 @@
 'use client';
 import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
-import { User, Calendar, FileText, MessageSquare, AlertCircle, List, Calculator, Newspaper, FlaskConical } from 'lucide-react';
+import { User, Calendar, FileText, MessageSquare, AlertCircle, List, Calculator, Newspaper, FlaskConical, Tag } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { MedicalCalculators } from './patient/MedicalCalculators';
 import { PatientMedicalNews } from './patient/PatientMedicalNews';
+import { PatientOffers, type PatientOffer } from './patient/PatientOffers';
 import { PatientAppointments } from './patient/PatientAppointments';
 import { PatientMedicalRecords } from './patient/PatientMedicalRecords';
 import { PatientConsultations } from './patient/PatientConsultations';
@@ -16,6 +17,7 @@ import { PatientLabResults } from './patient/PatientLabResults';
 
 const patientNav: SidebarItem[] = [
   { name: 'حجز المواعيد والسجلات', id: 'appointments', icon: Calendar },
+  { name: 'خصومات وعروض', id: 'offers', icon: Tag },
   { name: 'البيانات الطبية', id: 'medical_data', icon: FileText },
   { name: 'استشارات', id: 'consultations', icon: MessageSquare },
   { name: 'الروشتات', id: 'prescriptions', icon: FileText },
@@ -29,10 +31,29 @@ const patientNav: SidebarItem[] = [
 
 export function PatientDashboard({ user }: { user?: any }) {
   const [activeTab, setActiveTab] = useState('appointments');
+  // بيانات العرض اللي المريض ضغط عليه "احجز الآن" بتاعه — بتتمرر مرة واحدة
+  // لتبويب المواعيد عشان تعبّي العيادة والملاحظات تلقائيًا، وبعدين بتتمسح.
+  const [offerPrefill, setOfferPrefill] = useState<{ clinicId?: string; note?: string } | null>(null);
+
+  const handleBookOffer = (offer: PatientOffer) => {
+    const discountLabel = offer.discount_percent != null ? ` (خصم ${offer.discount_percent}%)` : '';
+    setOfferPrefill({
+      clinicId: offer.clinic_id || undefined,
+      note: `مهتم بالعرض: ${offer.title}${discountLabel}`,
+    });
+    setActiveTab('appointments');
+  };
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'appointments': return <PatientAppointments />;
+      case 'appointments': return (
+        <PatientAppointments
+          initialClinicId={offerPrefill?.clinicId}
+          initialNote={offerPrefill?.note}
+          onPrefillConsumed={() => setOfferPrefill(null)}
+        />
+      );
+      case 'offers': return <PatientOffers onBookOffer={handleBookOffer} />;
       case 'medical_data': return <PatientMedicalRecords />;
       case 'consultations': return <PatientConsultations />;
       case 'prescriptions': return <PatientPrescriptions />;
