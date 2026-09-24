@@ -45,7 +45,9 @@ export function AccountantExpenses() {
     setLoading(true);
     const { data, error } = await supabase
       .from('transactions')
-      .select('*, profiles(first_name, last_name)')
+      // transactions فيها علاقتين بـ profiles (user_id و beneficiary_id) —
+      // لازم نحدد المقصود صراحةً وإلا Postgrest بيرفض الطلب بخطأ الغموض.
+      .select('*, profiles!transactions_user_id_fkey(first_name, last_name)')
       .order('created_at', { ascending: false })
       .limit(FETCH_CAP);
 

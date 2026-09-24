@@ -37,7 +37,9 @@ export function ProfitReportPanel() {
     setError(null);
     const { data, error } = await supabase
       .from('transactions')
-      .select('*, clinics(name), profiles(first_name, last_name)')
+      // transactions فيها علاقتين بـ profiles (user_id و beneficiary_id) —
+      // لازم نحدد المقصود صراحةً وإلا Postgrest بيرفض الطلب بخطأ الغموض.
+      .select('*, clinics(name), profiles!transactions_user_id_fkey(first_name, last_name)')
       .gte('created_at', `${dateFrom}T00:00:00`)
       .lte('created_at', `${dateTo}T23:59:59`)
       .limit(FETCH_CAP);

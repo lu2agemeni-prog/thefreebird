@@ -42,6 +42,17 @@ import { DoctorReportsPanel } from './DoctorReportsPanel';
 
 const PAGE_SIZE = 10;
 
+// نفس تصنيفات "الحسابات الإضافية" (AdditionalAccountsTab) — عشان فلتر
+// التصنيف في تقرير "الحسابات والماليات" يطابق نفس الأقسام اللي المدير
+// بيسجل بيها القيود.
+const EXPENSE_GROUP_LABELS: Record<string, string> = {
+  rent_utilities: 'المصروفات',
+  consumables: 'المستهلكات',
+  wages: 'الأجور',
+  equipment_maintenance: 'الأجهزة والصيانة والانتقالات',
+  misc: 'نثريات أخرى',
+};
+
 // ---------- Helpers ----------
 
 function toDateInputValue(d: Date) {
@@ -196,9 +207,11 @@ export function ReportsTab() {
   const [clinicFilter, setClinicFilter] = useState('');
   const [doctorFilter, setDoctorFilter] = useState('');
   const [txTypeFilter, setTxTypeFilter] = useState('');
+  const [expenseGroupFilter, setExpenseGroupFilter] = useState('');
   const [apptStatusFilter, setApptStatusFilter] = useState('');
   const [complaintTypeFilter, setComplaintTypeFilter] = useState('');
   const [complaintStatusFilter, setComplaintStatusFilter] = useState('');
+  const [overviewClinicFilter, setOverviewClinicFilter] = useState('');
 
   // ─── البيانات ───
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -259,17 +272,21 @@ export function ReportsTab() {
   const fetchTransactions = useCallback(async () => {
     setLoading(true); setError(null);
     let q = supabase.from('transactions')
-      .select('*, profiles(first_name, last_name), clinics(name)')
+      // ملحوظة: transactions فيها علاقتين بجدول profiles (user_id و
+      // beneficiary_id)، فلازم نحدد المقصود بالاسم صراحةً (!fkey) وإلا
+      // Postgrest بيرفض الطلب بخطأ "more than one relationship was found".
+      .select('*, profiles!transactions_user_id_fkey(first_name, last_name), beneficiary:beneficiary_id(first_name, last_name), clinics(name)')
       .gte('created_at', fromIso)
       .lte('created_at', toIso)
       .order('created_at', { ascending: false });
     if (txTypeFilter) q = q.eq('type', txTypeFilter);
     if (clinicFilter) q = q.eq('clinic_id', clinicFilter);
+    if (expenseGroupFilter) q = q.eq('expense_group', expenseGroupFilter);
     const { data, error } = await q.limit(2000);
     if (error) setError(getFriendlyErrorMessage(error, 'تعذر تحميل المعاملات المالية.'));
     else setTransactions(data || []);
     setLoading(false);
-  }, [fromIso, toIso, txTypeFilter, clinicFilter]);
+  }, [fromIso, toIso, txTypeFilter, clinicFilter, expenseGroupFilter]);
 
   const fetchComplaints = useCallback(async () => {
     setLoading(true); setError(null);
@@ -307,18 +324,28 @@ export function ReportsTab() {
     if (reportTab === 'complaints') { const t = setTimeout(fetchComplaints, 0); return () => clearTimeout(t); }
     if (reportTab === 'consultations') { const t = setTimeout(fetchConsultations, 0); return () => clearTimeout(t); }
     if (reportTab === 'overview') {
-      // النظرة العامة بتجلب الكل معًا
+      // النظرة العامة بتجلب الكل معًا — لازم نجيب اسم العيادة واسم الطبيب
+      // هنا كمان (كانا ناقصين قبل كده فكانت كل الأسماء بتطلع "بدون اسم")
       setLoading(true); setError(null);
+      let apptQuery = supabase.from('appointments')
+        .select('id, status, clinic_id, doctor_id, appointment_date, doctor:doctor_id(profiles!doctors_profile_id_fkey(first_name, last_name))')
+        .gte('appointment_date', fromIso).lte('appointment_date', toIso).limit(5000);
+      let txQuery = supabase.from('transactions')
+        .select('id, type, amount, clinic_id, clinics(name)')
+        .gte('created_at', fromIso).lte('created_at', toIso).limit(5000);
+      if (overviewClinicFilter) {
+        apptQuery = apptQuery.eq('clinic_id', overviewClinicFilter);
+        txQuery = txQuery.eq('clinic_id', overviewClinicFilter);
+      }
       Promise.all([
-        supabase.from('appointments')
-          .select('id, status, clinic_id, doctor_id, appointment_date')
-          .gte('appointment_date', fromIso).lte('appointment_date', toIso).limit(5000),
-        supabase.from('transactions')
-          .select('id, type, amount, clinic_id')
-          .gte('created_at', fromIso).lte('created_at', toIso).limit(5000),
+        apptQuery,
+        txQuery,
         supabase.from('complaints').select('id, status').gte('created_at', fromIso).lte('created_at', toIso).limit(2000),
         supabase.from('consultations').select('id, status').gte('created_at', fromIso).lte('created_at', toIso).limit(2000),
       ]).then(([a, t, c, con]) => {
+        if (a.error || t.error) {
+          setError(getFriendlyErrorMessage(a.error || t.error, 'تعذر تحميل النظرة العامة.'));
+        }
         setAppointments(a.data || []);
         setTransactions(t.data || []);
         setComplaints(c.data || []);
@@ -326,9 +353,9 @@ export function ReportsTab() {
         setLoading(false);
       });
     }
-  }, [reportTab, fetchAppointments, fetchTransactions, fetchComplaints, fetchConsultations, fromIso, toIso]);
+  }, [reportTab, fetchAppointments, fetchTransactions, fetchComplaints, fetchConsultations, fromIso, toIso, overviewClinicFilter]);
 
-  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [search, reportTab, clinicFilter, doctorFilter, txTypeFilter, apptStatusFilter, complaintTypeFilter, complaintStatusFilter, dateFrom, dateTo]);
+  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [search, reportTab, clinicFilter, doctorFilter, txTypeFilter, expenseGroupFilter, apptStatusFilter, complaintTypeFilter, complaintStatusFilter, dateFrom, dateTo]);
 
   // ─── فلاتر محلية (بعد الفلترة في السيرفر) — البحث النصي فقط ───
   const filteredAppointments = useMemo(() => {
@@ -347,11 +374,13 @@ export function ReportsTab() {
     if (!q) return transactions;
     return transactions.filter(t => {
       const byUser = t.profiles ? `${t.profiles.first_name} ${t.profiles.last_name}`.toLowerCase() : '';
+      const byBeneficiary = t.beneficiary ? `${t.beneficiary.first_name} ${t.beneficiary.last_name}`.toLowerCase() : '';
       const clinic = (t.clinics?.name || '').toLowerCase();
       return (t.description || '').toLowerCase().includes(q)
         || (t.category || '').toLowerCase().includes(q)
         || (t.type || '').toLowerCase().includes(q)
         || byUser.includes(q)
+        || byBeneficiary.includes(q)
         || clinic.includes(q);
     });
   }, [transactions, search]);
@@ -515,6 +544,23 @@ export function ReportsTab() {
       {/* ──────────────────────────────────────────────────────────────────── */}
       {reportTab === 'overview' && (
         <>
+          <Card className="print:hidden">
+            <CardContent className="p-4 flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
+                <Building className="w-4 h-4" /> فلترة حسب العيادة
+              </div>
+              <select value={overviewClinicFilter} onChange={(e) => setOverviewClinicFilter(e.target.value)} className="border rounded-lg p-2 text-sm bg-white min-w-[180px]">
+                <option value="">كل العيادات</option>
+                {clinics.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {overviewClinicFilter && (
+                <button onClick={() => setOverviewClinicFilter('')} className="text-xs text-emerald-700 font-bold hover:underline">
+                  مسح الفلتر
+                </button>
+              )}
+            </CardContent>
+          </Card>
+
           {loading ? (
             <p className="text-gray-500 py-6 text-center">جاري تحميل الملخص...</p>
           ) : (
@@ -708,6 +754,13 @@ export function ReportsTab() {
                 </select>
               </div>
               <div className="flex items-center gap-2 text-sm">
+                <ClipboardList className="w-4 h-4 text-gray-500" />
+                <select value={expenseGroupFilter} onChange={(e) => setExpenseGroupFilter(e.target.value)} className="border rounded-lg p-2 text-sm bg-white min-w-[160px]">
+                  <option value="">كل التصنيفات</option>
+                  {Object.entries(EXPENSE_GROUP_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
                 <Building className="w-4 h-4 text-gray-500" />
                 <select value={clinicFilter} onChange={(e) => setClinicFilter(e.target.value)} className="border rounded-lg p-2 text-sm bg-white min-w-[160px]">
                   <option value="">كل العيادات (بما فيها غير المصنفة)</option>
@@ -718,8 +771,8 @@ export function ReportsTab() {
                 <SearchInput value={search} onValueChange={setSearch} placeholder="بحث نصي..." />
               </div>
             </div>
-            {(txTypeFilter || clinicFilter) && (
-              <button onClick={() => { setTxTypeFilter(''); setClinicFilter(''); }} className="text-xs text-emerald-700 font-bold hover:underline w-fit">
+            {(txTypeFilter || clinicFilter || expenseGroupFilter) && (
+              <button onClick={() => { setTxTypeFilter(''); setClinicFilter(''); setExpenseGroupFilter(''); }} className="text-xs text-emerald-700 font-bold hover:underline w-fit">
                 مسح فلاتر المعاملات
               </button>
             )}
@@ -779,7 +832,11 @@ export function ReportsTab() {
                           </td>
                           <td className="p-4 text-sm">{t.category}</td>
                           <td className="p-4 text-sm">{t.clinics?.name || <span className="text-gray-400">—</span>}</td>
-                          <td className="p-4 text-sm">{t.profiles ? `${t.profiles.first_name} ${t.profiles.last_name}` : 'غير محدد'}</td>
+                          <td className="p-4 text-sm">
+                            {t.beneficiary ? (
+                              <span className="text-amber-700 font-bold">{t.beneficiary.first_name} {t.beneficiary.last_name} <span className="text-xs font-normal text-gray-400">({t.category})</span></span>
+                            ) : t.profiles ? `${t.profiles.first_name} ${t.profiles.last_name}` : 'غير محدد'}
+                          </td>
                           <td className="p-4 font-bold" dir="ltr">{t.amount} ج.م</td>
                           <td className="p-4 text-sm text-gray-600">{t.description}</td>
                         </tr>

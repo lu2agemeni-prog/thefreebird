@@ -16,6 +16,15 @@ import { ProfitReportPanel } from './ProfitReportPanel';
 
 const PAGE_SIZE = 10;
 
+// نفس تصنيفات "الحسابات الإضافية" (AdditionalAccountsTab)
+const EXPENSE_GROUP_LABELS: Record<string, string> = {
+  rent_utilities: 'المصروفات',
+  consumables: 'المستهلكات',
+  wages: 'الأجور',
+  equipment_maintenance: 'الأجهزة والصيانة والانتقالات',
+  misc: 'نثريات أخرى',
+};
+
 export function FinancialsTab() {
   const [view, setView] = useState<'list' | 'profit_report'>('list');
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -24,6 +33,9 @@ export function FinancialsTab() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [expenseGroupFilter, setExpenseGroupFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(0);
 
   const fetchTransactions = useCallback(async () => {
@@ -32,6 +44,9 @@ export function FinancialsTab() {
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
     if (search.trim()) params.set('q', search.trim());
     if (typeFilter) params.set('type', typeFilter);
+    if (expenseGroupFilter) params.set('expenseGroup', expenseGroupFilter);
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo) params.set('dateTo', dateTo);
     const { data, error } = await authFetchJson(`/api/manager/transactions?${params.toString()}`);
     if (error) setError(error);
     else {
@@ -39,10 +54,13 @@ export function FinancialsTab() {
       setTotal(data.total || 0);
     }
     setLoading(false);
-  }, [page, search, typeFilter]);
+  }, [page, search, typeFilter, expenseGroupFilter, dateFrom, dateTo]);
 
   useEffect(() => { const t = setTimeout(fetchTransactions, 0); return () => clearTimeout(t); }, [fetchTransactions]);
-  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [search, typeFilter]);
+  useEffect(() => { const t = setTimeout(() => setPage(0), 0); return () => clearTimeout(t); }, [search, typeFilter, expenseGroupFilter, dateFrom, dateTo]);
+
+  const hasActiveFilters = !!(typeFilter || expenseGroupFilter || dateFrom || dateTo);
+  const clearFilters = () => { setTypeFilter(''); setExpenseGroupFilter(''); setDateFrom(''); setDateTo(''); };
 
   return (
     <div className="space-y-6">
@@ -56,8 +74,8 @@ export function FinancialsTab() {
       <CardHeader>
         <CardTitle>الماليات والأرباح</CardTitle>
         <CardDescription>سجل الإيرادات والمصروفات الخاصة بالمركز</CardDescription>
-        <div className="mt-3 flex flex-col md:flex-row gap-3 max-w-2xl">
-          <div className="flex-1">
+        <div className="mt-3 flex flex-col md:flex-row gap-3 flex-wrap">
+          <div className="flex-1 min-w-[200px] max-w-md">
             <SearchInput value={search} onValueChange={setSearch} placeholder="ابحث بالوصف أو التصنيف..." />
           </div>
           <select
@@ -70,6 +88,25 @@ export function FinancialsTab() {
             <option value="expense">مصروفات فقط</option>
             <option value="salary">رواتب ومستحقات أطباء</option>
           </select>
+          <select
+            value={expenseGroupFilter}
+            onChange={(e) => setExpenseGroupFilter(e.target.value)}
+            className="border rounded-xl p-2.5 text-sm bg-white"
+          >
+            <option value="">كل التصنيفات</option>
+            {Object.entries(EXPENSE_GROUP_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">من</span>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border rounded-xl p-2.5 text-sm bg-white" />
+            <span className="text-sm text-gray-500">إلى</span>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border rounded-xl p-2.5 text-sm bg-white" />
+          </div>
+          {hasActiveFilters && (
+            <button onClick={clearFilters} className="text-xs text-emerald-700 font-bold hover:underline">
+              مسح الفلاتر
+            </button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -99,7 +136,11 @@ export function FinancialsTab() {
                     <td className="p-4">{t.category}</td>
                     <td className="p-4 font-bold" dir="ltr">{t.amount} EGP</td>
                     <td className="p-4 text-gray-600">{t.description}</td>
-                    <td className="p-4 text-sm">{t.profiles ? `${t.profiles.first_name} ${t.profiles.last_name}` : 'غير محدد'}</td>
+                    <td className="p-4 text-sm">
+                      {t.beneficiary ? (
+                        <span className="text-amber-700 font-bold">{t.beneficiary.first_name} {t.beneficiary.last_name}</span>
+                      ) : t.profiles ? `${t.profiles.first_name} ${t.profiles.last_name}` : 'غير محدد'}
+                    </td>
                   </tr>
                 ))}
                 {transactions.length === 0 && (
