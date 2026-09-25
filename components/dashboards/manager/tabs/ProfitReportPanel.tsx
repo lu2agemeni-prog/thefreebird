@@ -13,24 +13,50 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { supabase } from '@/lib/supabase';
 import { getFriendlyErrorMessage } from '@/lib/errors';
+import { getFinancialMonthBounds, getPreviousFinancialMonthBounds, toDateInputValue } from '@/lib/financialMonth';
 
 const FETCH_CAP = 5000;
 const UNASSIGNED_KEY = '__unassigned__';
-
-function toDateInputValue(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
 
 export function ProfitReportPanel() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 29);
-    return toDateInputValue(d);
-  });
-  const [dateTo, setDateTo] = useState(() => toDateInputValue(new Date()));
+  // الافتراضي: الشهر المالي الحالي (من 21 في الشهر إلى 20 في الشهر التالي)
+  const [dateFrom, setDateFrom] = useState(() => getFinancialMonthBounds().startStr);
+  const [dateTo, setDateTo] = useState(() => getFinancialMonthBounds().endStr);
+
+  const setQuickPreset = (preset: 'currentFin' | 'prevFin' | 'today' | 'week' | 'last30' | 'all') => {
+    const now = new Date();
+    if (preset === 'currentFin') {
+      const fin = getFinancialMonthBounds(now);
+      setDateFrom(fin.startStr);
+      setDateTo(fin.endStr);
+    } else if (preset === 'prevFin') {
+      const prev = getPreviousFinancialMonthBounds(now);
+      setDateFrom(prev.startStr);
+      setDateTo(prev.endStr);
+    } else if (preset === 'today') {
+      const s = toDateInputValue(now);
+      setDateFrom(s);
+      setDateTo(s);
+    } else if (preset === 'week') {
+      const d = new Date(now);
+      const day = d.getDay();
+      const diffToSaturday = (day + 1) % 7;
+      d.setDate(d.getDate() - diffToSaturday);
+      setDateFrom(toDateInputValue(d));
+      setDateTo(toDateInputValue(now));
+    } else if (preset === 'last30') {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 29);
+      setDateFrom(toDateInputValue(d));
+      setDateTo(toDateInputValue(now));
+    } else if (preset === 'all') {
+      setDateFrom('2024-01-01');
+      setDateTo(toDateInputValue(now));
+    }
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -87,16 +113,60 @@ export function ProfitReportPanel() {
   return (
     <div className="space-y-6">
       <Card className="print:hidden">
-        <CardContent className="p-4 flex flex-col md:flex-row items-stretch md:items-center gap-3">
-          <div className="flex items-center gap-2 text-gray-500 text-sm font-bold">
-            <Calendar className="w-4 h-4" /> من
+        <CardContent className="p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-gray-100">
+            <span className="text-xs font-bold text-gray-500 ml-2">فترات سريعة:</span>
+            <button
+              onClick={() => setQuickPreset('today')}
+              className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 hover:bg-emerald-50 hover:text-emerald-700 text-gray-600"
+            >
+              اليوم
+            </button>
+            <button
+              onClick={() => setQuickPreset('week')}
+              className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 hover:bg-emerald-50 hover:text-emerald-700 text-gray-600"
+            >
+              هذا الأسبوع
+            </button>
+            <button
+              onClick={() => setQuickPreset('currentFin')}
+              className="px-2.5 py-1 text-xs font-bold rounded-md bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+              title="يبدأ من 21 في الشهر إلى 20 في الشهر التالي"
+            >
+              الشهر المالي الحالي (21 - 20)
+            </button>
+            <button
+              onClick={() => setQuickPreset('prevFin')}
+              className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 hover:bg-emerald-50 hover:text-emerald-700 text-gray-600"
+              title="الشهر المالي السابق من 21 إلى 20"
+            >
+              الشهر المالي السابق
+            </button>
+            <button
+              onClick={() => setQuickPreset('last30')}
+              className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 hover:bg-emerald-50 hover:text-emerald-700 text-gray-600"
+            >
+              آخر 30 يوم
+            </button>
+            <button
+              onClick={() => setQuickPreset('all')}
+              className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 hover:bg-emerald-50 hover:text-emerald-700 text-gray-600"
+            >
+              كل الأوقات
+            </button>
           </div>
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border rounded-lg p-2 text-sm" />
-          <span className="text-gray-400 text-sm">إلى</span>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border rounded-lg p-2 text-sm" />
-          <button onClick={() => window.print()} className="md:mr-auto flex items-center gap-2 bg-white border text-gray-700 font-bold px-4 py-2.5 rounded-xl hover:bg-gray-50 text-sm">
-            <Printer className="w-4 h-4" /> طباعة
-          </button>
+
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+            <div className="flex items-center gap-2 text-gray-500 text-sm font-bold">
+              <Calendar className="w-4 h-4 text-emerald-600" /> من
+            </div>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border rounded-lg p-2 text-sm" />
+            <span className="text-gray-400 text-sm">إلى</span>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border rounded-lg p-2 text-sm" />
+            <button onClick={() => window.print()} className="md:mr-auto flex items-center gap-2 bg-white border text-gray-700 font-bold px-4 py-2 rounded-xl hover:bg-gray-50 text-sm">
+              <Printer className="w-4 h-4" /> طباعة
+            </button>
+          </div>
         </CardContent>
       </Card>
 

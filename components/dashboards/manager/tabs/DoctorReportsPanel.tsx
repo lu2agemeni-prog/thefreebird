@@ -14,6 +14,7 @@ import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { getFriendlyErrorMessage } from '@/lib/errors';
+import { getFinancialMonthBounds } from '@/lib/financialMonth';
 
 type PeriodType = 'daily' | 'weekly' | 'monthly';
 
@@ -36,12 +37,16 @@ function getPeriodBounds(dateStr: string, type: PeriodType) {
     end.setDate(start.getDate() + 6);
     return { start, end };
   }
-  const start = new Date(date.getFullYear(), date.getMonth(), 1);
-  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-  return { start, end };
+  // الشهر المالي المعتمد: يبدأ من أول يوم 21 في الشهر وحتى نهاية 20 في الشهر التالي
+  const fin = getFinancialMonthBounds(date);
+  return { start: fin.start, end: fin.end };
 }
 
-const PERIOD_LABELS: Record<PeriodType, string> = { daily: 'يومي', weekly: 'أسبوعي', monthly: 'شهري' };
+const PERIOD_LABELS: Record<PeriodType, string> = {
+  daily: 'يومي',
+  weekly: 'أسبوعي',
+  monthly: 'الشهر المالي (من 21 إلى 20)',
+};
 
 function SettlementModal({
   totalAmount, checkupsCount, defaultPercent, totalAdvances, onClose, onConfirm, saving, error,

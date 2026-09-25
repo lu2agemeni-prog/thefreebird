@@ -28,6 +28,7 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { Pagination } from '@/components/ui/pagination';
+import { getFinancialMonthBounds, getPreviousFinancialMonthBounds } from '@/lib/financialMonth';
 import { SearchInput } from '@/components/ui/search-input';
 import { supabase } from '@/lib/supabase';
 import { getFriendlyErrorMessage } from '@/lib/errors';
@@ -78,12 +79,14 @@ function presetToRange(preset: DateRangePreset): { from: string; to: string } {
     return { from: fmt(s), to: fmt(today) };
   }
   if (preset === 'thisMonth') {
-    return { from: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), to: fmt(today) };
+    // الشهر المالي الحالي: يبدأ من 21 في الشهر وينتهي في 20 من الشهر التالي
+    const fin = getFinancialMonthBounds(today);
+    return { from: fin.startStr, to: fin.endStr };
   }
   if (preset === 'lastMonth') {
-    const s = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const e = new Date(today.getFullYear(), today.getMonth(), 0);
-    return { from: fmt(s), to: fmt(e) };
+    // الشهر المالي السابق: يبدأ من 21 وينتهي في 20
+    const fin = getPreviousFinancialMonthBounds(today);
+    return { from: fin.startStr, to: fin.endStr };
   }
   return { from: '2000-01-01', to: fmt(today) };
 }
@@ -129,9 +132,9 @@ function DateRangeFilter({
     { id: 'today', label: 'اليوم' },
     { id: 'yesterday', label: 'أمس' },
     { id: 'last7', label: 'آخر 7 أيام' },
+    { id: 'thisMonth', label: 'الشهر المالي الحالي (21 - 20)' },
+    { id: 'lastMonth', label: 'الشهر المالي السابق (21 - 20)' },
     { id: 'last30', label: 'آخر 30 يوم' },
-    { id: 'thisMonth', label: 'هذا الشهر' },
-    { id: 'lastMonth', label: 'الشهر الماضي' },
     { id: 'all', label: 'الكل' },
     { id: 'custom', label: 'مخصص' },
   ];
@@ -188,10 +191,10 @@ function DateRangeFilter({
 // ============================================================================
 
 export function ReportsTab() {
-  // ─── فلاتر مشتركة (الفترة + قوائم العيادات/الأطباء) ───
-  const [preset, setPreset] = useState<DateRangePreset>('last30');
-  const [dateFrom, setDateFrom] = useState(() => presetToRange('last30').from);
-  const [dateTo, setDateTo] = useState(() => presetToRange('last30').to);
+  // ─── فلاتر مشتركة (الفترة: افتراضياً الشهر المالي الحالي 21 إلى 20) ───
+  const [preset, setPreset] = useState<DateRangePreset>('thisMonth');
+  const [dateFrom, setDateFrom] = useState(() => presetToRange('thisMonth').from);
+  const [dateTo, setDateTo] = useState(() => presetToRange('thisMonth').to);
 
   const [clinics, setClinics] = useState<{ id: string; name: string }[]>([]);
   const [doctors, setDoctors] = useState<{ id: string; name: string }[]>([]);

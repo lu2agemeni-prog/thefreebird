@@ -24,6 +24,7 @@ import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { Pagination } from '@/components/ui/pagination';
 import { SearchInput } from '@/components/ui/search-input';
 import { getFriendlyErrorMessage } from '@/lib/errors';
+import { getFinancialMonthBounds, getPreviousFinancialMonthBounds } from '@/lib/financialMonth';
 import {
   APPOINTMENT_STATUS_COLORS, APPOINTMENT_STATUS_LABELS,
   CALL_QUEUE_STATUS_COLORS, CALL_QUEUE_STATUS_LABELS,
@@ -86,13 +87,9 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [reportSearch, setReportSearch] = useState('');
   const [reportPage, setReportPage] = useState(0);
-  // فلتر تاريخ (افتراضي: آخر 30 يوم)
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 29);
-    return toDateInputValue(d);
-  });
-  const [dateTo, setDateTo] = useState(() => toDateInputValue(new Date()));
+  // فلتر تاريخ (افتراضي: الشهر المالي الحالي من 21 في الشهر إلى 20 في الشهر التالي)
+  const [dateFrom, setDateFrom] = useState(() => getFinancialMonthBounds().startStr);
+  const [dateTo, setDateTo] = useState(() => getFinancialMonthBounds().endStr);
   useEffect(() => { const t = setTimeout(() => setReportPage(0), 0); return () => clearTimeout(t); }, [reportSearch]);
 
   // ---- تحميل أطباء العيادة (الجدول الجديد + fallback للعمود القديم) ----
@@ -424,7 +421,27 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
               onChange={(e) => setDateTo(e.target.value)}
               className="border rounded-lg p-2 text-sm bg-white"
             />
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-wrap">
+              <button
+                onClick={() => {
+                  const fin = getFinancialMonthBounds();
+                  setDateFrom(fin.startStr); setDateTo(fin.endStr);
+                }}
+                className="text-xs px-2.5 py-1.5 rounded-md bg-emerald-50 hover:bg-emerald-100 font-bold text-emerald-800"
+                title="يبدأ من 21 في الشهر إلى 20 في الشهر التالي"
+              >
+                الشهر المالي الحالي (21 - 20)
+              </button>
+              <button
+                onClick={() => {
+                  const prev = getPreviousFinancialMonthBounds();
+                  setDateFrom(prev.startStr); setDateTo(prev.endStr);
+                }}
+                className="text-xs px-2.5 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 font-bold text-gray-600"
+                title="الشهر المالي السابق من 21 إلى 20"
+              >
+                الشهر المالي السابق
+              </button>
               <button
                 onClick={() => {
                   const today = toDateInputValue(new Date());

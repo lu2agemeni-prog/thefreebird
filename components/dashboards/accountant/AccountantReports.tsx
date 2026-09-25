@@ -13,10 +13,7 @@ import { BarChart as BarChartIcon, Search, Loader2, Printer, Calendar } from 'lu
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
-
-function toDateInputValue(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
+import { getFinancialMonthBounds, getPreviousFinancialMonthBounds, toDateInputValue } from '@/lib/financialMonth';
 
 export function AccountantReports() {
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -24,13 +21,34 @@ export function AccountantReports() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [search, setSearch] = useState('');
 
-  // فلتر نطاق زمني — افتراضيًا آخر 30 يوم
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 29);
-    return toDateInputValue(d);
-  });
-  const [dateTo, setDateTo] = useState(() => toDateInputValue(new Date()));
+  // فلتر نطاق زمني — افتراضيًا الشهر المالي الحالي (من 21 في الشهر إلى 20 في الشهر التالي)
+  const [dateFrom, setDateFrom] = useState(() => getFinancialMonthBounds().startStr);
+  const [dateTo, setDateTo] = useState(() => getFinancialMonthBounds().endStr);
+
+  const setQuickPreset = (preset: 'currentFin' | 'prevFin' | 'today' | 'last30' | 'all') => {
+    const now = new Date();
+    if (preset === 'currentFin') {
+      const fin = getFinancialMonthBounds(now);
+      setDateFrom(fin.startStr);
+      setDateTo(fin.endStr);
+    } else if (preset === 'prevFin') {
+      const prev = getPreviousFinancialMonthBounds(now);
+      setDateFrom(prev.startStr);
+      setDateTo(prev.endStr);
+    } else if (preset === 'today') {
+      const s = toDateInputValue(now);
+      setDateFrom(s);
+      setDateTo(s);
+    } else if (preset === 'last30') {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 29);
+      setDateFrom(toDateInputValue(d));
+      setDateTo(toDateInputValue(now));
+    } else if (preset === 'all') {
+      setDateFrom('');
+      setDateTo('');
+    }
+  };
 
   async function fetchTransactions() {
     setLoading(true);
@@ -146,23 +164,66 @@ export function AccountantReports() {
         </select>
       </div>
 
-      <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 mb-6 bg-white border rounded-xl p-3 shadow-sm print:hidden">
-        <div className="flex items-center gap-2 text-gray-500 text-sm font-bold">
-          <Calendar className="w-4 h-4" /> النطاق الزمني
+      <div className="flex flex-col gap-3 mb-6 bg-white border rounded-xl p-3 shadow-sm print:hidden">
+        <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-gray-100">
+          <span className="text-xs font-bold text-gray-500 ml-1">الشهر المالي:</span>
+          <button
+            type="button"
+            onClick={() => setQuickPreset('currentFin')}
+            className="px-2.5 py-1 text-xs font-bold rounded-md bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+            title="يبدأ من 21 في الشهر إلى 20 في الشهر التالي"
+          >
+            الشهر المالي الحالي (21 - 20)
+          </button>
+          <button
+            type="button"
+            onClick={() => setQuickPreset('prevFin')}
+            className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+            title="الشهر المالي السابق من 21 إلى 20"
+          >
+            الشهر المالي السابق
+          </button>
+          <button
+            type="button"
+            onClick={() => setQuickPreset('today')}
+            className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+          >
+            اليوم
+          </button>
+          <button
+            type="button"
+            onClick={() => setQuickPreset('last30')}
+            className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+          >
+            آخر 30 يوم
+          </button>
+          <button
+            type="button"
+            onClick={() => setQuickPreset('all')}
+            className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+          >
+            الكل
+          </button>
         </div>
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          className="border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-        />
-        <span className="text-gray-400 text-sm">إلى</span>
-        <input
-          type="date"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-          className="border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-        />
+
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+          <div className="flex items-center gap-2 text-gray-500 text-sm font-bold">
+            <Calendar className="w-4 h-4 text-emerald-600" /> النطاق الزمني
+          </div>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <span className="text-gray-400 text-sm">إلى</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

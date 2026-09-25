@@ -12,6 +12,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { SearchInput } from '@/components/ui/search-input';
 import { authFetchJson } from '@/lib/api-client';
 import { toTransactionType, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPE_COLORS } from '@/lib/types';
+import { getFinancialMonthBounds, getPreviousFinancialMonthBounds } from '@/lib/financialMonth';
 import { ProfitReportPanel } from './ProfitReportPanel';
 
 const PAGE_SIZE = 10;
@@ -74,6 +75,42 @@ export function FinancialsTab() {
       <CardHeader>
         <CardTitle>الماليات والأرباح</CardTitle>
         <CardDescription>سجل الإيرادات والمصروفات الخاصة بالمركز</CardDescription>
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 pb-1 border-b border-gray-100">
+          <span className="text-xs font-bold text-gray-500 ml-1">الشهر المالي:</span>
+          <button
+            type="button"
+            onClick={() => {
+              const fin = getFinancialMonthBounds();
+              setDateFrom(fin.startStr);
+              setDateTo(fin.endStr);
+            }}
+            className="px-2.5 py-1 text-xs font-bold rounded-md bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+          >
+            الشهر الحالي (21 - 20)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const prev = getPreviousFinancialMonthBounds();
+              setDateFrom(prev.startStr);
+              setDateTo(prev.endStr);
+            }}
+            className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+          >
+            الشهر السابق (21 - 20)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const now = new Date().toISOString().slice(0, 10);
+              setDateFrom(now);
+              setDateTo(now);
+            }}
+            className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+          >
+            اليوم
+          </button>
+        </div>
         <div className="mt-3 flex flex-col md:flex-row gap-3 flex-wrap">
           <div className="flex-1 min-w-[200px] max-w-md">
             <SearchInput value={search} onValueChange={setSearch} placeholder="ابحث بالوصف أو التصنيف..." />

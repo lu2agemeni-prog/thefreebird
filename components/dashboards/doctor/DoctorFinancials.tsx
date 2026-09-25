@@ -32,6 +32,7 @@ import {
 import { ErrorState } from '@/components/ui/error-state';
 import { Pagination } from '@/components/ui/pagination';
 import { getFriendlyErrorMessage } from '@/lib/errors';
+import { getFinancialMonthBounds, getPreviousFinancialMonthBounds } from '@/lib/financialMonth';
 
 const PAGE_SIZE = 10;
 
@@ -73,19 +74,15 @@ export function DoctorFinancials() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // الفلاتر
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 29);
-    return toDateInputValue(d);
-  });
-  const [dateTo, setDateTo] = useState(() => toDateInputValue(new Date()));
+  // الفلاتر — تبدأ افتراضياً من أول الشهر المالي الحالي (21 في الشهر إلى 20 في الشهر التالي)
+  const [dateFrom, setDateFrom] = useState(() => getFinancialMonthBounds().startStr);
+  const [dateTo, setDateTo] = useState(() => getFinancialMonthBounds().endStr);
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(0);
 
-  // إعدادات النطاق السريع
-  const setQuickRange = (type: 'today' | 'week' | 'month' | '30days' | 'all') => {
+  // إعدادات النطاق السريع (وفق الشهر المالي 21 إلى 20)
+  const setQuickRange = (type: 'today' | 'week' | 'month' | 'prevMonth' | '30days' | 'all') => {
     const now = new Date();
     if (type === 'today') {
       const s = toDateInputValue(now);
@@ -99,9 +96,15 @@ export function DoctorFinancials() {
       setDateFrom(toDateInputValue(d));
       setDateTo(toDateInputValue(now));
     } else if (type === 'month') {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      setDateFrom(toDateInputValue(start));
-      setDateTo(toDateInputValue(now));
+      // الشهر المالي الحالي: من 21 إلى 20
+      const currentFin = getFinancialMonthBounds(now);
+      setDateFrom(currentFin.startStr);
+      setDateTo(currentFin.endStr);
+    } else if (type === 'prevMonth') {
+      // الشهر المالي السابق: من 21 إلى 20
+      const prevFin = getPreviousFinancialMonthBounds(now);
+      setDateFrom(prevFin.startStr);
+      setDateTo(prevFin.endStr);
     } else if (type === '30days') {
       const d = new Date(now);
       d.setDate(d.getDate() - 29);
@@ -495,9 +498,17 @@ export function DoctorFinancials() {
             </button>
             <button
               onClick={() => setQuickRange('month')}
-              className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 hover:bg-emerald-50 hover:text-emerald-700 text-gray-600"
+              className="px-2.5 py-1 text-xs font-bold rounded-md bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+              title="يبدأ من 21 في الشهر إلى 20 في الشهر التالي"
             >
-              هذا الشهر
+              الشهر المالي الحالي (21 - 20)
+            </button>
+            <button
+              onClick={() => setQuickRange('prevMonth')}
+              className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 hover:bg-emerald-50 hover:text-emerald-700 text-gray-600"
+              title="الشهر المالي السابق من 21 إلى 20"
+            >
+              الشهر المالي السابق
             </button>
             <button
               onClick={() => setQuickRange('30days')}

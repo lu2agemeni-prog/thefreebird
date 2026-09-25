@@ -15,6 +15,7 @@ import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { supabase } from '@/lib/supabase';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { exportRowsToExcel } from '@/lib/export-excel';
+import { getFinancialMonthBounds, getPreviousFinancialMonthBounds } from '@/lib/financialMonth';
 
 function toDateInputValue(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -130,12 +131,9 @@ function LabReport() {
   const [visitRows, setVisitRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 29);
-    return toDateInputValue(d);
-  });
-  const [dateTo, setDateTo] = useState(() => toDateInputValue(new Date()));
+  // الافتراضي: الشهر المالي الحالي (من 21 إلى 20)
+  const [dateFrom, setDateFrom] = useState(() => getFinancialMonthBounds().startStr);
+  const [dateTo, setDateTo] = useState(() => getFinancialMonthBounds().endStr);
 
   const fetchReport = useCallback(async () => {
     setLoading(true);
@@ -231,16 +229,55 @@ function LabReport() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardContent className="p-4 flex flex-col md:flex-row items-stretch md:items-center gap-3">
-          <div className="flex items-center gap-2 text-gray-500 text-sm font-bold">
-            <Calendar className="w-4 h-4" /> من
+        <CardContent className="p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-gray-100">
+            <span className="text-xs font-bold text-gray-500 ml-1">الشهر المالي:</span>
+            <button
+              type="button"
+              onClick={() => {
+                const fin = getFinancialMonthBounds();
+                setDateFrom(fin.startStr);
+                setDateTo(fin.endStr);
+              }}
+              className="px-2.5 py-1 text-xs font-bold rounded-md bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+            >
+              الشهر الحالي (21 - 20)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const prev = getPreviousFinancialMonthBounds();
+                setDateFrom(prev.startStr);
+                setDateTo(prev.endStr);
+              }}
+              className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+            >
+              الشهر السابق (21 - 20)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const now = new Date().toISOString().slice(0, 10);
+                setDateFrom(now);
+                setDateTo(now);
+              }}
+              className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+            >
+              اليوم
+            </button>
           </div>
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border rounded-lg p-2 text-sm" />
-          <span className="text-gray-400 text-sm">إلى</span>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border rounded-lg p-2 text-sm" />
-          <button onClick={handleExport} className="md:mr-auto flex items-center gap-2 bg-emerald-600 text-white font-bold px-4 py-2 rounded-lg hover:bg-emerald-700 text-sm">
-            <Download className="w-4 h-4" /> تحميل إكسيل
-          </button>
+
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+            <div className="flex items-center gap-2 text-gray-500 text-sm font-bold">
+              <Calendar className="w-4 h-4 text-emerald-600" /> من
+            </div>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border rounded-lg p-2 text-sm" />
+            <span className="text-gray-400 text-sm">إلى</span>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border rounded-lg p-2 text-sm" />
+            <button onClick={handleExport} className="md:mr-auto flex items-center gap-2 bg-emerald-600 text-white font-bold px-4 py-2 rounded-lg hover:bg-emerald-700 text-sm">
+              <Download className="w-4 h-4" /> تحميل إكسيل
+            </button>
+          </div>
         </CardContent>
       </Card>
 
