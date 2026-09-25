@@ -437,28 +437,18 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
           paid_amount: parseFloat(firstLine.price) || 0,
           remaining_amount: 0,
           collected_by: user?.id || null,
+          // بيربط صف الطابور بمجموعة الزيارة في patient_visits — عشان
+          // "ضم خدمة" من شاشة النداء يقدر يستخدم نفس مودال إضافة الزيارة
+          // (مصدر واحد بس لكل الإضافات، بدون تكرار في التسجيل المالي).
+          visit_group_id: groupId,
         }]).select().single();
         if (queueErr) throw queueErr;
 
-        // أي خدمة تانية (من الثانية للتالتة) بتنضاف في queue_services
-        if (queueRow && filledLines.length > 1) {
-          const extras = filledLines.slice(1);
-          const extrasRows = [];
-          for (const line of extras) {
-            const r = await resolveLine(line);
-            extrasRows.push({
-              queue_id: queueRow.id,
-              service_id: r.serviceId,
-              custom_name: r.customName,
-              price: parseFloat(line.price) || 0,
-              added_by: user?.id || null,
-            });
-          }
-          if (extrasRows.length > 0) {
-            const { error: extrasErr } = await supabase.from('queue_services').insert(extrasRows);
-            if (extrasErr) throw extrasErr;
-          }
-        }
+        // ملحوظة: أي خدمة تانية (من الثانية للتالتة) في نفس الزيارة اتسجلت
+        // بالفعل كصف مستقل في patient_visits فوق (بتاريخها وتحصيلها المالي
+        // الصحيح تلقائيًا). مبقاش لازم نكررها في queue_services — شاشة
+        // النداء والسجل الطبي بقى مصدرهم واحد بس (patient_visits عن طريق
+        // visit_group_id).
 
         onAdded?.({ tokenNumber: token as number, clinicId });
       } else {

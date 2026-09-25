@@ -5,8 +5,9 @@
 // تبويب «النداء الآلي» في حساب السكرتارية.
 //
 // التصميم الحالي:
-//   • لا توجد أزرار إضافة هنا — كل إضافة مريض بتتم من تبويب «دليل المرضى»
-//     فقط (مودال AddVisitModal الموحّد).
+//   • لا توجد أزرار إضافة مريض جديد هنا — كل إضافة (مريض جديد، أو ضم خدمة
+//     لدور موجود في الطابور) بتتم عن طريق نفس المودال الموحّد
+//     (AddVisitModal) — مصدر واحد بس لكل تسجيل مالي، ومفيش تكرار.
 //   • العيادة المختارة في dropdown واحد في الأعلى عشان السكرتارية تختار العيادة
 //     اللي بتشتغل عليها بسرعة من غير ما تلف على شبكة أزرار.
 //   • أزرار النداء الثلاثة:
@@ -33,8 +34,12 @@ import {
 } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
-import { AddQueueServiceModal } from './AddQueueServiceModal';
+import { AddVisitModal } from './AddVisitModal';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export function SecretaryCallQueue() {
   const [queues, setQueues] = useState<any[]>([]);
@@ -238,6 +243,19 @@ export function SecretaryCallQueue() {
       fetchQueueOnly();
       fetchCompletedToday();
     }
+  };
+
+  // "ضم خدمة" بقى بيستخدم نفس مودال إضافة الزيارة (AddVisitModal، وضع
+  // addServiceTo) — مصدر واحد بس لكل إضافة تدخل الحسابات، بدل مسار منفصل
+  // مالوش تسجيل مالي خالص. الدور القديم (قبل تفعيل هذا الربط) ملوش
+  // visit_group_id فبنمنع فتح المودال ونوضح للسكرتارية تستخدم دليل المرضى.
+  const openAddService = (q: any) => {
+    if (!q.visit_group_id) {
+      setActionError('هذا الدور مسجّل قبل تحديث النظام ومش مرتبط بزيارة — استخدمي تبويب "دليل المرضى" لإضافة خدمة لهذا المريض.');
+      return;
+    }
+    setActionError(null);
+    setAddServiceForRow(q);
   };
 
   // نداء مريض برقم محدد بنقرة واحدة
@@ -609,7 +627,7 @@ export function SecretaryCallQueue() {
                           </div>
 
                           <button
-                            onClick={() => setAddServiceForRow(q)}
+                            onClick={() => openAddService(q)}
                             className="text-xs font-bold text-gray-500 hover:text-emerald-700 hover:underline"
                           >
                             + ضم خدمة
@@ -679,7 +697,7 @@ export function SecretaryCallQueue() {
                             </button>
 
                             <button
-                              onClick={() => setAddServiceForRow(q)}
+                              onClick={() => openAddService(q)}
                               className="text-xs font-bold text-gray-500 hover:text-emerald-700 hover:underline shrink-0"
                             >
                               + ضم خدمة
@@ -699,12 +717,24 @@ export function SecretaryCallQueue() {
       </div>
 
       {addServiceForRow && (
-        <AddQueueServiceModal
-          queueId={addServiceForRow.id}
-          clinicId={addServiceForRow.clinic_id}
-          patientName={addServiceForRow.patient_name}
+        <AddVisitModal
+          addServiceTo={{
+            visitGroupId: addServiceForRow.visit_group_id,
+            patient: {
+              id: addServiceForRow.patient_id || addServiceForRow.walk_in_patient_id,
+              name: addServiceForRow.patient_name,
+              phone: addServiceForRow.phone ?? null,
+              source: addServiceForRow.patient_id ? 'registered' : 'walk_in',
+            },
+            visitDate: todayStr(), // عناصر طابور النداء دايمًا بتاريخ اليوم
+            clinicId: addServiceForRow.clinic_id,
+            doctorId: addServiceForRow.doctor_id,
+          }}
           onClose={() => setAddServiceForRow(null)}
-          onChanged={() => { fetchQueueOnly(); }}
+          onAdded={() => {
+            setAddServiceForRow(null);
+            fetchQueueOnly();
+          }}
         />
       )}
 

@@ -17,7 +17,7 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { CalendarClock, Pencil, Trash2, Plus, Loader2, Building, Stethoscope, Calendar } from 'lucide-react';
+import { CalendarClock, Pencil, Trash2, Plus, Loader2, Building, Stethoscope, Calendar, ChevronRight, ChevronLeft, CalendarDays, CalendarRange } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { Pagination } from '@/components/ui/pagination';
@@ -28,6 +28,22 @@ import { AddVisitModal } from './AddVisitModal';
 
 const PAGE_SIZE = 8;
 const FETCH_CAP = 1000;
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function shiftDateStr(dateStr: string, deltaDays: number) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDayLabel(dateStr: string) {
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('ar-EG', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  });
+}
 
 interface VisitRow {
   id: string;
@@ -54,9 +70,23 @@ export function PatientVisitsHistory() {
   const [search, setSearch] = useState('');
   const [clinicFilter, setClinicFilter] = useState('');
   const [doctorFilter, setDoctorFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  // وضع التصفح: يوم واحد بالتنقل بين الأيام (الافتراضي)، أو نطاق تاريخ مخصص
+  const [browseMode, setBrowseMode] = useState<'day' | 'range'>('day');
+  const [selectedDay, setSelectedDay] = useState(todayStr());
+  const [dateFrom, setDateFrom] = useState(todayStr());
+  const [dateTo, setDateTo] = useState(todayStr());
   const [page, setPage] = useState(0);
+
+  // التنقل بين الأيام — بيحدّث dateFrom/dateTo مع بعض عشان يفضل الفلتر
+  // الفعلي (المُستخدم في filteredGroups) مصدر واحد للحقيقة
+  const goToDay = (day: string) => {
+    setSelectedDay(day);
+    setDateFrom(day);
+    setDateTo(day);
+  };
+  const shiftDay = (delta: number) => goToDay(shiftDateStr(selectedDay, delta));
+  const switchToDayMode = () => { setBrowseMode('day'); goToDay(todayStr()); };
+  const switchToRangeMode = () => { setBrowseMode('range'); setDateFrom(''); setDateTo(''); };
 
   const [editingVisit, setEditingVisit] = useState<VisitRow | null>(null);
   const [addingServiceToGroup, setAddingServiceToGroup] = useState<{
@@ -128,8 +158,9 @@ export function PatientVisitsHistory() {
   const safePage = Math.min(page, totalPages - 1);
   const pageGroups = filteredGroups.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
-  // عدّاد الفلاتر النشطة عشان يبان للمستخدم إن فيه فلتر شغّال
-  const activeFiltersCount = (clinicFilter ? 1 : 0) + (doctorFilter ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
+  // عدّاد الفلاتر النشطة عشان يبان للمستخدم إن فيه فلتر شغّال (نطاق
+  // التاريخ في وضع التصفح اليومي مش "فلتر" — هو أصل الشاشة)
+  const activeFiltersCount = (clinicFilter ? 1 : 0) + (doctorFilter ? 1 : 0) + (browseMode === 'range' && (dateFrom || dateTo) ? 1 : 0);
 
   const handleDelete = async (id: string) => {
     if (!confirm('هل تريد حذف هذه الخدمة من الزيارة؟')) return;
@@ -141,8 +172,7 @@ export function PatientVisitsHistory() {
     setSearch('');
     setClinicFilter('');
     setDoctorFilter('');
-    setDateFrom('');
-    setDateTo('');
+    switchToDayMode();
   };
 
   return (
@@ -188,27 +218,6 @@ export function PatientVisitsHistory() {
               </select>
             </div>
 
-            <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
-              <Calendar className="w-4 h-4" />
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                max={dateTo || undefined}
-                className="border rounded-lg p-2 text-sm bg-white"
-                title="من تاريخ"
-              />
-              <span className="text-gray-400">إلى</span>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                min={dateFrom || undefined}
-                className="border rounded-lg p-2 text-sm bg-white"
-                title="إلى تاريخ"
-              />
-            </div>
-
             {activeFiltersCount > 0 && (
               <button
                 onClick={resetFilters}
@@ -216,6 +225,79 @@ export function PatientVisitsHistory() {
               >
                 مسح الفلاتر ({activeFiltersCount})
               </button>
+            )}
+          </div>
+
+          {/* وضع التصفح: يوم واحد (افتراضي) أو نطاق مخصص */}
+          <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center flex-wrap border-t pt-3">
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+              <button
+                onClick={switchToDayMode}
+                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-md transition-colors ${browseMode === 'day' ? 'bg-white shadow text-emerald-700' : 'text-gray-500'}`}
+              >
+                <CalendarDays className="w-3.5 h-3.5" /> تصفح يومي
+              </button>
+              <button
+                onClick={switchToRangeMode}
+                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-md transition-colors ${browseMode === 'range' ? 'bg-white shadow text-emerald-700' : 'text-gray-500'}`}
+              >
+                <CalendarRange className="w-3.5 h-3.5" /> نطاق مخصص
+              </button>
+            </div>
+
+            {browseMode === 'day' ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => shiftDay(-1)}
+                  className="p-2 rounded-lg border bg-white hover:bg-gray-50 text-gray-600"
+                  title="اليوم السابق"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <input
+                  type="date"
+                  value={selectedDay}
+                  onChange={(e) => goToDay(e.target.value)}
+                  className="border rounded-lg p-2 text-sm bg-white"
+                />
+                <button
+                  onClick={() => shiftDay(1)}
+                  className="p-2 rounded-lg border bg-white hover:bg-gray-50 text-gray-600"
+                  title="اليوم التالي"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                {selectedDay !== todayStr() && (
+                  <button
+                    onClick={() => goToDay(todayStr())}
+                    className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 rounded-lg hover:bg-emerald-100"
+                  >
+                    اليوم
+                  </button>
+                )}
+                <span className="text-sm font-bold text-gray-700">{formatDayLabel(selectedDay)}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
+                <Calendar className="w-4 h-4" />
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  max={dateTo || undefined}
+                  className="border rounded-lg p-2 text-sm bg-white"
+                  title="من تاريخ"
+                />
+                <span className="text-gray-400">إلى</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  min={dateFrom || undefined}
+                  className="border rounded-lg p-2 text-sm bg-white"
+                  title="إلى تاريخ"
+                />
+              </div>
             )}
 
             <span className="text-xs text-gray-400 md:mr-auto">
@@ -230,7 +312,11 @@ export function PatientVisitsHistory() {
           <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>
         ) : pageGroups.length === 0 ? (
           <p className="text-center text-gray-500 py-8">
-            {search || clinicFilter || doctorFilter || dateFrom || dateTo
+            {search || clinicFilter || doctorFilter
+              ? 'لا توجد زيارات مطابقة للفلاتر المحددة.'
+              : browseMode === 'day'
+              ? `لا توجد زيارات مسجلة في ${formatDayLabel(selectedDay)}.`
+              : dateFrom || dateTo
               ? 'لا توجد زيارات مطابقة للفلاتر المحددة.'
               : 'لا توجد زيارات مسجلة بعد.'}
           </p>
