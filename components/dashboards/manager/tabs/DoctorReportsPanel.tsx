@@ -135,7 +135,7 @@ function SettlementModal({
 
 export function DoctorReportsPanel() {
   const { user } = useAuth();
-  const [doctors, setDoctors] = useState<{ id: string; name: string; defaultPercent: number }[]>([]);
+  const [doctors, setDoctors] = useState<{ id: string; name: string; defaultPercent: number; clinicIds: string[] }[]>([]);
   const [doctorId, setDoctorId] = useState('');
   const [periodType, setPeriodType] = useState<PeriodType>('daily');
   const [dateStr, setDateStr] = useState(() => toDateInputValue(new Date()));
@@ -154,12 +154,26 @@ export function DoctorReportsPanel() {
   const endStr = toDateInputValue(end);
 
   useEffect(() => {
-    supabase.from('profiles').select('id, first_name, last_name, doctor:doctors(default_share_percent)').eq('role', 'doctor').then(({ data }) => {
-      const list = (data || []).map((d: any) => ({
-        id: d.id,
-        name: `د. ${d.first_name} ${d.last_name}`,
-        defaultPercent: Number(d.doctor?.default_share_percent ?? 50),
-      }));
+    Promise.all([
+      supabase.from('profiles').select('id, first_name, last_name, doctor:doctors(default_share_percent, clinic_id)').eq('role', 'doctor'),
+      supabase.from('doctor_clinics').select('doctor_id, clinic_id'),
+    ]).then(([profilesRes, dcRes]) => {
+      const dcMap = new Map<string, Set<string>>();
+      (dcRes.data || []).forEach((r: any) => {
+        if (!dcMap.has(r.doctor_id)) dcMap.set(r.doctor_id, new Set());
+        dcMap.get(r.doctor_id)!.add(r.clinic_id);
+      });
+
+      const list = (profilesRes.data || []).map((d: any) => {
+        const clinicsSet = dcMap.get(d.id) || new Set<string>();
+        if (d.doctor?.clinic_id) clinicsSet.add(d.doctor.clinic_id);
+        return {
+          id: d.id,
+          name: `د. ${d.first_name} ${d.last_name}`,
+          defaultPercent: Number(d.doctor?.default_share_percent ?? 50),
+          clinicIds: Array.from(clinicsSet),
+        };
+      });
       setDoctors(list);
       if (list.length > 0) setDoctorId(prev => prev || list[0].id);
     });
@@ -171,13 +185,36 @@ export function DoctorReportsPanel() {
     setError(null);
     setSettleError(null);
 
-    const [queueRes, settlementRes, advancesRes] = await Promise.all([
-      supabase.from('call_queue')
-        .select('id, patient_name, paid_amount, status, created_at')
-        .eq('doctor_id', doctorId)
-        .gte('created_at', `${startStr}T00:00:00`)
-        .lte('created_at', `${endStr}T23:59:59`)
-        .order('created_at', { ascending: true }),
+    const currentDoc = doctors.find(d => d.id === doctorId);
+    const clinicIds = currentDoc?.clinicIds || [];
+
+    let visitsQuery = supabase.from('patient_visits')
+      .select('id, patient_name, service_name, paid_amount, visit_date, created_at, doctor_id, clinic_id, visit_group_id')
+      .gte('visit_date', startStr)
+      .lte('visit_date', endStr)
+      .order('visit_date', { ascending: true });
+
+    if (clinicIds.length > 0) {
+      visitsQuery = visitsQuery.or(`doctor_id.eq.${doctorId},and(doctor_id.is.null,clinic_id.in.(${clinicIds.join(',')}))`);
+    } else {
+      visitsQuery = visitsQuery.eq('doctor_id', doctorId);
+    }
+
+    let queueQuery = supabase.from('call_queue')
+      .select('id, patient_name, service_custom_name, paid_amount, status, created_at, doctor_id, clinic_id, visit_group_id')
+      .gte('created_at', `${startStr}T00:00:00`)
+      .lte('created_at', `${endStr}T23:59:59`)
+      .order('created_at', { ascending: true });
+
+    if (clinicIds.length > 0) {
+      queueQuery = queueQuery.or(`doctor_id.eq.${doctorId},and(doctor_id.is.null,clinic_id.in.(${clinicIds.join(',')}))`);
+    } else {
+      queueQuery = queueQuery.eq('doctor_id', doctorId);
+    }
+
+    const [visitsRes, queueRes, settlementRes, advancesRes] = await Promise.all([
+      visitsQuery,
+      queueQuery,
       supabase.from('doctor_settlements')
         .select('*')
         .eq('doctor_id', doctorId)
@@ -188,19 +225,51 @@ export function DoctorReportsPanel() {
       // "الحسابات الإضافية" > الأجور > سلفة/مدفوعات) — بتتخصم من مستحقاته.
       supabase.from('transactions')
         .select('id, category, amount, created_at, description')
-        .eq('beneficiary_id', doctorId)
+        .or(`beneficiary_id.eq.${doctorId},user_id.eq.${doctorId}`)
         .gte('created_at', `${startStr}T00:00:00`)
         .lte('created_at', `${endStr}T23:59:59`)
         .order('created_at', { ascending: true }),
     ]);
 
-    if (queueRes.error) setError(getFriendlyErrorMessage(queueRes.error, 'تعذر تحميل تقرير الطبيب.'));
-    else setCheckups(queueRes.data || []);
+    if (visitsRes.error && queueRes.error) {
+      setError(getFriendlyErrorMessage(visitsRes.error || queueRes.error, 'تعذر تحميل تقرير الطبيب.'));
+    } else {
+      const unified: any[] = [];
+      const seen = new Set<string>();
+
+      (visitsRes.data || []).forEach((v: any) => {
+        seen.add(v.id);
+        if (v.visit_group_id) seen.add(v.visit_group_id);
+        unified.push({
+          id: v.id,
+          patient_name: v.patient_name || 'مريض بدون اسم',
+          service_name: v.service_name || 'كشف عيادة',
+          status: 'زيارة مسجلة',
+          paid_amount: Number(v.paid_amount || 0),
+          created_at: v.created_at || `${v.visit_date}T00:00:00`,
+        });
+      });
+
+      (queueRes.data || []).forEach((q: any) => {
+        if (q.visit_group_id && seen.has(q.visit_group_id)) return;
+        if (seen.has(q.id)) return;
+        unified.push({
+          id: q.id,
+          patient_name: q.patient_name || 'مريض بالدور',
+          service_name: q.service_custom_name || 'كشف بالعيادة (طابور)',
+          status: q.status === 'completed' ? 'مكتمل' : q.status === 'calling' ? 'جاري النداء' : 'بالانتظار',
+          paid_amount: Number(q.paid_amount || 0),
+          created_at: q.created_at,
+        });
+      });
+
+      setCheckups(unified);
+    }
 
     setSettlement(settlementRes.data || null);
     setAdvances(advancesRes.data || []);
     setLoading(false);
-  }, [doctorId, startStr, endStr, periodType]);
+  }, [doctorId, doctors, startStr, endStr, periodType]);
 
   useEffect(() => { const t = setTimeout(fetchReport, 0); return () => clearTimeout(t); }, [fetchReport]);
 
