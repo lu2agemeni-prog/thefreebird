@@ -24,6 +24,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { SearchInput } from '@/components/ui/search-input';
 import { supabase } from '@/lib/supabase';
 import { getFriendlyErrorMessage } from '@/lib/errors';
+import { getFinancialMonthBounds, getPreviousFinancialMonthBounds } from '@/lib/financialMonth';
 import { AddVisitModal } from './AddVisitModal';
 
 const PAGE_SIZE = 8;
@@ -278,7 +279,7 @@ export function PatientVisitsHistory() {
                 <span className="text-sm font-bold text-gray-700">{formatDayLabel(selectedDay)}</span>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
+              <div className="flex items-center gap-2 flex-wrap text-sm font-bold text-gray-600">
                 <Calendar className="w-4 h-4" />
                 <input
                   type="date"
@@ -297,6 +298,30 @@ export function PatientVisitsHistory() {
                   className="border rounded-lg p-2 text-sm bg-white"
                   title="إلى تاريخ"
                 />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const fin = getFinancialMonthBounds();
+                    setDateFrom(fin.startStr);
+                    setDateTo(fin.endStr);
+                  }}
+                  className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-lg hover:bg-emerald-100"
+                  title="الشهر المالي الحالي من 21 إلى 20"
+                >
+                  الشهر الحالي (21 - 20)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prev = getPreviousFinancialMonthBounds();
+                    setDateFrom(prev.startStr);
+                    setDateTo(prev.endStr);
+                  }}
+                  className="text-xs font-bold text-gray-700 bg-gray-100 border border-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-200"
+                  title="الشهر المالي السابق من 21 إلى 20"
+                >
+                  الشهر السابق
+                </button>
               </div>
             )}
 

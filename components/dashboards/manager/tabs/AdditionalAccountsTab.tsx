@@ -16,6 +16,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { exportRowsToExcel } from '@/lib/export-excel';
+import { getFinancialMonthBounds, getPreviousFinancialMonthBounds } from '@/lib/financialMonth';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -217,6 +218,10 @@ function ExpenseGroupPanel({ group }: { group: GroupConfig }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // فلترة حسب الشهر المالي (21 إلى 20)
+  const [dateFrom, setDateFrom] = useState(() => getFinancialMonthBounds().startStr);
+  const [dateTo, setDateTo] = useState(() => getFinancialMonthBounds().endStr);
+
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formDate, setFormDate] = useState(todayStr());
@@ -233,16 +238,20 @@ function ExpenseGroupPanel({ group }: { group: GroupConfig }) {
   const fetchRows = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const { data, error } = await supabase
+    let query = supabase
       .from('transactions')
       .select('*, clinics(name)')
       .eq('expense_group', group.key)
-      .order('created_at', { ascending: false })
-      .limit(1000);
+      .order('created_at', { ascending: false });
+
+    if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00`);
+    if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59`);
+
+    const { data, error } = await query.limit(1000);
     if (error) setError(getFriendlyErrorMessage(error, 'تعذر تحميل البيانات.'));
     else setRows(data || []);
     setLoading(false);
-  }, [group.key]);
+  }, [group.key, dateFrom, dateTo]);
 
   useEffect(() => {
     setTimeout(fetchRows, 0);
@@ -356,6 +365,59 @@ function ExpenseGroupPanel({ group }: { group: GroupConfig }) {
             <button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-2 bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl hover:bg-emerald-700 text-sm">
               <Plus className="w-4 h-4" /> إضافة قيد
             </button>
+          </div>
+        </div>
+
+        {/* شريط فلترة الشهر المالي */}
+        <div className="flex flex-wrap items-center gap-2 pt-3 mt-3 border-t border-gray-100">
+          <span className="text-xs font-bold text-gray-500">الفترة المالية:</span>
+          <button
+            type="button"
+            onClick={() => {
+              const fin = getFinancialMonthBounds();
+              setDateFrom(fin.startStr);
+              setDateTo(fin.endStr);
+            }}
+            className="px-2.5 py-1 text-xs font-bold rounded-md bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+          >
+            الشهر الحالي (21 - 20)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const prev = getPreviousFinancialMonthBounds();
+              setDateFrom(prev.startStr);
+              setDateTo(prev.endStr);
+            }}
+            className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+          >
+            الشهر السابق (21 - 20)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDateFrom('');
+              setDateTo('');
+            }}
+            className="px-2.5 py-1 text-xs font-bold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+          >
+            كل الفترات
+          </button>
+          <div className="flex items-center gap-1.5 md:mr-auto text-xs text-gray-500">
+            <span>من:</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="border rounded-md px-2 py-1 text-xs bg-white"
+            />
+            <span>إلى:</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="border rounded-md px-2 py-1 text-xs bg-white"
+            />
           </div>
         </div>
       </CardHeader>
