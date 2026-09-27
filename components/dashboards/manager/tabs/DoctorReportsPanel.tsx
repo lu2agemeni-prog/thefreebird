@@ -8,13 +8,15 @@
 // وطباعة.
 // ============================================================================
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Printer, CheckCircle2, Clock, Loader2, User, X } from 'lucide-react';
+import { Printer, CheckCircle2, Clock, Loader2, User, X, FileSpreadsheet } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { getFinancialMonthBounds } from '@/lib/financialMonth';
+import { exportRowsToExcel } from '@/lib/export-excel';
+import { PrintableReportModal } from '@/components/ui/printable-report-modal';
 
 type PeriodType = 'daily' | 'weekly' | 'monthly';
 
@@ -282,6 +284,26 @@ export function DoctorReportsPanel() {
   const totalAdvances = advances.reduce((sum, a) => sum + Number(a.amount || 0), 0);
   const currentDoctor = doctors.find(d => d.id === doctorId);
 
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+
+  const handleExportDoctorExcel = () => {
+    if (checkups.length === 0) return;
+    const rows = checkups.map((c, i) => ({
+      'م': i + 1,
+      'التاريخ': new Date(c.created_at).toLocaleDateString('ar-EG'),
+      'الوقت': new Date(c.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+      'اسم المريض': c.patient_name || 'مريض',
+      'الخدمة / الكشف': c.service_name || 'كشف عيادة',
+      'الحالة': c.status,
+      'المبلغ المحصل (ج.م)': Number(c.paid_amount || 0),
+    }));
+    exportRowsToExcel(
+      rows,
+      `كشوفات_${currentDoctor?.name || 'الطبيب'}`,
+      `تقرير_طبيب_${(currentDoctor?.name || 'الطبيب').replace(/[\s/\\:]+/g, '_')}_${startStr}_${endStr}`
+    );
+  };
+
   const handleConfirmSettle = async ({ sharePercent, doctorShareAmount }: { sharePercent: number | null; doctorShareAmount: number }) => {
     if (!doctorId) return;
     setSettling(true);
@@ -324,10 +346,27 @@ export function DoctorReportsPanel() {
               </button>
             ))}
           </div>
-          <input type="date" value={dateStr} onChange={(e) => setDateStr(e.target.value)} className="border rounded-lg p-2.5 text-sm" />
-          <button onClick={() => window.print()} className="md:mr-auto flex items-center gap-2 bg-white border text-gray-700 font-bold px-4 py-2.5 rounded-xl hover:bg-gray-50 text-sm">
-            <Printer className="w-4 h-4" /> طباعة
-          </button>
+          <input type="date" value={dateStr} onChange={(e) => setDateStr(e.target.value)} className="border rounded-lg p-2 text-xs" />
+          <div className="md:mr-auto flex items-center gap-2">
+            <button
+              onClick={handleExportDoctorExcel}
+              disabled={checkups.length === 0}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold px-3 py-1.5 rounded-xl text-xs transition-colors shadow-2xs cursor-pointer"
+              title="تصدير كشف كشوفات الطبيب إلى ملف إكسيل (.xlsx)"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>تصدير إكسيل (.xlsx)</span>
+            </button>
+            <button
+              onClick={() => setIsPrintModalOpen(true)}
+              disabled={checkups.length === 0}
+              className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-50 text-gray-700 border border-gray-300 font-bold px-3 py-1.5 rounded-xl text-xs transition-colors shadow-2xs cursor-pointer"
+              title="معاينة التقرير والطباعة أو حفظ كـ PDF"
+            >
+              <Printer className="w-4 h-4" />
+              <span>طباعة / PDF</span>
+            </button>
+          </div>
         </CardContent>
       </Card>
 
@@ -423,6 +462,38 @@ export function DoctorReportsPanel() {
           error={settleError}
         />
       )}
+
+      {/* مودال الطباعة وتصدير PDF لتقرير الطبيب */}
+      <PrintableReportModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        title={`تقرير كشوفات ومستحقات: ${currentDoctor?.name || 'الطبيب'}`}
+        subtitle={`تقرير ${PERIOD_LABELS[periodType]} للفترة من ${startStr} إلى ${endStr}`}
+        dateRange={{ from: startStr, end: endStr } as any}
+        metaItems={[
+          { label: 'اسم الطبيب', value: currentDoctor?.name || '—' },
+          { label: 'الفترة', value: PERIOD_LABELS[periodType] },
+          { label: 'حالة التسديد', value: settlement ? `تم التسديد في ${new Date(settlement.settled_at).toLocaleDateString('ar-EG')}` : 'لم يسدد بعد' },
+        ]}
+        summaryCards={[
+          { label: 'عدد الكشوفات', value: `${checkups.length}`, sub: 'كشف مسجل' },
+          { label: 'إجمالي المحصّل', value: `${totalAmount.toLocaleString('ar-EG')} ج.م`, sub: 'إجمالي قيمة الخدمات' },
+          { label: 'المبلغ المسدد للطبيب', value: settlement ? `${settlement.doctor_share_amount.toLocaleString('ar-EG')} ج.م` : 'غير مسدد', sub: settlement?.share_percent ? `نسبة ${settlement.share_percent}%` : '' },
+        ]}
+        sections={[
+          {
+            title: 'كشف المواعيد والخدمات المقدمة',
+            columns: [
+              { header: 'التاريخ والوقت', render: (c) => new Date(c.created_at).toLocaleString('ar-EG') },
+              { header: 'المريض', key: 'patient_name' },
+              { header: 'الخدمة / الكشف', key: 'service_name' },
+              { header: 'الحالة', key: 'status' },
+              { header: 'المبلغ المحصل', render: (c) => `${c.paid_amount || 0} ج.م`, align: 'left' },
+            ],
+            data: checkups,
+          },
+        ]}
+      />
     </div>
   );
 }

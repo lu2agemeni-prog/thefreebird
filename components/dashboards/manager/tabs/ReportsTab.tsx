@@ -23,12 +23,14 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Download, Send, MessageSquare, X, Loader2, Calendar,
   Building, Stethoscope, Filter, Wallet, BarChart3, ClipboardList, MessageCircle,
-  TrendingUp, TrendingDown, Activity, Users,
+  TrendingUp, TrendingDown, Activity, Users, Printer, FileSpreadsheet,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { Pagination } from '@/components/ui/pagination';
 import { getFinancialMonthBounds, getPreviousFinancialMonthBounds } from '@/lib/financialMonth';
+import { exportRowsToExcel } from '@/lib/export-excel';
+import { PrintableReportModal, ReportSection } from '@/components/ui/printable-report-modal';
 import { SearchInput } from '@/components/ui/search-input';
 import { supabase } from '@/lib/supabase';
 import { getFriendlyErrorMessage } from '@/lib/errors';
@@ -89,31 +91,6 @@ function presetToRange(preset: DateRangePreset): { from: string; to: string } {
     return { from: fin.startStr, to: fin.endStr };
   }
   return { from: '2000-01-01', to: fmt(today) };
-}
-
-// ---------- CSV export ----------
-
-function exportToCSV(data: any[], filename: string) {
-  if (!data || data.length === 0) {
-    alert('لا توجد بيانات لتصديرها');
-    return;
-  }
-  const headers = Object.keys(data[0]).join(',');
-  const rows = data.map(row =>
-    Object.values(row).map(val => {
-      if (val === null || val === undefined) return '""';
-      if (typeof val === 'object') return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
-      return `"${String(val).replace(/"/g, '""')}"`;
-    }).join(',')
-  );
-  const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + headers + '\n' + rows.join('\n');
-  const encodedUri = encodeURI(csvContent);
-  const link = document.createElement('a');
-  link.setAttribute('href', encodedUri);
-  link.setAttribute('download', filename + '.csv');
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
 }
 
 // ---------- Shared filter bar ----------
@@ -469,6 +446,244 @@ export function ReportsTab() {
   const safePage = (total: number) =>
     Math.min(page, Math.max(0, Math.ceil(total / PAGE_SIZE) - 1));
 
+  // ─── مودال الطباعة وتصدير PDF العام ───
+  const [printConfig, setPrintConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    subtitle?: string;
+    metaItems?: { label: string; value: string }[];
+    summaryCards?: { label: string; value: string; sub?: string }[];
+    sections?: ReportSection[];
+  }>({
+    isOpen: false,
+    title: '',
+  });
+
+  // 1) تصدير وطباعة النظرة العامة
+  const handleExportOverview = () => {
+    const summaryRows = [
+      { 'المؤشر': 'إجمالي المواعيد', 'القيمة': overviewStats.totalAppts, 'تفاصيل': `مكتمل ${overviewStats.completedAppts} · ملغي ${overviewStats.cancelledAppts}` },
+      { 'المؤشر': 'إجمالي الإيرادات', 'القيمة': `${overviewStats.income} ج.م`, 'تفاصيل': '' },
+      { 'المؤشر': 'إجمالي المصروفات', 'القيمة': `${overviewStats.expense} ج.م`, 'تفاصيل': '' },
+      { 'المؤشر': 'صافي الربح', 'القيمة': `${overviewStats.net} ج.م`, 'تفاصيل': overviewStats.net >= 0 ? 'ربح' : 'عجز' },
+      { 'المؤشر': 'الشكاوى المفتوحة', 'القيمة': overviewStats.openComplaints, 'تفاصيل': '' },
+      { 'المؤشر': 'الاستشارات في الانتظار', 'القيمة': overviewStats.pendingConsults, 'تفاصيل': '' },
+    ];
+    exportRowsToExcel(summaryRows, 'الملخص التنفيذي', `الملخص_التنفيذي_${dateFrom}_${dateTo}`);
+  };
+
+  const handlePrintOverview = () => {
+    setPrintConfig({
+      isOpen: true,
+      title: 'الملخص التنفيذي والنظرة العامة للمركز',
+      subtitle: 'تقرير المؤشرات الرئيسية والأداء للفترة المحددة',
+      metaItems: [
+        { label: 'الفترة', value: `من ${dateFrom} إلى ${dateTo}` },
+        { label: 'العيادة', value: overviewClinicFilter ? (clinics.find(c => c.id === overviewClinicFilter)?.name || 'محددة') : 'كل العيادات' },
+      ],
+      summaryCards: [
+        { label: 'إجمالي المواعيد', value: `${overviewStats.totalAppts.toLocaleString('ar-EG')}`, sub: `مكتمل ${overviewStats.completedAppts} · ملغي ${overviewStats.cancelledAppts}` },
+        { label: 'إجمالي الإيرادات', value: `+${overviewStats.income.toLocaleString('ar-EG')} ج.م`, sub: `صافي ${overviewStats.net.toLocaleString('ar-EG')} ج.م` },
+        { label: 'إجمالي المصروفات', value: `-${overviewStats.expense.toLocaleString('ar-EG')} ج.م`, sub: `${overviewStats.net >= 0 ? 'ربح' : 'خسارة'}` },
+        { label: 'الشكاوى المفتوحة', value: `${overviewStats.openComplaints}`, sub: `من ${overviewStats.openComplaints + overviewStats.resolvedComplaints}` },
+      ],
+      sections: [
+        {
+          title: 'أداء العيادات (صافي الربح)',
+          columns: [
+            { header: 'العيادة', key: 'name' },
+            { header: 'الإيرادات', render: (r) => `+${r.income.toLocaleString('ar-EG')} ج.م`, align: 'left' },
+            { header: 'المصروفات', render: (r) => `-${r.expense.toLocaleString('ar-EG')} ج.م`, align: 'left' },
+            { header: 'صافي الربح', render: (r) => `${r.net >= 0 ? '+' : ''}${r.net.toLocaleString('ar-EG')} ج.م`, align: 'left' },
+          ],
+          data: overviewStats.topClinics,
+        },
+        {
+          title: 'أنشط الأطباء (عدد المواعيد والكشوفات)',
+          columns: [
+            { header: 'اسم الطبيب', key: 'name' },
+            { header: 'إجمالي المواعيد', key: 'count', align: 'center' },
+            { header: 'الكشوفات المكتملة', key: 'completed', align: 'center' },
+          ],
+          data: overviewStats.topDoctors,
+        },
+      ],
+    });
+  };
+
+  // 2) تصدير وطباعة العيادات والكشوفات
+  const handleExportClinics = () => {
+    if (filteredAppointments.length === 0) return;
+    const rows = filteredAppointments.map((a, i) => ({
+      'م': i + 1,
+      'التاريخ': new Date(a.appointment_date).toLocaleDateString('ar-EG'),
+      'الوقت': new Date(a.appointment_date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+      'المريض': a.patient ? `${a.patient.first_name || ''} ${a.patient.last_name || ''}`.trim() : 'غير محدد',
+      'العيادة': a.clinics?.name || 'غير محدد',
+      'الطبيب': a.doctor?.profiles ? `د. ${a.doctor.profiles.first_name || ''} ${a.doctor.profiles.last_name || ''}`.trim() : 'غير محدد',
+      'الحالة': APPOINTMENT_STATUS_LABELS[toAppointmentStatus(a.status)],
+    }));
+    exportRowsToExcel(rows, 'تقرير الكشوفات', `تقرير_الكشوفات_${dateFrom}_${dateTo}`);
+  };
+
+  const handlePrintClinics = () => {
+    setPrintConfig({
+      isOpen: true,
+      title: 'تقرير العيادات والكشوفات الطبية',
+      subtitle: `سجل المواعيد والكشوفات للفترة (${filteredAppointments.length} كشف)`,
+      metaItems: [
+        { label: 'إجمالي السجلات', value: `${filteredAppointments.length} كشف` },
+        { label: 'العيادة', value: clinicFilter ? (clinics.find(c => c.id === clinicFilter)?.name || 'محددة') : 'كل العيادات' },
+        { label: 'الطبيب', value: doctorFilter ? (doctors.find(d => d.id === doctorFilter)?.name || 'محدد') : 'كل الأطباء' },
+      ],
+      sections: [
+        {
+          title: 'جدول الكشوفات والمواعيد',
+          columns: [
+            { header: 'التاريخ والوقت', render: (a) => `${new Date(a.appointment_date).toLocaleDateString('ar-EG')} ${new Date(a.appointment_date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}` },
+            { header: 'المريض', render: (a) => a.patient ? `${a.patient.first_name || ''} ${a.patient.last_name || ''}`.trim() : 'غير محدد' },
+            { header: 'العيادة', render: (a) => a.clinics?.name || '—' },
+            { header: 'الطبيب', render: (a) => a.doctor?.profiles ? `د. ${a.doctor.profiles.first_name || ''} ${a.doctor.profiles.last_name || ''}`.trim() : '—' },
+            { header: 'الحالة', render: (a) => APPOINTMENT_STATUS_LABELS[toAppointmentStatus(a.status)] },
+          ],
+          data: filteredAppointments,
+        },
+      ],
+    });
+  };
+
+  // 3) تصدير وطباعة الحسابات والماليات
+  const handleExportFinancials = () => {
+    if (filteredTransactions.length === 0) return;
+    const rows = filteredTransactions.map((t, i) => ({
+      'م': i + 1,
+      'التاريخ': new Date(t.created_at).toLocaleDateString('ar-EG'),
+      'الوقت': new Date(t.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+      'النوع': t.type === 'income' ? 'إيراد' : t.type === 'salary' ? 'راتب/مستحق' : 'مصروف',
+      'التصنيف': EXPENSE_GROUP_LABELS[t.category] || t.category || 'عام',
+      'العيادة': t.clinics?.name || 'عام',
+      'المبلغ (ج.م)': Number(t.amount || 0),
+      'البيان': t.description || '—',
+      'بواسطة': t.profiles ? `${t.profiles.first_name || ''} ${t.profiles.last_name || ''}`.trim() : 'النظام',
+      'المستفيد': t.beneficiary ? `${t.beneficiary.first_name || ''} ${t.beneficiary.last_name || ''}`.trim() : '—',
+    }));
+    exportRowsToExcel(rows, 'التقرير المالي', `التقرير_المالي_${dateFrom}_${dateTo}`);
+  };
+
+  const handlePrintFinancials = () => {
+    const inc = filteredTransactions.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
+    const exp = filteredTransactions.filter(t => t.type !== 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
+    setPrintConfig({
+      isOpen: true,
+      title: 'تقرير الحسابات والماليات الشامل',
+      subtitle: `سجل الإيرادات والمصروفات للفترة (${filteredTransactions.length} حركة)`,
+      metaItems: [
+        { label: 'عدد الحركات', value: `${filteredTransactions.length} حركة` },
+        { label: 'إجمالي الإيرادات', value: `+${inc.toLocaleString('ar-EG')} ج.م` },
+        { label: 'إجمالي المصروفات', value: `-${exp.toLocaleString('ar-EG')} ج.م` },
+        { label: 'صافي الرصيد', value: `${(inc - exp).toLocaleString('ar-EG')} ج.م` },
+      ],
+      sections: [
+        {
+          title: 'جدول المعاملات المالية',
+          columns: [
+            { header: 'التاريخ', render: (t) => new Date(t.created_at).toLocaleDateString('ar-EG') },
+            { header: 'النوع والتصنيف', render: (t) => `${TRANSACTION_TYPE_LABELS[toTransactionType(t.type)]} - ${EXPENSE_GROUP_LABELS[t.category] || t.category || 'عام'}` },
+            { header: 'المبلغ', render: (t) => `${t.type === 'income' ? '+' : '-'}${Number(t.amount || 0).toLocaleString('ar-EG')} ج.م`, align: 'left' },
+            { header: 'العيادة', render: (t) => t.clinics?.name || 'عام' },
+            { header: 'البيان', key: 'description' },
+            { header: 'بواسطة', render: (t) => t.profiles ? `${t.profiles.first_name || ''} ${t.profiles.last_name || ''}`.trim() : 'النظام' },
+          ],
+          data: filteredTransactions,
+        },
+      ],
+    });
+  };
+
+  // 4) تصدير وطباعة الشكاوى والمقترحات
+  const handleExportComplaints = () => {
+    if (filteredComplaints.length === 0) return;
+    const rows = filteredComplaints.map((c, i) => ({
+      'م': i + 1,
+      'التاريخ': new Date(c.created_at).toLocaleDateString('ar-EG'),
+      'النوع': COMPLAINT_TYPE_LABELS[toComplaintType(c.type)],
+      'المرسل': c.profiles ? `${c.profiles.first_name || ''} ${c.profiles.last_name || ''}`.trim() : 'زائر',
+      'الرسالة / المحتوى': c.message || '',
+      'الحالة': COMPLAINT_STATUS_LABELS[toComplaintStatus(c.status)],
+      'رد الإدارة': c.admin_reply || 'لم يتم الرد بعد',
+    }));
+    exportRowsToExcel(rows, 'سجل الشكاوى والمقترحات', `تقرير_الشكاوى_${dateFrom}_${dateTo}`);
+  };
+
+  const handlePrintComplaints = () => {
+    setPrintConfig({
+      isOpen: true,
+      title: 'تقرير الشكاوى والمقترحات',
+      subtitle: `سجل متابعة شكاوى ومقترحات المرضى (${filteredComplaints.length} رسالة)`,
+      metaItems: [
+        { label: 'إجمالي الرسائل', value: `${filteredComplaints.length}` },
+        { label: 'مفتوحة', value: `${filteredComplaints.filter(c => c.status === 'open').length}` },
+        { label: 'تم الحل', value: `${filteredComplaints.filter(c => c.status === 'resolved').length}` },
+      ],
+      sections: [
+        {
+          title: 'سجل الشكاوى والمقترحات',
+          columns: [
+            { header: 'التاريخ', render: (c) => new Date(c.created_at).toLocaleDateString('ar-EG') },
+            { header: 'النوع', render: (c) => COMPLAINT_TYPE_LABELS[toComplaintType(c.type)] },
+            { header: 'المرسل', render: (c) => c.profiles ? `${c.profiles.first_name || ''} ${c.profiles.last_name || ''}`.trim() : 'زائر' },
+            { header: 'نص الرسالة', key: 'message' },
+            { header: 'الحالة', render: (c) => COMPLAINT_STATUS_LABELS[toComplaintStatus(c.status)] },
+            { header: 'رد الإدارة', render: (c) => c.admin_reply || '—' },
+          ],
+          data: filteredComplaints,
+        },
+      ],
+    });
+  };
+
+  // 5) تصدير وطباعة الاستشارات الطبية
+  const handleExportConsultations = () => {
+    if (filteredConsultations.length === 0) return;
+    const rows = filteredConsultations.map((c, i) => ({
+      'م': i + 1,
+      'التاريخ': new Date(c.created_at).toLocaleDateString('ar-EG'),
+      'المريض': c.patient ? `${c.patient.first_name || ''} ${c.patient.last_name || ''}`.trim() : 'غير محدد',
+      'الطبيب': c.doctor?.profiles ? `د. ${c.doctor.profiles.first_name || ''} ${c.doctor.profiles.last_name || ''}`.trim() : 'غير محدد',
+      'سؤال المريض': c.message || '',
+      'الحالة': c.reply ? 'تم الرد' : 'في انتظار الرد',
+      'الرد الطبي': c.reply || '—',
+    }));
+    exportRowsToExcel(rows, 'الاستشارات الطبية', `تقرير_الاستشارات_${dateFrom}_${dateTo}`);
+  };
+
+  const handlePrintConsultations = () => {
+    setPrintConfig({
+      isOpen: true,
+      title: 'تقرير الاستشارات الطبية الإلكترونية',
+      subtitle: `سجل الاستشارات بين المرضى والأطباء (${filteredConsultations.length} استشارة)`,
+      metaItems: [
+        { label: 'إجمالي الاستشارات', value: `${filteredConsultations.length}` },
+        { label: 'تم الرد', value: `${filteredConsultations.filter(c => c.reply).length}` },
+        { label: 'قيد الانتظار', value: `${filteredConsultations.filter(c => !c.reply).length}` },
+      ],
+      sections: [
+        {
+          title: 'سجل الاستشارات',
+          columns: [
+            { header: 'التاريخ', render: (c) => new Date(c.created_at).toLocaleDateString('ar-EG') },
+            { header: 'المريض', render: (c) => c.patient ? `${c.patient.first_name || ''} ${c.patient.last_name || ''}`.trim() : 'غير محدد' },
+            { header: 'الطبيب', render: (c) => c.doctor?.profiles ? `د. ${c.doctor.profiles.first_name || ''} ${c.doctor.profiles.last_name || ''}`.trim() : 'غير محدد' },
+            { header: 'السؤال', key: 'message' },
+            { header: 'الحالة', render: (c) => c.reply ? 'تم الرد' : 'في الانتظار' },
+            { header: 'الرد الطبي', render: (c) => c.reply || '—' },
+          ],
+          data: filteredConsultations,
+        },
+      ],
+    });
+  };
+
   // ─── reply to complaint ───
   const openReplyForm = (id: string) => {
     setReplyComplaintId(id);
@@ -547,20 +762,41 @@ export function ReportsTab() {
       {/* ──────────────────────────────────────────────────────────────────── */}
       {reportTab === 'overview' && (
         <>
-          <Card className="print:hidden">
-            <CardContent className="p-4 flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
-                <Building className="w-4 h-4" /> فلترة حسب العيادة
+          <Card className="print:hidden border border-gray-200 shadow-xs">
+            <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                  <Building className="w-4 h-4 text-emerald-600" /> فلترة حسب العيادة:
+                </div>
+                <select value={overviewClinicFilter} onChange={(e) => setOverviewClinicFilter(e.target.value)} className="border border-gray-300 rounded-xl p-2 text-xs bg-white min-w-[180px] focus:outline-hidden focus:ring-2 focus:ring-emerald-500">
+                  <option value="">كل العيادات</option>
+                  {clinics.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                {overviewClinicFilter && (
+                  <button onClick={() => setOverviewClinicFilter('')} className="text-xs text-red-600 font-bold hover:underline cursor-pointer">
+                    مسح الفلتر
+                  </button>
+                )}
               </div>
-              <select value={overviewClinicFilter} onChange={(e) => setOverviewClinicFilter(e.target.value)} className="border rounded-lg p-2 text-sm bg-white min-w-[180px]">
-                <option value="">كل العيادات</option>
-                {clinics.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              {overviewClinicFilter && (
-                <button onClick={() => setOverviewClinicFilter('')} className="text-xs text-emerald-700 font-bold hover:underline">
-                  مسح الفلتر
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportOverview}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                  title="تصدير الملخص التنفيذي إلى إكسيل"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>تصدير إكسيل (.xlsx)</span>
                 </button>
-              )}
+                <button
+                  onClick={handlePrintOverview}
+                  className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                  title="طباعة الملخص التنفيذي وحفظ كـ PDF"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة / PDF</span>
+                </button>
+              </div>
             </CardContent>
           </Card>
 
@@ -647,14 +883,29 @@ export function ReportsTab() {
       {reportTab === 'clinics' && (
         <Card>
           <CardHeader className="flex flex-col gap-3">
-            <div className="flex flex-row justify-between items-center">
+            <div className="flex flex-row justify-between items-center flex-wrap gap-2">
               <div>
                 <CardTitle className="flex items-center gap-2"><Building className="w-5 h-5 text-emerald-600" /> تقارير العيادات والكشوفات الطبية</CardTitle>
                 <CardDescription>إحصائيات المواعيد والكشوفات للفترة المختارة ({filteredAppointments.length} صف)</CardDescription>
               </div>
-              <button onClick={() => exportToCSV(filteredAppointments, 'تقرير_الكشوفات')} className="flex items-center gap-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-200">
-                <Download className="w-4 h-4" /> تصدير CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportClinics}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                  title="تصدير جدول الكشوفات إلى ملف إكسيل (.xlsx)"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>تصدير إكسيل (.xlsx)</span>
+                </button>
+                <button
+                  onClick={handlePrintClinics}
+                  className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                  title="طباعة تقرير الكشوفات وحفظ كـ PDF"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة / PDF</span>
+                </button>
+              </div>
             </div>
             {/* فلاتر إضافية */}
             <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center flex-wrap">
@@ -739,14 +990,29 @@ export function ReportsTab() {
       {reportTab === 'financials' && (
         <Card>
           <CardHeader className="flex flex-col gap-3">
-            <div className="flex flex-row justify-between items-center">
+            <div className="flex flex-row justify-between items-center flex-wrap gap-2">
               <div>
                 <CardTitle className="flex items-center gap-2"><Wallet className="w-5 h-5 text-emerald-600" /> تقارير الحسابات والماليات</CardTitle>
                 <CardDescription>الإيرادات والمصروفات ({filteredTransactions.length} صف)</CardDescription>
               </div>
-              <button onClick={() => exportToCSV(filteredTransactions, 'التقرير_المالي')} className="flex items-center gap-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-200">
-                <Download className="w-4 h-4" /> تصدير CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportFinancials}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                  title="تصدير جدول الحركات المالية إلى إكسيل (.xlsx)"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>تصدير إكسيل (.xlsx)</span>
+                </button>
+                <button
+                  onClick={handlePrintFinancials}
+                  className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                  title="طباعة التقرير المالي وحفظ كـ PDF"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة / PDF</span>
+                </button>
+              </div>
             </div>
             <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center flex-wrap">
               <div className="flex items-center gap-2 text-sm">
@@ -863,14 +1129,29 @@ export function ReportsTab() {
       {reportTab === 'complaints' && (
         <Card>
           <CardHeader className="flex flex-col gap-3">
-            <div className="flex flex-row justify-between items-center">
+            <div className="flex flex-row justify-between items-center flex-wrap gap-2">
               <div>
                 <CardTitle className="flex items-center gap-2"><MessageCircle className="w-5 h-5 text-emerald-600" /> الشكاوى والمقترحات</CardTitle>
                 <CardDescription>اطلع على شكاوى ومقترحات المرضى وقم بالرد عليها ({filteredComplaints.length} في الفترة)</CardDescription>
               </div>
-              <button onClick={() => exportToCSV(filteredComplaints, 'تقرير_الشكاوى')} className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">
-                <Download className="w-4 h-4" /> تصدير CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportComplaints}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                  title="تصدير الشكاوى والمقترحات إلى إكسيل (.xlsx)"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>تصدير إكسيل (.xlsx)</span>
+                </button>
+                <button
+                  onClick={handlePrintComplaints}
+                  className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                  title="طباعة تقرير الشكاوى وحفظ كـ PDF"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة / PDF</span>
+                </button>
+              </div>
             </div>
             <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center flex-wrap">
               <div className="flex items-center gap-2 text-sm">
@@ -959,14 +1240,29 @@ export function ReportsTab() {
       {reportTab === 'consultations' && (
         <Card>
           <CardHeader className="flex flex-col gap-3">
-            <div className="flex flex-row justify-between items-center">
+            <div className="flex flex-row justify-between items-center flex-wrap gap-2">
               <div>
                 <CardTitle className="flex items-center gap-2"><ClipboardList className="w-5 h-5 text-emerald-600" /> الاستشارات الطبية</CardTitle>
                 <CardDescription>الاطلاع على الاستشارات بين المرضى والأطباء ({filteredConsultations.length} في الفترة)</CardDescription>
               </div>
-              <button onClick={() => exportToCSV(filteredConsultations, 'تقرير_الاستشارات')} className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">
-                <Download className="w-4 h-4" /> تصدير CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportConsultations}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                  title="تصدير الاستشارات الطبية إلى إكسيل (.xlsx)"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>تصدير إكسيل (.xlsx)</span>
+                </button>
+                <button
+                  onClick={handlePrintConsultations}
+                  className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                  title="طباعة تقرير الاستشارات وحفظ كـ PDF"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة / PDF</span>
+                </button>
+              </div>
             </div>
             <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center flex-wrap">
               <div className="flex items-center gap-2 text-sm">
@@ -1021,6 +1317,18 @@ export function ReportsTab() {
       {/* تقارير الأطباء */}
       {/* ──────────────────────────────────────────────────────────────────── */}
       {reportTab === 'doctors' && <DoctorReportsPanel />}
+
+      {/* مودال الطباعة وتصدير PDF لتقارير التبويب النشط */}
+      <PrintableReportModal
+        isOpen={printConfig.isOpen}
+        onClose={() => setPrintConfig(prev => ({ ...prev, isOpen: false }))}
+        title={printConfig.title}
+        subtitle={printConfig.subtitle}
+        dateRange={{ from: dateFrom, to: dateTo }}
+        metaItems={printConfig.metaItems}
+        summaryCards={printConfig.summaryCards}
+        sections={printConfig.sections}
+      />
     </div>
   );
 }

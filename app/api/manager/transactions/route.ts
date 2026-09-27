@@ -22,7 +22,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     .from('transactions')
     // transactions فيها علاقتين بـ profiles (user_id و beneficiary_id) —
     // لازم نحدد المقصود صراحةً وإلا Postgrest بيرفض الطلب بخطأ الغموض.
-    .select('*, profiles!transactions_user_id_fkey(first_name, last_name), beneficiary:beneficiary_id(first_name, last_name)', { count: 'exact' })
+    .select('*, clinics(name), profiles!transactions_user_id_fkey(first_name, last_name), beneficiary:beneficiary_id(first_name, last_name)', { count: 'exact' })
     .order('created_at', { ascending: false });
 
   if (type) query = query.eq('type', type);

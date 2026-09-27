@@ -18,15 +18,31 @@
     print-color-adjust: exact !important;
   }
 
-  /* إخفاء كافة عناصر التطبيق والقوائم أثناء طباعة التقرير */
-  body * {
+  /* إخفاء كافة عناصر التطبيق والقوائم أثناء طباعة التقارير المخصصة */
+  body:has(#printable-lab-report, #printable-report-content, .printable-document) * {
     visibility: hidden;
   }
 
-  /* إظهار كائن تقرير التحليل فقط */
+  /* إظهار كائن التقرير المطلوب طباعته فقط */
   #printable-lab-report,
-  #printable-lab-report * {
-    visibility: visible;
+  #printable-lab-report *,
+  #printable-report-content,
+  #printable-report-content *,
+  .printable-document,
+  .printable-document * {
+    visibility: visible !important;
+  }
+
+  #printable-report-content,
+  .printable-document {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    z-index: 99999 !important;
   }
 
   #printable-lab-report {
