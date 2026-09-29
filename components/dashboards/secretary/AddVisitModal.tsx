@@ -27,6 +27,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
+import { getTodayDateStr } from '@/lib/financialMonth';
 
 interface FoundPatient {
   id: string;
@@ -44,8 +45,8 @@ interface ServiceLine {
 }
 
 function todayStr() {
-  // YYYY-MM-DD بتوقيت المحلي-السيرفر. كفاية لاغراض الزيارات.
-  return new Date().toISOString().slice(0, 10);
+  // YYYY-MM-DD بتوقيت القاهرة المحلي المعتمد للمركز
+  return getTodayDateStr();
 }
 
 function newServiceLine(prefill?: Partial<ServiceLine>): ServiceLine {
@@ -125,6 +126,7 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSubmittingRef = useRef(false);
 
   // ─── جلب الخيارات ───
   useEffect(() => {
@@ -290,6 +292,8 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
   // ─── حفظ ───
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     setSaveError(null);
 
     // 1) تحديد المريض
@@ -297,11 +301,13 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
     if (!patient) {
       if (!creatingNew) {
         setSaveError('اختر مريضًا أو أنشئ مريضًا جديدًا.');
+        isSubmittingRef.current = false;
         return;
       }
       const name = newName.trim();
       if (!name) {
         setSaveError('اكتب اسم المريض الجديد.');
+        isSubmittingRef.current = false;
         return;
       }
       // إنشاء walk_in_patient
@@ -312,6 +318,7 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
         .single();
       if (createErr || !created) {
         setSaveError(getFriendlyErrorMessage(createErr, 'تعذر إنشاء ملف المريض.'));
+        isSubmittingRef.current = false;
         return;
       }
       patient = { id: created.id, name: created.name, phone: created.phone, source: 'walk_in' };
@@ -319,10 +326,12 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
 
     if (!visitDate) {
       setSaveError('حدد تاريخ الزيارة.');
+      isSubmittingRef.current = false;
       return;
     }
     if (!clinicId) {
       setSaveError('اختر العيادة.');
+      isSubmittingRef.current = false;
       return;
     }
     const isVisitToday = visitDate === todayStr();
@@ -331,6 +340,7 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
     const filledLines = serviceLines.filter(l => l.serviceId || l.customName.trim());
     if (filledLines.length === 0) {
       setSaveError('أضف خدمة واحدة على الأقل.');
+      isSubmittingRef.current = false;
       return;
     }
 
@@ -358,6 +368,7 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
           clinic_id: clinicId || null,
           doctor_id: doctorId || null,
           paid_amount: parseFloat(first.price) || 0,
+          skip_auto_transaction: Boolean(editVisit.skip_auto_transaction),
         }).eq('id', editVisit.id);
         if (error) throw error;
         onAdded?.();
@@ -367,23 +378,15 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
 
       // 5) إضافة: نضيف صف لكل خدمة في patient_visits (visit_group_id موحّد)
       //
-      // ملحوظة مهمة عن التسجيل المالي (income في transactions):
-      // جدول patient_visits عنده تريجر تلقائي (on_patient_visit_sync_transaction)
-      // بيعمل قيد مالي لوحده بمجرد ما paid_amount > 0، وبيسجّله بتاريخ
-      // visit_date بالظبط (مش بتاريخ الإضافة) — ده بيغطي الزيارات القديمة
-      // صح من غير أي كود إضافي هنا.
-      // لكن لزيارة النهارده الأساسية (مش إضافة خدمة لزيارة موجودة)، بنعمل
-      // كمان صف في call_queue وليه تريجر تاني (trg_sync_call_queue_payment)
-      // بيعمل قيد مالي منفصل — فلو سبنا paid_amount هنا كمان هيتسجل قيدين
-      // لنفس التحصيل. فبنستخدم skip_auto_transaction عشان نمنع تريجر
-      // patient_visits من عمل قيد في الحالة دي بس، ونسيب call_queue هو
-      // المصدر الوحيد للقيد المالي.
+      // إصلاح مشكلة التكرار في transactions:
+      // جدول patient_visits هو المصدر المالي والطبي الرئيسي والدائم لكل الزيارات
+      // (سواء اليوم أو تواريخ سابقة، وسواء خدمة واحدة أو خدمات متعددة).
+      // التريجر التلقائي على patient_visits بيسجّل القيد المالي الدقيق
+      // بالمبلغ وتاريخ الزيارة واسم العيادة.
+      // لمنع تكرار القيد مرتين في جدول transactions، بنسيب تسجيل المبلغ المالي
+      // بالكامل لـ patient_visits، وفي صف call_queue (النداء الآلي للشاشة)
+      // بنخلي paid_amount = 0 عشان تريجر call_queue ما ينشئش قيد مالي مكرر ثانٍ.
       const willCreateQueueRow = isVisitToday && !patientLocked;
-      // ملحوظة إضافية: لو فيه أكتر من خدمة في نفس الزيارة، بس أول خدمة هي
-      // اللي بتتسجل كـ paid_amount في صف call_queue (والباقي بيروح
-      // queue_services اللي معهاش أي تريجر مالي خالص) — فالاستثناء من
-      // القيد التلقائي (skip_auto_transaction) لازم يكون لأول خدمة بس،
-      // عشان باقي الخدمات تتسجل ماليًا من تريجر patient_visits زي ما هو.
       const visitsToInsert: any[] = [];
       for (let i = 0; i < filledLines.length; i++) {
         const line = filledLines[i];
@@ -404,14 +407,14 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
           paid_amount: paid,
           entered_by: user?.id || null,
           visit_group_id: groupId,
-          skip_auto_transaction: willCreateQueueRow && i === 0,
+          skip_auto_transaction: false,
         });
       }
       const { error: visitErr } = await supabase.from('patient_visits').insert(visitsToInsert);
       if (visitErr) throw visitErr;
 
-      // 6) لو الزيارة النهارده: نضيف سطر رئيسي في call_queue
-      //    الخدمات الإضافية (أكتر من واحدة) بتدخل في queue_services.
+      // 6) لو الزيارة النهارده: نضيف سطر رئيسي في call_queue لشاشة النداء
+      //    paid_amount = 0 لمنع التريجر المالي لـ call_queue من إنشاء قيد مالي مكرر.
       if (willCreateQueueRow) {
         const firstLine = filledLines[0];
         const firstResolved = await resolveLine(firstLine);
@@ -434,12 +437,10 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
           service_id: firstResolved.serviceId,
           service_custom_name: firstResolved.customName,
           doctor_id: doctorId || null,
-          paid_amount: parseFloat(firstLine.price) || 0,
+          paid_amount: 0, // 0 لمنع تكرار القيد في transactions (التسجيل تم في patient_visits)
           remaining_amount: 0,
           collected_by: user?.id || null,
-          // بيربط صف الطابور بمجموعة الزيارة في patient_visits — عشان
-          // "ضم خدمة" من شاشة النداء يقدر يستخدم نفس مودال إضافة الزيارة
-          // (مصدر واحد بس لكل الإضافات، بدون تكرار في التسجيل المالي).
+          // بيربط صف الطابور بمجموعة الزيارة في patient_visits
           visit_group_id: groupId,
         }]).select().single();
         if (queueErr) throw queueErr;

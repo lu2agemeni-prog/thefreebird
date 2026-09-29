@@ -47,9 +47,23 @@ export function DashboardOverviewTab() {
       .gte('created_at', startOfDay.toISOString()).lte('created_at', endOfDay.toISOString())
       .then(({ count }) => setPatientsToday(count ?? 0));
 
-    supabase.from('transactions').select('amount').eq('type', 'income')
+    supabase.from('transactions').select('amount, clinic_id, created_at').eq('type', 'income')
       .gte('created_at', startOfDay.toISOString()).lte('created_at', endOfDay.toISOString())
-      .then(({ data }) => setRevenueToday((data || []).reduce((sum, r: any) => sum + Number(r.amount || 0), 0)));
+      .then(({ data }) => {
+        const rows = data || [];
+        const validRows: any[] = [];
+        rows.forEach((t) => {
+          const curTime = t.created_at ? new Date(t.created_at).getTime() : 0;
+          const isTwin = validRows.some((prev) => {
+            if (Number(prev.amount) !== Number(t.amount)) return false;
+            if (prev.clinic_id !== t.clinic_id) return false;
+            const prevTime = prev.created_at ? new Date(prev.created_at).getTime() : 0;
+            return Math.abs(curTime - prevTime) <= 15000;
+          });
+          if (!isTwin) validRows.push(t);
+        });
+        setRevenueToday(validRows.reduce((sum, r: any) => sum + Number(r.amount || 0), 0));
+      });
   }, []);
 
   return (

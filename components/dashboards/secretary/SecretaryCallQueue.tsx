@@ -62,29 +62,38 @@ export function SecretaryCallQueue() {
   const [pickSearch, setPickSearch] = useState('');
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchAll();
-    const channel = supabase
-      .channel('secretary_queue_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue' }, () => fetchQueueOnly())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctors' }, () => fetchDoctorsOnly())
-      .subscribe();
-
-    const callChannel = supabase
-      .channel('secretary-calls')
-      .on('broadcast', { event: 'call_secretary' }, (payload) => {
-        new Audio('/audio/ding.mp3').play().catch(() => {});
-        setSecretaryAlert(`نداء للسكرتارية - ${payload.payload?.clinicName || 'عيادة'}`);
-        setTimeout(() => setSecretaryAlert(null), 8000);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-      supabase.removeChannel(callChannel);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const fetchCompletedToday = async () => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const { data } = await supabase
+      .from('call_queue')
+      .select('*, clinic:clinic_id(name)')
+      .eq('status', 'completed')
+      .gte('updated_at', todayStart.toISOString())
+      .order('updated_at', { ascending: false });
+    if (data) {
+      const groupIds = data.map((q: any) => q.visit_group_id).filter(Boolean);
+      let paidMap: Record<string, number> = {};
+      if (groupIds.length > 0) {
+        const { data: pvData } = await supabase
+          .from('patient_visits')
+          .select('visit_group_id, paid_amount')
+          .in('visit_group_id', groupIds);
+        (pvData || []).forEach((pv: any) => {
+          if (pv.visit_group_id) {
+            paidMap[pv.visit_group_id] = (paidMap[pv.visit_group_id] || 0) + Number(pv.paid_amount || 0);
+          }
+        });
+      }
+      const enhanced = data.map((q: any) => ({
+        ...q,
+        display_paid_amount: q.visit_group_id && paidMap[q.visit_group_id] !== undefined
+          ? paidMap[q.visit_group_id]
+          : (Number(q.paid_amount) || 0),
+      }));
+      setCompletedToday(enhanced);
+    }
+  };
 
   const fetchQueueOnly = async () => {
     const { data, error } = await supabase
@@ -95,21 +104,29 @@ export function SecretaryCallQueue() {
     if (error) {
       setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل حالة النداء الآلي.'));
     } else if (data) {
-      setQueues(data);
+      // إرفاق إجمالي المبلغ المدفوع من patient_visits المرتبطة بالدور (المصدر المالي الحقيقي الموحد)
+      const groupIds = data.map((q: any) => q.visit_group_id).filter(Boolean);
+      let paidMap: Record<string, number> = {};
+      if (groupIds.length > 0) {
+        const { data: pvData } = await supabase
+          .from('patient_visits')
+          .select('visit_group_id, paid_amount')
+          .in('visit_group_id', groupIds);
+        (pvData || []).forEach((pv: any) => {
+          if (pv.visit_group_id) {
+            paidMap[pv.visit_group_id] = (paidMap[pv.visit_group_id] || 0) + Number(pv.paid_amount || 0);
+          }
+        });
+      }
+      const enhanced = data.map((q: any) => ({
+        ...q,
+        display_paid_amount: q.visit_group_id && paidMap[q.visit_group_id] !== undefined
+          ? paidMap[q.visit_group_id]
+          : (Number(q.paid_amount) || Number(q.service?.price) || 0),
+      }));
+      setQueues(enhanced);
     }
     fetchCompletedToday();
-  };
-
-  const fetchCompletedToday = async () => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const { data } = await supabase
-      .from('call_queue')
-      .select('*, clinic:clinic_id(name)')
-      .eq('status', 'completed')
-      .gte('updated_at', todayStart.toISOString())
-      .order('updated_at', { ascending: false });
-    if (data) setCompletedToday(data);
   };
 
   const fetchDoctorsOnly = async () => {
@@ -135,6 +152,30 @@ export function SecretaryCallQueue() {
     await fetchQueueOnly();
     setLoading(false);
   };
+
+  useEffect(() => {
+    fetchAll();
+    const channel = supabase
+      .channel('secretary_queue_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue' }, () => fetchQueueOnly())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctors' }, () => fetchDoctorsOnly())
+      .subscribe();
+
+    const callChannel = supabase
+      .channel('secretary-calls')
+      .on('broadcast', { event: 'call_secretary' }, (payload) => {
+        new Audio('/audio/ding.mp3').play().catch(() => {});
+        setSecretaryAlert(`نداء للسكرتارية - ${payload.payload?.clinicName || 'عيادة'}`);
+        setTimeout(() => setSecretaryAlert(null), 8000);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(callChannel);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
 
   const selectedClinic = clinics.find(c => c.id === selectedClinicId);
@@ -591,12 +632,15 @@ export function SecretaryCallQueue() {
                             <span>د. {q.assigned_doctor.first_name} {q.assigned_doctor.last_name}</span>
                           )}
                         </div>
-                        {(q.paid_amount > 0 || hasRemaining) && (
-                          <div className="flex gap-3 mt-1 text-xs font-bold">
-                            {q.paid_amount > 0 && <span className="text-emerald-600">مدفوع: {q.paid_amount} ج.م</span>}
-                            {hasRemaining && <span className="text-red-500">متبقي: {q.remaining_amount} ج.م</span>}
-                          </div>
-                        )}
+                        {(() => {
+                          const effPaid = Number((q as any).display_paid_amount ?? q.paid_amount ?? 0);
+                          return (effPaid > 0 || hasRemaining) ? (
+                            <div className="flex gap-3 mt-1 text-xs font-bold">
+                              {effPaid > 0 && <span className="text-emerald-600">مدفوع: {effPaid} ج.م</span>}
+                              {hasRemaining && <span className="text-red-500">متبقي: {q.remaining_amount} ج.م</span>}
+                            </div>
+                          ) : null;
+                        })()}
 
                         {/* أدوات التحكم في الزيارة: نداء الآن، إنهاء المقابلة مباشرة، ضم خدمة */}
                         <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 flex-wrap gap-2">

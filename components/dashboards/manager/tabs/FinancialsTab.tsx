@@ -20,6 +20,8 @@ import {
   Tag,
   FileText,
   Filter,
+  Sparkles,
+  CheckCircle2,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
@@ -57,9 +59,11 @@ export function FinancialsTab() {
   const [dateTo, setDateTo] = useState(() => getFinancialMonthBounds().endStr);
   const [page, setPage] = useState(0);
 
-  // المودالات
+  // المودالات والتنظيف
   const [selectedTransaction, setSelectedTransaction] = useState<any | null>(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
@@ -80,6 +84,24 @@ export function FinancialsTab() {
     setLoading(false);
   }, [page, search, typeFilter, expenseGroupFilter, dateFrom, dateTo]);
 
+  const handleCleanDuplicates = async () => {
+    if (!confirm('سيتم فحص سجلات الإيرادات وحذف أي قيود مكررة مسجلة بالخطأ في نفس اللحظة لنفس العيادة والمبلغ. هل تريد المتابعة؟')) return;
+    setCleaningDuplicates(true);
+    setCleanupMessage(null);
+    const { data, error } = await authFetchJson('/api/manager/transactions', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'clean_duplicates' }),
+    });
+    setCleaningDuplicates(false);
+    if (error) {
+      setError(error);
+    } else {
+      setCleanupMessage(data?.message || 'تم تنظيف القيود المكررة بنجاح.');
+      setTimeout(() => setCleanupMessage(null), 6000);
+      fetchTransactions();
+    }
+  };
+
   useEffect(() => {
     const t = setTimeout(fetchTransactions, 0);
     return () => clearTimeout(t);
@@ -99,14 +121,28 @@ export function FinancialsTab() {
     setSearch('');
   };
 
-  // إحصائيات الصفحة الحالية المعروضة
+  // إحصائيات الصفحة الحالية المعروضة مع استبعاد التكرارات المتطابقة في نفس اللحظة
   const pageStats = useMemo(() => {
-    const income = transactions
-      .filter((t) => t.type === 'income')
-      .reduce((s, t) => s + Number(t.amount || 0), 0);
-    const expense = transactions
-      .filter((t) => t.type !== 'income')
-      .reduce((s, t) => s + Number(t.amount || 0), 0);
+    const validIncomeRows: any[] = [];
+    const expenseRows: any[] = [];
+
+    transactions.forEach((t) => {
+      if (t.type === 'income') {
+        const curTime = t.created_at ? new Date(t.created_at).getTime() : 0;
+        const isTwin = validIncomeRows.some((prev) => {
+          if (Number(prev.amount) !== Number(t.amount)) return false;
+          if (prev.clinic_id !== t.clinic_id) return false;
+          const prevTime = prev.created_at ? new Date(prev.created_at).getTime() : 0;
+          return Math.abs(curTime - prevTime) <= 15000;
+        });
+        if (!isTwin) validIncomeRows.push(t);
+      } else {
+        expenseRows.push(t);
+      }
+    });
+
+    const income = validIncomeRows.reduce((s, t) => s + Number(t.amount || 0), 0);
+    const expense = expenseRows.reduce((s, t) => s + Number(t.amount || 0), 0);
     return { income, expense, net: income - expense };
   }, [transactions]);
 
@@ -164,6 +200,15 @@ export function FinancialsTab() {
         {view === 'list' && (
           <div className="flex items-center gap-2">
             <button
+              onClick={handleCleanDuplicates}
+              disabled={cleaningDuplicates}
+              className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 text-amber-800 border border-amber-300 font-bold px-3 py-2 rounded-xl text-xs transition-colors shadow-2xs cursor-pointer"
+              title="فحص وحذف أي قيود مكررة مسجلة في نفس اللحظة"
+            >
+              <Sparkles className="w-4 h-4 text-amber-600" />
+              <span>{cleaningDuplicates ? 'جاري الفحص...' : 'فحص وتنظيف التكرار'}</span>
+            </button>
+            <button
               onClick={handleExportExcel}
               disabled={transactions.length === 0}
               className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-colors shadow-2xs cursor-pointer"
@@ -182,6 +227,13 @@ export function FinancialsTab() {
           </div>
         )}
       </div>
+
+      {cleanupMessage && (
+        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-3 rounded-2xl text-xs font-bold animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{cleanupMessage}</span>
+        </div>
+      )}
 
       {view === 'profit_report' ? (
         <ProfitReportPanel />

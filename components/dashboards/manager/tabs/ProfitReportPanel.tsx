@@ -119,16 +119,37 @@ export function ProfitReportPanel() {
     return () => clearTimeout(t);
   }, [fetchData]);
 
+  // استبعاد أي قيود إيرادات مكررة نشأت بالخطأ في نفس اللحظة (نفس المبلغ والعيادة في غضون 15 ثانية)
+  const cleanedRows = useMemo(() => {
+    const validRows: any[] = [];
+    rows.forEach((t) => {
+      if (t.type === 'income') {
+        const curTime = t.created_at ? new Date(t.created_at).getTime() : 0;
+        const isTwin = validRows.some((prev) => {
+          if (prev.type !== 'income') return false;
+          if (Number(prev.amount) !== Number(t.amount)) return false;
+          if (prev.clinic_id !== t.clinic_id) return false;
+          const prevTime = prev.created_at ? new Date(prev.created_at).getTime() : 0;
+          return Math.abs(curTime - prevTime) <= 15000;
+        });
+        if (!isTwin) validRows.push(t);
+      } else {
+        validRows.push(t);
+      }
+    });
+    return validRows;
+  }, [rows]);
+
   // حسابات المركز العامة
   const center = useMemo(() => {
-    const incomeRows = rows.filter((t) => t.type === 'income');
-    const expenseRows = rows.filter((t) => t.type !== 'income');
+    const incomeRows = cleanedRows.filter((t) => t.type === 'income');
+    const expenseRows = cleanedRows.filter((t) => t.type !== 'income');
     const income = incomeRows.reduce((s, t) => s + Number(t.amount || 0), 0);
     const expense = expenseRows.reduce((s, t) => s + Number(t.amount || 0), 0);
     const net = income - expense;
     const profitMargin = income > 0 ? Math.round((net / income) * 100) : 0;
     return { income, expense, net, profitMargin, incomeRows, expenseRows };
-  }, [rows]);
+  }, [cleanedRows]);
 
   // تفصيل أرباح ومصروفات كل عيادة
   const clinicBreakdown = useMemo(() => {
@@ -136,7 +157,7 @@ export function ProfitReportPanel() {
       string,
       { name: string; income: number; expense: number; transactions: any[] }
     >();
-    rows.forEach((t) => {
+    cleanedRows.forEach((t) => {
       const key = t.clinic_id || UNASSIGNED_KEY;
       const name = t.clinics?.name || 'مصروفات عامة (غير مخصصة لعيادة)';
       if (!map.has(key)) map.set(key, { name, income: 0, expense: 0, transactions: [] });
@@ -155,14 +176,14 @@ export function ProfitReportPanel() {
       .sort((a, b) =>
         a.key === UNASSIGNED_KEY ? 1 : b.key === UNASSIGNED_KEY ? -1 : b.net - a.net
       );
-  }, [rows]);
+  }, [cleanedRows]);
 
   // تصنيف المصروفات (مجموعات)
   const expenseCategoriesBreakdown = useMemo(() => {
     const map = new Map<string, { label: string; amount: number; count: number; transactions: any[] }>();
 
     // 1) رواتب ومستحقات الأطباء (type === 'salary')
-    const doctorSalaries = rows.filter((t) => t.type === 'salary');
+    const doctorSalaries = cleanedRows.filter((t) => t.type === 'salary');
     if (doctorSalaries.length > 0) {
       map.set('doctor_salaries', {
         label: 'مستحقات وأجور الأطباء',
@@ -173,7 +194,7 @@ export function ProfitReportPanel() {
     }
 
     // 2) بقية المصروفات
-    rows
+    cleanedRows
       .filter((t) => t.type !== 'income' && t.type !== 'salary')
       .forEach((t) => {
         const catKey = t.category || 'misc';
@@ -190,7 +211,7 @@ export function ProfitReportPanel() {
     return Array.from(map.entries())
       .map(([key, v]) => ({ key, ...v }))
       .sort((a, b) => b.amount - a.amount);
-  }, [rows]);
+  }, [cleanedRows]);
 
   // إجمالي المدفوع لكل طبيب
   const doctorBreakdown = useMemo(() => {
@@ -198,7 +219,7 @@ export function ProfitReportPanel() {
       string,
       { name: string; amount: number; count: number; transactions: any[] }
     >();
-    rows
+    cleanedRows
       .filter((t) => t.type === 'salary' && t.user_id)
       .forEach((t) => {
         const key = t.user_id;
@@ -212,7 +233,7 @@ export function ProfitReportPanel() {
         row.transactions.push(t);
       });
     return Array.from(map.values()).sort((a, b) => b.amount - a.amount);
-  }, [rows]);
+  }, [cleanedRows]);
 
   // ==========================================
   // تصدير إكسيل متعدد الأوراق شامل
@@ -486,7 +507,7 @@ export function ProfitReportPanel() {
                   title: 'كافة الحركات المالية للمركز',
                   subtitle: `صافي الربح: ${center.net.toLocaleString('ar-EG')} ج.م (هامش ربح ${center.profitMargin}%)`,
                   type: 'all',
-                  transactions: rows,
+                  transactions: cleanedRows,
                 })
               }
               className={`group cursor-pointer bg-white border hover:shadow-md rounded-2xl p-5 transition-all duration-200 relative overflow-hidden ${

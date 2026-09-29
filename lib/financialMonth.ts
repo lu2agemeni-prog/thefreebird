@@ -11,6 +11,18 @@ export function toDateInputValue(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * إرجاع تاريخ اليوم بصيغة YYYY-MM-DD وفق التوقيت المحلي للمركز (توقيت القاهرة)
+ * لتفادي مشاكل فرق التوقيت مع جرينتش (UTC) في الساعات المسائية والليلية.
+ */
+export function getTodayDateStr(): string {
+  try {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+  } catch {
+    return toDateInputValue(new Date());
+  }
+}
+
 export interface FinancialPeriod {
   start: Date;
   end: Date;

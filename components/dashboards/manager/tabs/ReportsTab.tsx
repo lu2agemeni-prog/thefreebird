@@ -311,7 +311,7 @@ export function ReportsTab() {
         .select('id, status, clinic_id, doctor_id, appointment_date, doctor:doctor_id(profiles!doctors_profile_id_fkey(first_name, last_name))')
         .gte('appointment_date', fromIso).lte('appointment_date', toIso).limit(5000);
       let txQuery = supabase.from('transactions')
-        .select('id, type, amount, clinic_id, clinics(name)')
+        .select('id, type, amount, clinic_id, clinics(name), created_at')
         .gte('created_at', fromIso).lte('created_at', toIso).limit(5000);
       if (overviewClinicFilter) {
         apptQuery = apptQuery.eq('clinic_id', overviewClinicFilter);
@@ -396,17 +396,36 @@ export function ReportsTab() {
     const completedAppts = appointments.filter(a => a.status === 'completed').length;
     const cancelledAppts = appointments.filter(a => a.status === 'cancelled').length;
     const pendingAppts = appointments.filter(a => a.status === 'pending' || a.status === 'confirmed').length;
-    const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
-    const expense = transactions.filter(t => t.type !== 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
+
+    // استبعاد القيود المكررة المتطابقة في غضون 15 ثانية
+    const validIncomeRows: any[] = [];
+    const validExpenseRows: any[] = [];
+    transactions.forEach(t => {
+      if (t.type === 'income') {
+        const curTime = t.created_at ? new Date(t.created_at).getTime() : 0;
+        const isTwin = validIncomeRows.some(prev => {
+          if (Number(prev.amount) !== Number(t.amount)) return false;
+          if (prev.clinic_id !== t.clinic_id) return false;
+          const prevTime = prev.created_at ? new Date(prev.created_at).getTime() : 0;
+          return Math.abs(curTime - prevTime) <= 15000;
+        });
+        if (!isTwin) validIncomeRows.push(t);
+      } else {
+        validExpenseRows.push(t);
+      }
+    });
+
+    const income = validIncomeRows.reduce((s, t) => s + Number(t.amount || 0), 0);
+    const expense = validExpenseRows.reduce((s, t) => s + Number(t.amount || 0), 0);
     const net = income - expense;
     const openComplaints = complaints.filter(c => c.status === 'open').length;
     const resolvedComplaints = complaints.filter(c => c.status === 'resolved').length;
     const pendingConsults = consultations.filter(c => c.status === 'pending').length;
     const answeredConsults = consultations.filter(c => c.status === 'answered').length;
 
-    // أفضل العيادات (إيرادات)
+    // أفضل العيادات (إيرادات) مع استبعاد التكرار
     const clinicMap = new Map<string, { name: string; income: number; expense: number }>();
-    transactions.forEach(t => {
+    [...validIncomeRows, ...validExpenseRows].forEach(t => {
       if (!t.clinic_id) return;
       const name = t.clinics?.name || 'بدون اسم';
       if (!clinicMap.has(t.clinic_id)) clinicMap.set(t.clinic_id, { name, income: 0, expense: 0 });

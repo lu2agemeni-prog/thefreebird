@@ -239,19 +239,22 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
   const completedAppointments = useMemo(
     () => appointments.filter((a) => a.status === 'completed').length, [appointments]
   );
-  // تحصيلات النداء الآلي (call_queue) في النطاق الزمني المحدد
-  const queuePaidTotal = useMemo(
-    () => queue.reduce((s, q) => s + Number(q.paid_amount || 0), 0), [queue]
+  // تحصيلات الزيارات من patient_visits (المستودع الرئيسي والدائم لكافة الزيارات والخدمات)
+  const visitsPaidTotal = useMemo(
+    () => patientVisits.reduce((s, v) => s + Number(v.paid_amount || 0), 0), [patientVisits]
   );
+  // تحصيلات أي أدوار سابقة من call_queue غير مربوطة بـ patient_visits (لمنع التكرار نهائيًا)
+  const queuePaidTotal = useMemo(() => {
+    const seenGroupIds = new Set(patientVisits.map((v) => (v as any).visit_group_id || v.id));
+    return queue
+      .filter((q) => (!q.visit_group_id || !seenGroupIds.has(q.visit_group_id)) && !seenGroupIds.has(q.id))
+      .reduce((s, q) => s + Number(q.paid_amount || 0), 0);
+  }, [queue, patientVisits]);
   const queueRemainingTotal = useMemo(
     () => queue.reduce((s, q) => s + Number(q.remaining_amount || 0), 0), [queue]
   );
-  // تحصيلات الزيارات القديمة (المُدخلة بتاريخ سابق عبر AddVisitModal) في النطاق الزمني
-  const oldVisitsPaidTotal = useMemo(
-    () => patientVisits.reduce((s, v) => s + Number(v.paid_amount || 0), 0), [patientVisits]
-  );
-  // إجمالي الإيرادات = تحصيلات النداء + تحصيلات الزيارات القديمة
-  const totalIncome = queuePaidTotal + oldVisitsPaidTotal;
+  // إجمالي الإيرادات الدقيق دون أي تكرار
+  const totalIncome = visitsPaidTotal + queuePaidTotal;
   const servedPatients = useMemo(
     () => queue.filter((q) => q.status === 'completed').length, [queue]
   );
@@ -493,9 +496,9 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
                 </div>
                 <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-center">
                   <p className="text-2xl font-bold text-orange-700" dir="ltr">
-                    {queuePaidTotal} <span className="text-sm">+ {oldVisitsPaidTotal}</span>
+                    {visitsPaidTotal} <span className="text-sm">{queuePaidTotal > 0 ? `+ ${queuePaidTotal}` : ''}</span>
                   </p>
-                  <p className="text-xs text-orange-600 font-bold mt-1">نداء + زيارات قديمة (ج.م)</p>
+                  <p className="text-xs text-orange-600 font-bold mt-1">كشوفات العيادة المعتمدة (ج.م)</p>
                 </div>
                 <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center">
                   <p className="text-2xl font-bold text-red-700">{queueRemainingTotal} ج.م</p>
@@ -598,7 +601,7 @@ export function ClinicDetail({ clinic, onBack, onChanged }: {
                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                   <h4 className="font-bold text-gray-800 flex items-center gap-2">
                     <CalendarDays className="w-4 h-4 text-purple-600" />
-                    الزيارات القديمة لهذه العيادة ({patientVisits.length}) — إجمالي {oldVisitsPaidTotal} ج.م
+                    كشوفات وزيارات هذه العيادة ({patientVisits.length}) — إجمالي {visitsPaidTotal} ج.م
                   </h4>
                   <button onClick={() => exportToCSV(patientVisits, `تقارير_عيادة_${clinic.name}_الزيارات_القديمة`)} className="flex items-center gap-1 text-xs font-bold bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg hover:bg-purple-200">
                     <Download className="w-3.5 h-3.5" /> تصدير CSV
