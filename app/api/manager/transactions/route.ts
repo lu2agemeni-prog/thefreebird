@@ -70,26 +70,47 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'تعذر جلب الحركات المالية للفحص.' }, { status: 500 });
   }
 
-  // كشف القيود المكررة (نفس المبلغ + نفس العيادة + إنشاء بفارق أقل من 15 ثانية)
+  // كشف القيود المكررة والقيود الصفرية غير الصحيحة
   const duplicateIds: string[] = [];
   const keptIds = new Set<string>();
 
   for (let i = 0; i < incomeRows.length; i++) {
     const cur = incomeRows[i];
+
+    // أي قيد إيراد بمبلغ صفر هو قيد مشوه من تريجر الطابور يُحذف فوراً
+    if (Number(cur.amount) === 0) {
+      if (!duplicateIds.includes(cur.id)) duplicateIds.push(cur.id);
+      continue;
+    }
+
     if (duplicateIds.includes(cur.id) || keptIds.has(cur.id)) continue;
     keptIds.add(cur.id);
 
     const curTime = new Date(cur.created_at).getTime();
+    const curDesc = (cur.description || '').trim().toLowerCase();
+
     for (let j = i + 1; j < incomeRows.length; j++) {
       const next = incomeRows[j];
-      const nextTime = new Date(next.created_at).getTime();
-      if (nextTime - curTime > 15000) break;
+      if (duplicateIds.includes(next.id)) continue;
 
-      if (
-        !duplicateIds.includes(next.id) &&
+      const nextTime = new Date(next.created_at).getTime();
+      const timeDiff = nextTime - curTime;
+      const nextDesc = (next.description || '').trim().toLowerCase();
+
+      // 1) قيد توأم متطابق في غضون 60 ثانية لنفس العيادة والمبلغ
+      const isQuickTwin =
+        timeDiff <= 60000 &&
         Number(cur.amount) === Number(next.amount) &&
-        (cur.clinic_id === next.clinic_id || !cur.clinic_id || !next.clinic_id)
-      ) {
+        (cur.clinic_id === next.clinic_id || !cur.clinic_id || !next.clinic_id);
+
+      // 2) قيد بنفس الوصف والمبلغ لنفس العيادة في غضون نفس اليوم
+      const isExactDescTwin =
+        curDesc &&
+        curDesc === nextDesc &&
+        Number(cur.amount) === Number(next.amount) &&
+        Math.abs(timeDiff) <= 86400000;
+
+      if (isQuickTwin || isExactDescTwin) {
         duplicateIds.push(next.id);
       }
     }

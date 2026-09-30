@@ -17,7 +17,7 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { CalendarClock, Pencil, Trash2, Plus, Loader2, Building, Stethoscope, Calendar, ChevronRight, ChevronLeft, CalendarDays, CalendarRange } from 'lucide-react';
+import { CalendarClock, Pencil, Trash2, Plus, Loader2, Building, Stethoscope, Calendar, ChevronRight, ChevronLeft, CalendarDays, CalendarRange, CheckCircle2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { Pagination } from '@/components/ui/pagination';
@@ -25,6 +25,7 @@ import { SearchInput } from '@/components/ui/search-input';
 import { supabase } from '@/lib/supabase';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { getFinancialMonthBounds, getPreviousFinancialMonthBounds } from '@/lib/financialMonth';
+import { authFetchJson } from '@/lib/api-client';
 import { AddVisitModal } from './AddVisitModal';
 
 const PAGE_SIZE = 8;
@@ -159,14 +160,49 @@ export function PatientVisitsHistory() {
   const safePage = Math.min(page, totalPages - 1);
   const pageGroups = filteredGroups.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
+  const [actionToast, setActionToast] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   // عدّاد الفلاتر النشطة عشان يبان للمستخدم إن فيه فلتر شغّال (نطاق
   // التاريخ في وضع التصفح اليومي مش "فلتر" — هو أصل الشاشة)
   const activeFiltersCount = (clinicFilter ? 1 : 0) + (doctorFilter ? 1 : 0) + (browseMode === 'range' && (dateFrom || dateTo) ? 1 : 0);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('هل تريد حذف هذه الخدمة من الزيارة؟')) return;
-    await supabase.from('patient_visits').delete().eq('id', id);
-    fetchVisits();
+  // حذف خدمة مفردة مع حذف قيدها المالي تلقائيًا من transactions
+  const handleDeleteService = async (id: string, serviceName?: string | null, paid?: number, patientName?: string) => {
+    const desc = serviceName ? `خدمة «${serviceName}»` : 'هذه الخدمة';
+    const amountDesc = paid ? ` بمبلغ ${paid} ج.م` : '';
+    if (!confirm(`هل تريد بالتأكيد حذف ${desc}${amountDesc} من الزيارة للمريض (${patientName || 'المريض'})؟\nسيتم حذفها تلقائيًا وخصم وإلغاء المعاملة المالية المقابلة في الحسابات والخزينة.`)) return;
+    setDeletingId(id);
+    const { data, error } = await authFetchJson('/api/visits/delete', {
+      method: 'POST',
+      body: JSON.stringify({ visitId: id }),
+    });
+    setDeletingId(null);
+    if (error) {
+      alert(`تعذر حذف الخدمة: ${error}`);
+    } else {
+      setActionToast(data?.message || 'تم حذف الخدمة وخصم المعاملة المالية من الحسابات بنجاح.');
+      setTimeout(() => setActionToast(null), 5000);
+      fetchVisits();
+    }
+  };
+
+  // حذف الزيارة بالكامل بكافة خدماتها مع إلغاء قيودها في transactions وشاشة النداء
+  const handleDeleteGroup = async (groupId: string, patientName: string, serviceCount: number, totalAmount: number) => {
+    if (!confirm(`هل تريد بالتأكيد حذف الزيارة بالكامل للمريض (${patientName})؟\n• عدد الخدمات: ${serviceCount}\n• المبلغ الإجمالي: ${totalAmount.toLocaleString()} ج.م\nسيتم حذف كافة خدمات الزيارة من السجل وإلغاء كافة القيود المالية المقابلة في transactions وشاشة النداء.`)) return;
+    setDeletingId(groupId);
+    const { data, error } = await authFetchJson('/api/visits/delete', {
+      method: 'POST',
+      body: JSON.stringify({ visitGroupId: groupId }),
+    });
+    setDeletingId(null);
+    if (error) {
+      alert(`تعذر حذف الزيارة: ${error}`);
+    } else {
+      setActionToast(data?.message || 'تم حذف الزيارة بالكامل وإلغاء كافة المعاملات المالية المرتبطة بها بنجاح.');
+      setTimeout(() => setActionToast(null), 5000);
+      fetchVisits();
+    }
   };
 
   const resetFilters = () => {
@@ -332,6 +368,15 @@ export function PatientVisitsHistory() {
         </div>
       </CardHeader>
       <CardContent>
+        {actionToast && (
+          <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 p-3 rounded-xl flex items-center justify-between gap-2 text-sm font-bold shadow-xs">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <span>{actionToast}</span>
+            </div>
+            <button onClick={() => setActionToast(null)} className="text-gray-400 hover:text-gray-600 text-xs">إغلاق</button>
+          </div>
+        )}
         {error && <ErrorState message={error} onRetry={fetchVisits} compact />}
         {loading ? (
           <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>
@@ -358,8 +403,8 @@ export function PatientVisitsHistory() {
                       {first.clinics?.name && <span className="text-xs text-gray-400 mr-2">— {first.clinics.name}</span>}
                       {first.doctor && <span className="text-xs text-gray-400 mr-2">— د. {first.doctor.first_name} {first.doctor.last_name}</span>}
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-bold text-emerald-600" dir="ltr">{total.toLocaleString()} ج.م</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-emerald-600 ml-2" dir="ltr">{total.toLocaleString()} ج.م</span>
                       <button
                         onClick={() => setAddingServiceToGroup({
                           visitGroupId: groupId,
@@ -368,9 +413,22 @@ export function PatientVisitsHistory() {
                           clinicId: first.clinic_id,
                           doctorId: first.doctor_id,
                         })}
-                        className="flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 rounded-lg hover:bg-emerald-100"
+                        className="flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 rounded-lg hover:bg-emerald-100 transition-colors"
                       >
                         <Plus className="w-3.5 h-3.5" /> إضافة خدمة لنفس الزيارة
+                      </button>
+                      <button
+                        onClick={() => handleDeleteGroup(groupId, first.patient_name, rows.length, total)}
+                        disabled={deletingId === groupId}
+                        className="flex items-center gap-1 text-xs font-bold text-red-700 bg-red-50 border border-red-200 px-2.5 py-1.5 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+                        title="حذف الزيارة بالكامل وإلغاء قيودها في الحسابات والنداء"
+                      >
+                        {deletingId === groupId ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                        )}
+                        حذف الزيارة بالكامل
                       </button>
                     </div>
                   </div>
@@ -383,8 +441,14 @@ export function PatientVisitsHistory() {
                           <button onClick={() => setEditingVisit(r)} className="text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1">
                             <Pencil className="w-4 h-4" /> تعديل
                           </button>
-                          <button onClick={() => handleDelete(r.id)} className="text-red-500 hover:text-red-700 font-bold flex items-center gap-1">
-                            <Trash2 className="w-4 h-4" /> حذف
+                          <button
+                            onClick={() => handleDeleteService(r.id, r.service_name, r.paid_amount, first.patient_name)}
+                            disabled={deletingId === r.id}
+                            className="text-red-500 hover:text-red-700 font-bold flex items-center gap-1 disabled:opacity-50"
+                            title="حذف الخدمة وخصم معاملتها المالية من الحسابات"
+                          >
+                            {deletingId === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                            حذف
                           </button>
                         </div>
                       </div>

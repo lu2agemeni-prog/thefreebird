@@ -121,35 +121,44 @@ export function FinancialsTab() {
     setSearch('');
   };
 
-  // إحصائيات الصفحة الحالية المعروضة مع استبعاد التكرارات المتطابقة في نفس اللحظة
-  const pageStats = useMemo(() => {
-    const validIncomeRows: any[] = [];
-    const expenseRows: any[] = [];
-
+  // تصفية أي حركات مكررة أو قيود مشوهة لضمان دقة الجدول ومطابقته للإحصائيات والخزينة
+  const displayTransactions = useMemo(() => {
+    const validRows: any[] = [];
     transactions.forEach((t) => {
       if (t.type === 'income') {
+        if (Number(t.amount) === 0) return; // استبعاد قيود الصفر الناتجة عن الطابور
         const curTime = t.created_at ? new Date(t.created_at).getTime() : 0;
-        const isTwin = validIncomeRows.some((prev) => {
+        const curDesc = (t.description || '').trim().toLowerCase();
+        const isTwin = validRows.some((prev) => {
+          if (prev.type !== 'income') return false;
           if (Number(prev.amount) !== Number(t.amount)) return false;
-          if (prev.clinic_id !== t.clinic_id) return false;
           const prevTime = prev.created_at ? new Date(prev.created_at).getTime() : 0;
-          return Math.abs(curTime - prevTime) <= 15000;
+          const prevDesc = (prev.description || '').trim().toLowerCase();
+          const quickTwin = Math.abs(curTime - prevTime) <= 60000 && (prev.clinic_id === t.clinic_id || !prev.clinic_id || !t.clinic_id);
+          const descTwin = curDesc && curDesc === prevDesc && Math.abs(curTime - prevTime) <= 86400000;
+          return quickTwin || descTwin;
         });
-        if (!isTwin) validIncomeRows.push(t);
+        if (!isTwin) validRows.push(t);
       } else {
-        expenseRows.push(t);
+        validRows.push(t);
       }
     });
+    return validRows;
+  }, [transactions]);
 
-    const income = validIncomeRows.reduce((s, t) => s + Number(t.amount || 0), 0);
+  // إحصائيات الصفحة الحالية المعروضة
+  const pageStats = useMemo(() => {
+    const incomeRows = displayTransactions.filter((t) => t.type === 'income');
+    const expenseRows = displayTransactions.filter((t) => t.type !== 'income');
+    const income = incomeRows.reduce((s, t) => s + Number(t.amount || 0), 0);
     const expense = expenseRows.reduce((s, t) => s + Number(t.amount || 0), 0);
     return { income, expense, net: income - expense };
-  }, [transactions]);
+  }, [displayTransactions]);
 
   // تصدير إكسيل
   const handleExportExcel = () => {
-    if (transactions.length === 0) return;
-    const rows = transactions.map((t, idx) => ({
+    if (displayTransactions.length === 0) return;
+    const rows = displayTransactions.map((t, idx) => ({
       'م': idx + 1,
       'رقم الحركة': t.id ? t.id.slice(0, 8) : '',
       'التاريخ': new Date(t.created_at).toLocaleDateString('ar-EG'),
@@ -412,7 +421,7 @@ export function FinancialsTab() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {transactions.map((t, idx) => (
+                    {displayTransactions.map((t, idx) => (
                       <tr
                         key={t.id || idx}
                         onClick={() => setSelectedTransaction(t)}

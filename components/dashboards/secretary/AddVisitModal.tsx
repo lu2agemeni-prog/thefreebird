@@ -28,6 +28,7 @@ import { useAuth } from '@/lib/auth';
 import { InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { getTodayDateStr } from '@/lib/financialMonth';
+import { authFetchJson } from '@/lib/api-client';
 
 interface FoundPatient {
   id: string;
@@ -455,6 +456,27 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
       } else {
         onAdded?.();
       }
+
+      // مزامنة فورية لقيود transactions لمنع وحذف أي تكرار مزدوج ناجم عن تريجرات قاعدة البيانات
+      try {
+        await authFetchJson('/api/transactions/sync-visit', {
+          method: 'POST',
+          body: JSON.stringify({
+            patientName: patient.name,
+            clinicId: clinicId || null,
+            visitGroupId: groupId,
+            services: visitsToInsert.map((v) => ({
+              name: v.service_name || 'خدمة',
+              price: v.paid_amount || 0,
+            })),
+            visitDate,
+            isVisitToday,
+          }),
+        });
+      } catch (syncErr) {
+        console.warn('Sync transactions non-blocking error:', syncErr);
+      }
+
       onClose();
     } catch (err: any) {
       setSaveError(getFriendlyErrorMessage(err, 'تعذر حفظ الزيارة.'));
