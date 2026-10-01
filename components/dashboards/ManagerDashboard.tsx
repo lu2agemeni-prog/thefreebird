@@ -13,7 +13,7 @@ import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
 import {
   Building, Calculator, Stethoscope, Activity, QrCode, Shield,
-  BarChart, FileText, Newspaper, List, FlaskConical, Wallet, Megaphone, User, Users, Percent, Printer,
+  BarChart, FileText, Newspaper, List, FlaskConical, Wallet, Megaphone, User, Users, Percent, Printer, PieChart,
 } from 'lucide-react';
 import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
 import { QueueMediaManager } from './manager/QueueMediaManager';
@@ -28,6 +28,7 @@ import { ServicesTab } from './manager/tabs/ServicesTab';
 import { MedicalNewsTab } from './manager/tabs/MedicalNewsTab';
 import { OffersTab } from './manager/tabs/OffersTab';
 import { FinancialsTab } from './manager/tabs/FinancialsTab';
+import { AccountantChartsTab } from './accountant/AccountantChartsTab';
 import { ReportsTab } from './manager/tabs/ReportsTab';
 import { LabTab } from './shared/LabTab';
 import { LabPrintTab } from './shared/LabPrintTab';
@@ -54,6 +55,7 @@ const managerNav: SidebarItem[] = [
   { name: 'الإشعارات', id: 'notifications_broadcast', icon: Megaphone },
   { name: 'الملف الشخصي', id: 'profile', icon: User },
   { name: 'الماليات والأرباح', id: 'financials', icon: Calculator },
+  { name: 'الرسوم البيانية المالية', id: 'financial_charts', icon: PieChart },
   { name: 'الأخبار الطبية', id: 'medical_news', icon: Newspaper },
   { name: 'التقارير الشاملة', id: 'reports', icon: BarChart },
   { name: 'QR Codes', id: 'qrcodes', icon: QrCode },
@@ -88,6 +90,7 @@ export function ManagerDashboard() {
           {activeTab === 'notifications_broadcast' && <BroadcastNotificationsTab />}
           {activeTab === 'profile' && <AccountProfileTab />}
           {activeTab === 'financials' && <FinancialsTab />}
+          {activeTab === 'financial_charts' && <AccountantChartsTab />}
           {activeTab === 'reports' && <ReportsTab />}
         </div>
       </div>

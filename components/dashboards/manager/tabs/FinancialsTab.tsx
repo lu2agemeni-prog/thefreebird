@@ -53,6 +53,7 @@ import { exportRowsToExcel } from '@/lib/export-excel';
 import { PrintableReportModal } from '@/components/ui/printable-report-modal';
 import { ProfitReportPanel } from './ProfitReportPanel';
 import { EditTransactionModal } from './EditTransactionModal';
+import { AccountantChartsTab } from '@/components/dashboards/accountant/AccountantChartsTab';
 
 const PAGE_SIZE = 15;
 
@@ -68,7 +69,7 @@ const EXPENSE_GROUP_LABELS: Record<string, string> = {
 };
 
 export function FinancialsTab() {
-  const [view, setView] = useState<'list' | 'profit_report'>('list');
+  const [view, setView] = useState<'list' | 'profit_report' | 'charts'>('list');
   const [transactions, setTransactions] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -471,6 +472,16 @@ export function FinancialsTab() {
           >
             تقرير الأرباح والموقف المالي
           </button>
+          <button
+            onClick={() => setView('charts')}
+            className={`px-5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              view === 'charts'
+                ? 'bg-white text-emerald-800 shadow-xs'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            الرسوم البيانية والتحليلات
+          </button>
         </div>
 
         {view === 'list' && (
@@ -520,6 +531,8 @@ export function FinancialsTab() {
 
       {view === 'profit_report' ? (
         <ProfitReportPanel />
+      ) : view === 'charts' ? (
+        <AccountantChartsTab />
       ) : (
         <Card className="border border-gray-200/80 shadow-xs">
           <CardHeader className="space-y-4 pb-4">

@@ -1,16 +1,18 @@
 'use client';
 import { useState } from 'react';
 import { Sidebar, SidebarItem } from './Sidebar';
-import { Calculator, BarChart, FileText, User } from 'lucide-react';
+import { Calculator, BarChart, FileText, User, PieChart } from 'lucide-react';
 
 import { AccountantOverview } from './accountant/AccountantOverview';
 import { AccountantExpenses } from './accountant/AccountantExpenses';
 import { AccountantReports } from './accountant/AccountantReports';
+import { AccountantChartsTab } from './accountant/AccountantChartsTab';
 import { AccountProfileTab } from './shared/AccountProfileTab';
 
 const accountantNav: SidebarItem[] = [
   { name: 'لوحة الحسابات', id: 'dashboard', icon: Calculator },
   { name: 'المصروفات والمستهلكات', id: 'expenses', icon: FileText },
+  { name: 'الرسوم البيانية المالية', id: 'charts', icon: PieChart },
   { name: 'التقارير التحليلية', id: 'reports', icon: BarChart },
   { name: 'الملف الشخصي', id: 'profile', icon: User },
 ];
@@ -22,6 +24,7 @@ export function AccountantDashboard() {
     switch (activeTab) {
       case 'dashboard': return <AccountantOverview />;
       case 'expenses': return <AccountantExpenses />;
+      case 'charts': return <AccountantChartsTab />;
       case 'reports': return <AccountantReports />;
       case 'profile': return <AccountProfileTab />;
       default: return null;
