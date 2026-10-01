@@ -104,3 +104,26 @@ export function isDateInFinancialMonth(dateStr: string, period: FinancialPeriod)
   const target = dateStr.slice(0, 10);
   return target >= period.startStr && target <= period.endStr;
 }
+
+/**
+ * إرجاع قائمة بالأشهر المالية لآخر N شهراً (لتسهيل الاختيار من Dropdown في واجهة الإدارة)
+ */
+export function getFinancialMonthsList(count = 12): Array<FinancialPeriod & { id: string; displayTitle: string }> {
+  const list: Array<FinancialPeriod & { id: string; displayTitle: string }> = [];
+  let ref = new Date();
+  for (let i = 0; i < count; i++) {
+    const period = getFinancialMonthBounds(ref);
+    const startMonth = period.start.toLocaleDateString('ar-EG', { month: 'short' });
+    const endMonth = period.end.toLocaleDateString('ar-EG', { month: 'short', year: 'numeric' });
+    list.push({
+      ...period,
+      id: `${period.startStr}_${period.endStr}`,
+      displayTitle: `${startMonth} - ${endMonth} (${period.startStr.slice(5)} إلى ${period.endStr.slice(5)})`,
+    });
+    // نرجع يوماً واحداً قبل بداية الشهر للوصول للشهر السابق
+    const prev = new Date(period.start);
+    prev.setDate(prev.getDate() - 1);
+    ref = prev;
+  }
+  return list;
+}

@@ -2,16 +2,18 @@
 
 // ============================================================================
 // components/dashboards/manager/tabs/FinancialsTab.tsx
-// تبويب "الماليات والأرباح" — يعرض سجل الحركات مع فلترة ذكية، وتصدير إكسيل (.xlsx)
-// وطباعة PDF، ومودال تفاصيل عند النقر على أي حركة، مع تبويب تقرير الأرباح المفصل.
+// تبويب "الماليات والأرباح" للمدير:
+// - عرض شامل لجدول transactions مع إمكانية التعديل والحذف المباشر لكل حركة.
+// - فلترة ذكية حسب: الشهر المالي (21 - 20) مع قائمة منسدلة لآخر 12 شهراً،
+//   نطاق التواريخ، نوع الحركة، العيادة، والتصنيف، وبحث فوري.
+// - ترتيب مرن حسب: التاريخ والوقت (تصاعدي/تنازلي) أو المبلغ (الأعلى/الأقل).
+// - إحصائيات فورية للخزينة، وتصدير إكسيل (.xlsx) وطباعة PDF.
 // ============================================================================
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Download,
   Printer,
   X,
-  TrendingUp,
-  TrendingDown,
   Building2,
   Calendar,
   Wallet,
@@ -22,17 +24,35 @@ import {
   Filter,
   Sparkles,
   CheckCircle2,
+  Pencil,
+  Trash2,
+  Eye,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  CalendarDays,
+  CalendarRange,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { Pagination } from '@/components/ui/pagination';
 import { SearchInput } from '@/components/ui/search-input';
 import { authFetchJson } from '@/lib/api-client';
+import { supabase } from '@/lib/supabase';
 import { toTransactionType, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPE_COLORS } from '@/lib/types';
-import { getFinancialMonthBounds, getPreviousFinancialMonthBounds } from '@/lib/financialMonth';
+import {
+  getFinancialMonthBounds,
+  getPreviousFinancialMonthBounds,
+  getFinancialMonthsList,
+  toDateInputValue,
+  getTodayDateStr,
+} from '@/lib/financialMonth';
 import { exportRowsToExcel } from '@/lib/export-excel';
 import { PrintableReportModal } from '@/components/ui/printable-report-modal';
 import { ProfitReportPanel } from './ProfitReportPanel';
+import { EditTransactionModal } from './EditTransactionModal';
 
 const PAGE_SIZE = 15;
 
@@ -42,6 +62,9 @@ const EXPENSE_GROUP_LABELS: Record<string, string> = {
   wages: 'الأجور والرواتب',
   equipment_maintenance: 'الأجهزة والصيانة والانتقالات',
   misc: 'نثريات ومصروفات أخرى',
+  'كشف وعيادات': 'كشف واستشارات عيادات',
+  'معمل وتحاليل': 'تحاليل وخدمات معمل',
+  'أدوية وصيدلية': 'أدوية وصيدلية',
 };
 
 export function FinancialsTab() {
@@ -51,74 +74,195 @@ export function FinancialsTab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // قائمة العيادات للفلترة والتعديل
+  const [clinics, setClinics] = useState<Array<{ id: string; name: string }>>([]);
+
   // الفلاتر
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [clinicFilter, setClinicFilter] = useState('');
   const [expenseGroupFilter, setExpenseGroupFilter] = useState('');
   const [dateFrom, setDateFrom] = useState(() => getFinancialMonthBounds().startStr);
   const [dateTo, setDateTo] = useState(() => getFinancialMonthBounds().endStr);
+  const [selectedMonthId, setSelectedMonthId] = useState<string>(() => {
+    const cur = getFinancialMonthBounds();
+    return `${cur.startStr}_${cur.endStr}`;
+  });
+
+  // الترتيب: حسب التاريخ أو المبلغ، تصاعدي أو تنازلي
+  const [sortBy, setSortBy] = useState<'created_at' | 'amount'>('created_at');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [page, setPage] = useState(0);
 
-  // المودالات والتنظيف
+  // قائمة الأشهر المالية لآخر 12 شهراً
+  const financialMonths = useMemo(() => getFinancialMonthsList(12), []);
+
+  // المودالات وإجراءات التعديل والحذف
   const [selectedTransaction, setSelectedTransaction] = useState<any | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<any | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
   const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
 
+  // جلب العيادات
+  useEffect(() => {
+    supabase
+      .from('clinics')
+      .select('id, name')
+      .order('name')
+      .then(({ data }) => {
+        if (data) setClinics(data);
+      });
+  }, []);
+
+  // جلب المعاملات المالية
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(PAGE_SIZE),
+    });
     if (search.trim()) params.set('q', search.trim());
     if (typeFilter) params.set('type', typeFilter);
+    if (clinicFilter) params.set('clinicId', clinicFilter);
     if (expenseGroupFilter) params.set('expenseGroup', expenseGroupFilter);
+    if (sortBy) params.set('sortBy', sortBy);
+    if (sortOrder) params.set('sortOrder', sortOrder);
     if (dateFrom) params.set('dateFrom', dateFrom);
     if (dateTo) params.set('dateTo', dateTo);
 
-    const { data, error } = await authFetchJson(`/api/manager/transactions?${params.toString()}`);
-    if (error) setError(error);
+    const { data, error: fetchErr } = await authFetchJson(`/api/manager/transactions?${params.toString()}`);
+    if (fetchErr) setError(fetchErr);
     else {
       setTransactions(data.rows || []);
       setTotal(data.total || 0);
     }
     setLoading(false);
-  }, [page, search, typeFilter, expenseGroupFilter, dateFrom, dateTo]);
-
-  const handleCleanDuplicates = async () => {
-    if (!confirm('سيتم فحص سجلات الإيرادات وحذف أي قيود مكررة مسجلة بالخطأ في نفس اللحظة لنفس العيادة والمبلغ. هل تريد المتابعة؟')) return;
-    setCleaningDuplicates(true);
-    setCleanupMessage(null);
-    const { data, error } = await authFetchJson('/api/manager/transactions', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'clean_duplicates' }),
-    });
-    setCleaningDuplicates(false);
-    if (error) {
-      setError(error);
-    } else {
-      setCleanupMessage(data?.message || 'تم تنظيف القيود المكررة بنجاح.');
-      setTimeout(() => setCleanupMessage(null), 6000);
-      fetchTransactions();
-    }
-  };
+  }, [page, search, typeFilter, clinicFilter, expenseGroupFilter, sortBy, sortOrder, dateFrom, dateTo]);
 
   useEffect(() => {
     const t = setTimeout(fetchTransactions, 0);
     return () => clearTimeout(t);
   }, [fetchTransactions]);
 
+  // تصفير الصفحة عند تغيير الفلاتر
   useEffect(() => {
     const t = setTimeout(() => setPage(0), 0);
     return () => clearTimeout(t);
-  }, [search, typeFilter, expenseGroupFilter, dateFrom, dateTo]);
+  }, [search, typeFilter, clinicFilter, expenseGroupFilter, sortBy, sortOrder, dateFrom, dateTo]);
 
-  const hasActiveFilters = !!(typeFilter || expenseGroupFilter || dateFrom || dateTo || search);
+  // اختيار شهر مالي محدد من القائمة المنسدلة
+  const handleSelectFinancialMonth = (val: string) => {
+    setSelectedMonthId(val);
+    if (!val) {
+      setDateFrom('');
+      setDateTo('');
+      return;
+    }
+    const found = financialMonths.find((m) => m.id === val);
+    if (found) {
+      setDateFrom(found.startStr);
+      setDateTo(found.endStr);
+    }
+  };
+
+  // أزرار الفترات السريعة
+  const setQuickPeriod = (mode: 'current_fin' | 'prev_fin' | 'today' | 'week' | 'all') => {
+    if (mode === 'current_fin') {
+      const cur = getFinancialMonthBounds();
+      setDateFrom(cur.startStr);
+      setDateTo(cur.endStr);
+      setSelectedMonthId(`${cur.startStr}_${cur.endStr}`);
+    } else if (mode === 'prev_fin') {
+      const prev = getPreviousFinancialMonthBounds();
+      setDateFrom(prev.startStr);
+      setDateTo(prev.endStr);
+      setSelectedMonthId(`${prev.startStr}_${prev.endStr}`);
+    } else if (mode === 'today') {
+      const today = getTodayDateStr();
+      setDateFrom(today);
+      setDateTo(today);
+      setSelectedMonthId('');
+    } else if (mode === 'week') {
+      const now = new Date();
+      const first = new Date(now.setDate(now.getDate() - now.getDay()));
+      const last = new Date(now.setDate(now.getDate() - now.getDay() + 6));
+      setDateFrom(toDateInputValue(first));
+      setDateTo(toDateInputValue(last));
+      setSelectedMonthId('');
+    } else if (mode === 'all') {
+      setDateFrom('');
+      setDateTo('');
+      setSelectedMonthId('');
+    }
+  };
+
+  // تبديل الترتيب بالنقر على رأس العمود
+  const handleToggleSort = (column: 'created_at' | 'amount') => {
+    if (sortBy === column) {
+      setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortBy(column);
+      setSortOrder('desc');
+    }
+  };
+
+  // مسح الفلاتر
+  const hasActiveFilters = Boolean(typeFilter || clinicFilter || expenseGroupFilter || dateFrom || dateTo || search);
   const clearFilters = () => {
     setTypeFilter('');
+    setClinicFilter('');
     setExpenseGroupFilter('');
     setDateFrom('');
     setDateTo('');
     setSearch('');
+    setSelectedMonthId('');
+    setSortBy('created_at');
+    setSortOrder('desc');
+  };
+
+  // حذف حركة مالية من الحسابات
+  const handleDeleteTransaction = async (id: string, desc?: string, amount?: number) => {
+    const descText = desc ? ` (${desc})` : '';
+    const amountText = amount !== undefined ? ` بمبلغ ${amount.toLocaleString('ar-EG')} ج.م` : '';
+    if (!confirm(`هل تريد بالتأكيد حذف هذه الحركة المالية${descText}${amountText} نهائياً؟\nسيتم إزالتها من سجلات الخزينة والحسابات بشكل دائم.`)) return;
+
+    setDeletingTxId(id);
+    const { data, error: delErr } = await authFetchJson('/api/manager/transactions', {
+      method: 'DELETE',
+      body: JSON.stringify({ id }),
+    });
+    setDeletingTxId(null);
+
+    if (delErr) {
+      alert(`تعذر حذف الحركة المالية: ${delErr}`);
+    } else {
+      setCleanupMessage(data?.message || 'تم حذف المعاملة المالية بنجاح.');
+      setTimeout(() => setCleanupMessage(null), 5000);
+      fetchTransactions();
+    }
+  };
+
+  // فحص وتنظيف الحركات المكررة يدويًا
+  const handleCleanDuplicates = async () => {
+    if (!confirm('سيتم فحص سجلات الإيرادات وحذف أي قيود مكررة مسجلة بالخطأ في نفس اللحظة لنفس العيادة والمبلغ أو القيود الصفرية. هل تريد المتابعة؟')) return;
+    setCleaningDuplicates(true);
+    setCleanupMessage(null);
+    const { data, error: cleanErr } = await authFetchJson('/api/manager/transactions', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'clean_duplicates' }),
+    });
+    setCleaningDuplicates(false);
+    if (cleanErr) {
+      setError(cleanErr);
+    } else {
+      setCleanupMessage(data?.message || 'تم تنظيف القيود المكررة بنجاح.');
+      setTimeout(() => setCleanupMessage(null), 6000);
+      fetchTransactions();
+    }
   };
 
   // تصفية أي حركات مكررة أو قيود مشوهة لضمان دقة الجدول ومطابقته للإحصائيات والخزينة
@@ -167,7 +311,7 @@ export function FinancialsTab() {
       'التصنيف': EXPENSE_GROUP_LABELS[t.category] || t.category || 'عام',
       'المبلغ (ج.م)': Number(t.amount || 0),
       'البيان': t.description || '—',
-      'العيادة': t.clinics?.name || 'غير محدد',
+      'العيادة': t.clinics?.name || 'المركز العام',
       'بواسطة': t.profiles ? `${t.profiles.first_name || ''} ${t.profiles.last_name || ''}`.trim() : 'النظام',
       'المستفيد': t.beneficiary ? `${t.beneficiary.first_name || ''} ${t.beneficiary.last_name || ''}`.trim() : '—',
     }));
@@ -181,7 +325,7 @@ export function FinancialsTab() {
 
   return (
     <div className="space-y-6">
-      {/* التبديل بين سجل الحركات وتقرير الأرباح */}
+      {/* شريط العنوان والتبديل بين سجل الحركات وتقرير الأرباح */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex bg-gray-100 p-1 rounded-2xl border border-gray-200/80">
           <button
@@ -192,7 +336,7 @@ export function FinancialsTab() {
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            سجل الحركات اليومية
+            سجل الحركات والمعاملات
           </button>
           <button
             onClick={() => setView('profit_report')}
@@ -202,12 +346,12 @@ export function FinancialsTab() {
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            تقرير الأرباح والموقف المالي المفصل
+            تقرير الأرباح والموقف المالي
           </button>
         </div>
 
         {view === 'list' && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={handleCleanDuplicates}
               disabled={cleaningDuplicates}
@@ -223,7 +367,7 @@ export function FinancialsTab() {
               className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-colors shadow-2xs cursor-pointer"
             >
               <Download className="w-4 h-4" />
-              <span>تصدير إكسيل (.xlsx)</span>
+              <span>تصدير إكسيل</span>
             </button>
             <button
               onClick={() => setIsPrintModalOpen(true)}
@@ -238,9 +382,14 @@ export function FinancialsTab() {
       </div>
 
       {cleanupMessage && (
-        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-3 rounded-2xl text-xs font-bold animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{cleanupMessage}</span>
+        <div className="flex items-center justify-between gap-2 bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-3 rounded-2xl text-xs font-bold animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{cleanupMessage}</span>
+          </div>
+          <button onClick={() => setCleanupMessage(null)} className="text-gray-400 hover:text-gray-600">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -248,82 +397,164 @@ export function FinancialsTab() {
         <ProfitReportPanel />
       ) : (
         <Card className="border border-gray-200/80 shadow-xs">
-          <CardHeader className="space-y-3 pb-4">
+          <CardHeader className="space-y-4 pb-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Wallet className="w-5 h-5 text-emerald-600" />
-                  <span>سجل الحركات والمعاملات المالية</span>
+                  <span>جدول الحركات والمعاملات المالية (Transactions)</span>
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  كافة المقبوضات والمصروفات المسجلة بالخزينة والحسابات ({total} حركة مسجلة)
+                  عرض وتعديل وتصفية كافة الحركات المالية المسجلة بالخزينة والحسابات ({total} حركة مطابقة)
                 </CardDescription>
               </div>
             </div>
 
-            {/* أزرار الشهر المالي والفترات السريعة */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-2 pb-1 border-y border-gray-100">
-              <span className="text-xs font-bold text-gray-500 ml-1">الشهر المالي:</span>
-              <button
-                type="button"
-                onClick={() => {
-                  const fin = getFinancialMonthBounds();
-                  setDateFrom(fin.startStr);
-                  setDateTo(fin.endStr);
-                }}
-                className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition-colors cursor-pointer"
-              >
-                الشهر الحالي (21 - 20)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const prev = getPreviousFinancialMonthBounds();
-                  setDateFrom(prev.startStr);
-                  setDateTo(prev.endStr);
-                }}
-                className="px-2.5 py-1 text-xs font-bold rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer"
-              >
-                الشهر السابق (21 - 20)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const now = new Date().toISOString().slice(0, 10);
-                  setDateFrom(now);
-                  setDateTo(now);
-                }}
-                className="px-2.5 py-1 text-xs font-bold rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer"
-              >
-                اليوم
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDateFrom('');
-                  setDateTo('');
-                }}
-                className="px-2.5 py-1 text-xs font-bold rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer"
-              >
-                كل الأوقات
-              </button>
+            {/* شريط فلترة الشهر المالي المتقدم والفترات */}
+            <div className="p-3 bg-gray-50 border border-gray-200/70 rounded-2xl space-y-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 flex-wrap">
+                {/* قائمة الأشهر المالية */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-gray-700 flex items-center gap-1">
+                    <CalendarDays className="w-4 h-4 text-emerald-600" /> الشهر المالي:
+                  </span>
+                  <select
+                    value={selectedMonthId}
+                    onChange={(e) => handleSelectFinancialMonth(e.target.value)}
+                    className="border border-emerald-300 bg-white text-emerald-900 rounded-xl px-3 py-1.5 text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                  >
+                    <option value="">-- اختر شهراً مالياً محدداً --</option>
+                    {financialMonths.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.displayTitle}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* أزرار الفترات السريعة */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setQuickPeriod('current_fin')}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                      selectedMonthId === `${getFinancialMonthBounds().startStr}_${getFinancialMonthBounds().endStr}`
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                    }`}
+                  >
+                    الشهر الحالي (21 - 20)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickPeriod('prev_fin')}
+                    className="px-2.5 py-1 text-xs font-bold rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors cursor-pointer"
+                  >
+                    الشهر السابق (21 - 20)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickPeriod('today')}
+                    className="px-2.5 py-1 text-xs font-bold rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors cursor-pointer"
+                  >
+                    اليوم
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickPeriod('all')}
+                    className="px-2.5 py-1 text-xs font-bold rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors cursor-pointer"
+                  >
+                    كل الأوقات
+                  </button>
+                </div>
+              </div>
+
+              {/* اختيار نطاق التواريخ اليدوي والترتيب */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-gray-200/60 flex-wrap text-xs">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-gray-600 flex items-center gap-1">
+                    <CalendarRange className="w-3.5 h-3.5 text-gray-400" /> نطاق مخصص:
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span>من:</span>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => {
+                        setDateFrom(e.target.value);
+                        setSelectedMonthId('');
+                      }}
+                      className="border border-gray-300 rounded-lg p-1.5 bg-white text-xs focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <span>إلى:</span>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => {
+                        setDateTo(e.target.value);
+                        setSelectedMonthId('');
+                      }}
+                      className="border border-gray-300 rounded-lg p-1.5 bg-white text-xs focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* خيار الترتيب */}
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-gray-600 flex items-center gap-1">
+                    <ArrowUpDown className="w-3.5 h-3.5 text-gray-500" /> الترتيب:
+                  </span>
+                  <select
+                    value={`${sortBy}_${sortOrder}`}
+                    onChange={(e) => {
+                      const [col, ord] = e.target.value.split('_');
+                      setSortBy(col as any);
+                      setSortOrder(ord as any);
+                    }}
+                    className="border border-gray-300 bg-white rounded-lg px-2.5 py-1 text-xs font-bold text-gray-700 focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="created_at_desc">التاريخ: الأحدث أولاً ↓</option>
+                    <option value="created_at_asc">التاريخ: الأقدم أولاً ↑</option>
+                    <option value="amount_desc">المبلغ: الأعلى أولاً ↓</option>
+                    <option value="amount_asc">المبلغ: الأقل أولاً ↑</option>
+                  </select>
+                </div>
+              </div>
             </div>
 
-            {/* شريط الفلاتر والبحث */}
+            {/* شريط البحث والفلترة حسب النوع والعيادة والتصنيف */}
             <div className="flex flex-col md:flex-row gap-2.5 flex-wrap items-stretch md:items-center">
-              <div className="flex-1 min-w-[220px]">
-                <SearchInput value={search} onValueChange={setSearch} placeholder="ابحث بالوصف أو التصنيف أو المستفيد..." />
+              <div className="flex-1 min-w-[200px]">
+                <SearchInput value={search} onValueChange={setSearch} placeholder="ابحث بالبيان أو التصنيف أو المريض أو المستفيد..." />
               </div>
+
+              {/* نوع الحركة */}
               <select
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
-                className="border border-gray-300 rounded-xl p-2 text-xs bg-white text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                className="border border-gray-300 rounded-xl p-2 text-xs bg-white text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 font-bold"
               >
                 <option value="">جميع أنواع الحركات</option>
-                <option value="income">إيرادات فقط</option>
-                <option value="expense">مصروفات فقط</option>
-                <option value="salary">رواتب ومستحقات أطباء</option>
+                <option value="income">إيرادات (+) فقط</option>
+                <option value="expense">مصروفات (-) فقط</option>
+                <option value="salary">رواتب ومستحقات (-)</option>
               </select>
+
+              {/* فلتر العيادة */}
+              <select
+                value={clinicFilter}
+                onChange={(e) => setClinicFilter(e.target.value)}
+                className="border border-gray-300 rounded-xl p-2 text-xs bg-white text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">كل العيادات</option>
+                {clinics.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* فلتر التصنيف */}
               <select
                 value={expenseGroupFilter}
                 onChange={(e) => setExpenseGroupFilter(e.target.value)}
@@ -336,26 +567,11 @@ export function FinancialsTab() {
                   </option>
                 ))}
               </select>
-              <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                <span>من:</span>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="border border-gray-300 rounded-xl p-2 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                />
-                <span>إلى:</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="border border-gray-300 rounded-xl p-2 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
+
               {hasActiveFilters && (
                 <button
                   onClick={clearFilters}
-                  className="text-xs text-red-600 font-bold hover:underline px-2 cursor-pointer"
+                  className="text-xs text-red-600 font-bold hover:underline px-2 cursor-pointer self-center"
                 >
                   مسح الفلاتر
                 </button>
@@ -411,22 +627,54 @@ export function FinancialsTab() {
                   <thead>
                     <tr className="border-b bg-gray-100/80 text-gray-700">
                       <th className="p-3 font-bold w-10 text-center">#</th>
-                      <th className="p-3 font-bold">التاريخ والوقت</th>
+                      <th
+                        className="p-3 font-bold cursor-pointer select-none hover:bg-gray-200/60 transition-colors"
+                        onClick={() => handleToggleSort('created_at')}
+                        title="انقر لترتيب الحركات بالتاريخ والوقت"
+                      >
+                        <div className="flex items-center gap-1">
+                          <span>التاريخ والوقت</span>
+                          {sortBy === 'created_at' ? (
+                            sortOrder === 'desc' ? (
+                              <ArrowDown className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <ArrowUp className="w-3.5 h-3.5 text-emerald-600" />
+                            )
+                          ) : (
+                            <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
+                          )}
+                        </div>
+                      </th>
                       <th className="p-3 font-bold">النوع والتصنيف</th>
-                      <th className="p-3 font-bold">المبلغ</th>
+                      <th
+                        className="p-3 font-bold cursor-pointer select-none hover:bg-gray-200/60 transition-colors"
+                        onClick={() => handleToggleSort('amount')}
+                        title="انقر لترتيب الحركات بالمبلغ"
+                      >
+                        <div className="flex items-center gap-1">
+                          <span>المبلغ</span>
+                          {sortBy === 'amount' ? (
+                            sortOrder === 'desc' ? (
+                              <ArrowDown className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <ArrowUp className="w-3.5 h-3.5 text-emerald-600" />
+                            )
+                          ) : (
+                            <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
+                          )}
+                        </div>
+                      </th>
                       <th className="p-3 font-bold">البيان / الوصف</th>
                       <th className="p-3 font-bold">العيادة</th>
-                      <th className="p-3 font-bold">المستفيد / الطبيب</th>
-                      <th className="p-3 font-bold">المسؤول</th>
+                      <th className="p-3 font-bold">المستفيد / المسؤول</th>
+                      <th className="p-3 font-bold text-center">الإجراءات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {displayTransactions.map((t, idx) => (
                       <tr
                         key={t.id || idx}
-                        onClick={() => setSelectedTransaction(t)}
-                        className="hover:bg-emerald-50/40 cursor-pointer transition-colors group"
-                        title="انقر لعرض تفاصيل الحركة المالية الكاملة"
+                        className="hover:bg-emerald-50/40 transition-colors group"
                       >
                         <td className="p-3 text-center text-gray-400 font-mono text-[11px]">
                           {page * PAGE_SIZE + idx + 1}
@@ -474,26 +722,60 @@ export function FinancialsTab() {
                               {t.clinics.name}
                             </span>
                           ) : (
-                            <span className="text-gray-400">—</span>
+                            <span className="text-gray-400">المركز العام</span>
                           )}
                         </td>
                         <td className="p-3 whitespace-nowrap">
                           {t.beneficiary ? (
-                            <span className="text-amber-800 font-bold">
-                              {t.beneficiary.first_name} {t.beneficiary.last_name}
+                            <span className="text-amber-800 font-bold block text-[11px]">
+                              مستفيد: {t.beneficiary.first_name} {t.beneficiary.last_name}
                             </span>
-                          ) : (
-                            <span className="text-gray-400">—</span>
-                          )}
+                          ) : null}
+                          <span className="text-gray-500 text-[10px]">
+                            بواسطة: {t.profiles ? `${t.profiles.first_name || ''} ${t.profiles.last_name || ''}`.trim() : 'النظام'}
+                          </span>
                         </td>
-                        <td className="p-3 whitespace-nowrap text-gray-500 text-[11px]">
-                          {t.profiles
-                            ? `${t.profiles.first_name || ''} ${t.profiles.last_name || ''}`.trim()
-                            : 'النظام'}
+                        <td className="p-3 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {/* زر التعديل */}
+                            <button
+                              onClick={() => {
+                                setEditingTransaction(t);
+                                setIsEditModalOpen(true);
+                              }}
+                              className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                              title="تعديل هذه الحركة المالية"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+
+                            {/* زر حذف الحركة */}
+                            <button
+                              onClick={() => handleDeleteTransaction(t.id, t.description, t.amount)}
+                              disabled={deletingTxId === t.id}
+                              className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                              title="حذف هذه الحركة المالية نهائياً"
+                            >
+                              {deletingTxId === t.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-4 h-4" />
+                              )}
+                            </button>
+
+                            {/* زر عرض التفاصيل */}
+                            <button
+                              onClick={() => setSelectedTransaction(t)}
+                              className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+                              title="عرض تفاصيل الحركة"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
-                    {transactions.length === 0 && (
+                    {displayTransactions.length === 0 && (
                       <tr>
                         <td colSpan={8} className="p-10 text-center text-gray-400">
                           لا توجد حركات مالية مطابقة للفلاتر المحددة
@@ -517,58 +799,76 @@ export function FinancialsTab() {
         </Card>
       )}
 
-      {/* مودال تفاصيل المعاملة عند النقر عليها */}
+      {/* مودال تعديل المعاملة المالية */}
+      <EditTransactionModal
+        isOpen={isEditModalOpen}
+        transaction={editingTransaction}
+        clinics={clinics}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditingTransaction(null);
+        }}
+        onSaved={(updatedTx) => {
+          setCleanupMessage('تم تعديل الحركة المالية بنجاح وضبط الحسابات.');
+          setTimeout(() => setCleanupMessage(null), 5000);
+          fetchTransactions();
+        }}
+      />
+
+      {/* مودال تفاصيل المعاملة عند النقر على عرض */}
       {selectedTransaction && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex justify-center items-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-200 animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-150">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
               <div className="flex items-center gap-2">
                 <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${
-                    selectedTransaction.type === 'income'
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : 'bg-red-100 text-red-800'
+                  className={`p-2 rounded-xl text-white ${
+                    selectedTransaction.type === 'income' ? 'bg-emerald-500' : 'bg-red-500'
                   }`}
                 >
-                  {selectedTransaction.type === 'income' ? (
-                    <TrendingUp className="w-5 h-5" />
-                  ) : (
-                    <TrendingDown className="w-5 h-5" />
-                  )}
+                  <Wallet className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-gray-900 text-sm">تفاصيل المعاملة المالية</h3>
-                  <p className="text-[11px] text-gray-400 font-mono">
-                    معرف الحركة: {selectedTransaction.id}
+                  <h3 className="text-sm font-bold text-gray-800">تفاصيل الحركة المالية</h3>
+                  <p className="text-[10px] text-gray-400 font-mono">
+                    ID: {selectedTransaction.id}
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedTransaction(null)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => {
+                    const toEdit = selectedTransaction;
+                    setSelectedTransaction(null);
+                    setEditingTransaction(toEdit);
+                    setIsEditModalOpen(true);
+                  }}
+                  className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors text-xs font-bold flex items-center gap-1 cursor-pointer"
+                  title="تعديل هذه الحركة"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>تعديل</span>
+                </button>
+                <button
+                  onClick={() => setSelectedTransaction(null)}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <div className="p-6 space-y-4 text-xs">
-              <div className="bg-gray-50 p-4 rounded-xl text-center border border-gray-100">
-                <p className="text-xs text-gray-500 mb-1">المبلغ المالي</p>
-                <p
-                  className={`text-3xl font-black ${
+              <div className="text-center py-3 bg-gray-50/80 rounded-2xl border border-gray-100">
+                <span className="text-[11px] text-gray-400 block mb-1">المبلغ الإجمالي</span>
+                <span
+                  className={`text-2xl font-black ${
                     selectedTransaction.type === 'income' ? 'text-emerald-600' : 'text-red-600'
                   }`}
                   dir="ltr"
                 >
                   {selectedTransaction.type === 'income' ? '+' : '-'}
                   {Number(selectedTransaction.amount || 0).toLocaleString('ar-EG')} ج.م
-                </p>
-                <span
-                  className={`inline-block mt-2 px-3 py-0.5 rounded-full text-xs font-bold ${
-                    TRANSACTION_TYPE_COLORS[toTransactionType(selectedTransaction.type)]
-                  }`}
-                >
-                  {TRANSACTION_TYPE_LABELS[toTransactionType(selectedTransaction.type)]}
                 </span>
               </div>
 
@@ -578,10 +878,11 @@ export function FinancialsTab() {
                     <Clock className="w-3.5 h-3.5 text-gray-400" /> التاريخ والوقت
                   </span>
                   <p className="font-bold text-gray-800">
-                    {new Date(selectedTransaction.created_at).toLocaleDateString('ar-EG')}
-                  </p>
-                  <p className="text-[10px] text-gray-400 font-mono">
-                    {new Date(selectedTransaction.created_at).toLocaleTimeString('ar-EG')}
+                    {new Date(selectedTransaction.created_at).toLocaleDateString('ar-EG')} -{' '}
+                    {new Date(selectedTransaction.created_at).toLocaleTimeString('ar-EG', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
                   </p>
                 </div>
 
@@ -636,7 +937,18 @@ export function FinancialsTab() {
               </div>
             </div>
 
-            <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+              <button
+                onClick={() => {
+                  const toDelete = selectedTransaction;
+                  setSelectedTransaction(null);
+                  handleDeleteTransaction(toDelete.id, toDelete.description, toDelete.amount);
+                }}
+                className="px-3 py-1.5 border border-red-200 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف الحركة</span>
+              </button>
               <button
                 onClick={() => setSelectedTransaction(null)}
                 className="px-4 py-1.5 border rounded-xl bg-white hover:bg-gray-100 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
@@ -693,7 +1005,7 @@ export function FinancialsTab() {
               },
               {
                 header: 'العيادة',
-                render: (r) => r.clinics?.name || 'عام',
+                render: (r) => r.clinics?.name || 'المركز العام',
               },
               {
                 header: 'المستفيد',
@@ -703,7 +1015,7 @@ export function FinancialsTab() {
                     : '—',
               },
             ],
-            data: transactions,
+            data: displayTransactions,
           },
         ]}
       />
