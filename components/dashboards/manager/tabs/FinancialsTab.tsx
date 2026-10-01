@@ -89,6 +89,23 @@ export function FinancialsTab() {
     return `${cur.startStr}_${cur.endStr}`;
   });
 
+  // إحصائيات الشهر المالي أو الفترة المحددة بالكامل (مستقلة عن الصفحة)
+  const [periodSummary, setPeriodSummary] = useState<{
+    income: number;
+    expense: number;
+    net: number;
+    totalCount: number;
+    incomeCount: number;
+    expenseCount: number;
+  }>({
+    income: 0,
+    expense: 0,
+    net: 0,
+    totalCount: 0,
+    incomeCount: 0,
+    expenseCount: 0,
+  });
+
   // الترتيب: حسب التاريخ أو المبلغ، تصاعدي أو تنازلي
   const [sortBy, setSortBy] = useState<'created_at' | 'amount'>('created_at');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
@@ -97,11 +114,14 @@ export function FinancialsTab() {
   // قائمة الأشهر المالية لآخر 12 شهراً
   const financialMonths = useMemo(() => getFinancialMonthsList(12), []);
 
-  // المودالات وإجراءات التعديل والحذف
+  // المودالات وإجراءات التعديل والحذف والطباعة
   const [selectedTransaction, setSelectedTransaction] = useState<any | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<any | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [printTransactions, setPrintTransactions] = useState<any[]>([]);
+  const [printDataLoading, setPrintDataLoading] = useState(false);
+  const [exportExcelLoading, setExportExcelLoading] = useState(false);
   const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
   const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
@@ -117,7 +137,22 @@ export function FinancialsTab() {
       });
   }, []);
 
-  // جلب المعاملات المالية
+  // تسمية الفترة الزمنية أو الشهر المالي المحدد
+  const periodTitleLabel = useMemo(() => {
+    if (selectedMonthId) {
+      const found = financialMonths.find((m) => m.id === selectedMonthId);
+      if (found) return found.displayTitle;
+    }
+    if (dateFrom && dateTo) {
+      if (dateFrom === dateTo) return `يوم ${dateFrom}`;
+      return `من ${dateFrom} إلى ${dateTo}`;
+    }
+    if (dateFrom) return `من تاريخ ${dateFrom}`;
+    if (dateTo) return `حتى تاريخ ${dateTo}`;
+    return 'كافة الفترات المسجلة';
+  }, [selectedMonthId, dateFrom, dateTo, financialMonths]);
+
+  // جلب المعاملات المالية (مع جلب إحصائيات الشهر المالي / الفترة بالكامل)
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -139,6 +174,9 @@ export function FinancialsTab() {
     else {
       setTransactions(data.rows || []);
       setTotal(data.total || 0);
+      if (data.summary) {
+        setPeriodSummary(data.summary);
+      }
     }
     setLoading(false);
   }, [page, search, typeFilter, clinicFilter, expenseGroupFilter, sortBy, sortOrder, dateFrom, dateTo]);
@@ -290,7 +328,7 @@ export function FinancialsTab() {
     return validRows;
   }, [transactions]);
 
-  // إحصائيات الصفحة الحالية المعروضة
+  // إحصائيات الصفحة الحالية المعروضة (للعرض الفرعي أسفل الجدول)
   const pageStats = useMemo(() => {
     const incomeRows = displayTransactions.filter((t) => t.type === 'income');
     const expenseRows = displayTransactions.filter((t) => t.type !== 'income');
@@ -299,10 +337,95 @@ export function FinancialsTab() {
     return { income, expense, net: income - expense };
   }, [displayTransactions]);
 
-  // تصدير إكسيل
-  const handleExportExcel = () => {
-    if (displayTransactions.length === 0) return;
-    const rows = displayTransactions.map((t, idx) => ({
+  // تجهيز وتصفية بيانات الطباعة لكامل الشهر المالي أو الفترة المحددة
+  const printDisplayTransactions = useMemo(() => {
+    const source = printTransactions.length > 0 ? printTransactions : displayTransactions;
+    const validRows: any[] = [];
+    source.forEach((t) => {
+      if (t.type === 'income') {
+        if (Number(t.amount) === 0) return;
+        const curTime = t.created_at ? new Date(t.created_at).getTime() : 0;
+        const curDesc = (t.description || '').trim().toLowerCase();
+        const isTwin = validRows.some((prev) => {
+          if (prev.type !== 'income') return false;
+          if (Number(prev.amount) !== Number(t.amount)) return false;
+          const prevTime = prev.created_at ? new Date(prev.created_at).getTime() : 0;
+          const prevDesc = (prev.description || '').trim().toLowerCase();
+          const quickTwin = Math.abs(curTime - prevTime) <= 60000 && (prev.clinic_id === t.clinic_id || !prev.clinic_id || !t.clinic_id);
+          const descTwin = curDesc && curDesc === prevDesc && Math.abs(curTime - prevTime) <= 86400000;
+          return quickTwin || descTwin;
+        });
+        if (!isTwin) validRows.push(t);
+      } else {
+        validRows.push(t);
+      }
+    });
+    return validRows;
+  }, [printTransactions, displayTransactions]);
+
+  // فتح نافذة المعاينة والطباعة مع جلب كافة حركات الشهر المالي/الفترة بالكامل
+  const handleOpenPrintModal = async () => {
+    setIsPrintModalOpen(true);
+    setPrintDataLoading(true);
+
+    const params = new URLSearchParams({
+      fetchAll: 'true',
+    });
+    if (search.trim()) params.set('q', search.trim());
+    if (typeFilter) params.set('type', typeFilter);
+    if (clinicFilter) params.set('clinicId', clinicFilter);
+    if (expenseGroupFilter) params.set('expenseGroup', expenseGroupFilter);
+    if (sortBy) params.set('sortBy', sortBy);
+    if (sortOrder) params.set('sortOrder', sortOrder);
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo) params.set('dateTo', dateTo);
+
+    try {
+      const { data, error: fetchErr } = await authFetchJson(`/api/manager/transactions?${params.toString()}`);
+      if (!fetchErr && data?.rows) {
+        setPrintTransactions(data.rows);
+        if (data.summary) {
+          setPeriodSummary(data.summary);
+        }
+      } else {
+        setPrintTransactions(displayTransactions);
+      }
+    } catch {
+      setPrintTransactions(displayTransactions);
+    } finally {
+      setPrintDataLoading(false);
+    }
+  };
+
+  // تصدير إكسيل لكافة حركات الفترة المحددة
+  const handleExportExcel = async () => {
+    let rowsToExport = displayTransactions;
+    if (total > displayTransactions.length) {
+      setExportExcelLoading(true);
+      try {
+        const params = new URLSearchParams({ fetchAll: 'true' });
+        if (search.trim()) params.set('q', search.trim());
+        if (typeFilter) params.set('type', typeFilter);
+        if (clinicFilter) params.set('clinicId', clinicFilter);
+        if (expenseGroupFilter) params.set('expenseGroup', expenseGroupFilter);
+        if (sortBy) params.set('sortBy', sortBy);
+        if (sortOrder) params.set('sortOrder', sortOrder);
+        if (dateFrom) params.set('dateFrom', dateFrom);
+        if (dateTo) params.set('dateTo', dateTo);
+
+        const { data, error: fetchErr } = await authFetchJson(`/api/manager/transactions?${params.toString()}`);
+        if (!fetchErr && data?.rows && data.rows.length > 0) {
+          rowsToExport = data.rows;
+        }
+      } catch (e) {
+        console.warn('Could not fetch all transactions for Excel export', e);
+      } finally {
+        setExportExcelLoading(false);
+      }
+    }
+
+    if (rowsToExport.length === 0) return;
+    const rows = rowsToExport.map((t, idx) => ({
       'م': idx + 1,
       'رقم الحركة': t.id ? t.id.slice(0, 8) : '',
       'التاريخ': new Date(t.created_at).toLocaleDateString('ar-EG'),
@@ -363,19 +486,21 @@ export function FinancialsTab() {
             </button>
             <button
               onClick={handleExportExcel}
-              disabled={transactions.length === 0}
+              disabled={transactions.length === 0 || exportExcelLoading}
               className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-colors shadow-2xs cursor-pointer"
+              title="تصدير حركات الفترة المحددة بالكامل إلى ملف إكسيل"
             >
-              <Download className="w-4 h-4" />
-              <span>تصدير إكسيل</span>
+              {exportExcelLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              <span>تصدير إكسيل ({total > displayTransactions.length ? `الكل ${total}` : displayTransactions.length})</span>
             </button>
             <button
-              onClick={() => setIsPrintModalOpen(true)}
+              onClick={handleOpenPrintModal}
               disabled={transactions.length === 0}
               className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-50 text-gray-700 border border-gray-300 font-bold px-3.5 py-2 rounded-xl text-xs transition-colors shadow-2xs cursor-pointer"
+              title="معاينة وطباعة تقرير الحركات المالية كاملة للفترة المحددة بمقاس A4"
             >
               <Printer className="w-4 h-4" />
-              <span>طباعة / PDF</span>
+              <span>طباعة / PDF ({total} حركة)</span>
             </button>
           </div>
         )}
@@ -578,38 +703,73 @@ export function FinancialsTab() {
               )}
             </div>
 
-            {/* ملخص أرقام الصفحة الحالية */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 pt-1">
-              <div className="bg-emerald-50/70 border border-emerald-100 rounded-xl p-2.5 text-center">
-                <p className="text-[11px] text-emerald-700 font-medium">إيرادات الصفحة</p>
-                <p className="text-base font-black text-emerald-800" dir="ltr">
-                  +{pageStats.income.toLocaleString('ar-EG')} ج.م
-                </p>
+            {/* ملخص أرقام الشهر المالي أو الفترة المحددة بالكامل */}
+            <div className="pt-1 space-y-2">
+              <div className="flex items-center justify-between text-xs text-gray-500 px-1 flex-wrap gap-2">
+                <span className="font-bold text-gray-700 flex items-center gap-1.5">
+                  <CalendarDays className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ملخص الحسابات عن: <span className="text-emerald-800 font-extrabold">{periodTitleLabel}</span>
+                </span>
+                <span className="text-[11px] text-gray-500 bg-white border border-gray-200 px-2 py-0.5 rounded-lg shadow-2xs">
+                  إجمالي الحركات بالفترة: <strong className="text-gray-800 font-bold">{periodSummary.totalCount || total}</strong> (صفحة {page + 1} من {Math.max(1, Math.ceil((total || 1) / PAGE_SIZE))})
+                </span>
               </div>
-              <div className="bg-red-50/70 border border-red-100 rounded-xl p-2.5 text-center">
-                <p className="text-[11px] text-red-700 font-medium">مصروفات الصفحة</p>
-                <p className="text-base font-black text-red-800" dir="ltr">
-                  -{pageStats.expense.toLocaleString('ar-EG')} ج.م
-                </p>
-              </div>
-              <div
-                className={`border rounded-xl p-2.5 text-center ${
-                  pageStats.net >= 0
-                    ? 'bg-blue-50/70 border-blue-100 text-blue-800'
-                    : 'bg-orange-50/70 border-orange-100 text-orange-800'
-                }`}
-              >
-                <p className="text-[11px] font-medium">صافي الصفحة</p>
-                <p className="text-base font-black" dir="ltr">
-                  {pageStats.net >= 0 ? '+' : ''}
-                  {pageStats.net.toLocaleString('ar-EG')} ج.م
-                </p>
-              </div>
-              <div className="bg-gray-50 border border-gray-200/70 rounded-xl p-2.5 text-center">
-                <p className="text-[11px] text-gray-500 font-medium">إجمالي الحركات المطابقة</p>
-                <p className="text-base font-black text-gray-800" dir="ltr">
-                  {total} <span className="text-[10px] text-gray-400 font-normal">سجل</span>
-                </p>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                <div className="bg-emerald-50/80 border border-emerald-200/80 rounded-xl p-3 text-center shadow-2xs">
+                  <p className="text-[11px] text-emerald-700 font-bold mb-0.5">
+                    إجمالي الإيرادات ({selectedMonthId ? 'الشهر المالي' : 'الفترة'})
+                  </p>
+                  <p className="text-lg font-black text-emerald-800" dir="ltr">
+                    +{periodSummary.income.toLocaleString('ar-EG')} ج.م
+                  </p>
+                  <p className="text-[10px] text-emerald-600 mt-0.5">
+                    {periodSummary.incomeCount} حركة إيراد مقيدة
+                  </p>
+                </div>
+
+                <div className="bg-red-50/80 border border-red-200/80 rounded-xl p-3 text-center shadow-2xs">
+                  <p className="text-[11px] text-red-700 font-bold mb-0.5">
+                    إجمالي المصروفات ({selectedMonthId ? 'الشهر المالي' : 'الفترة'})
+                  </p>
+                  <p className="text-lg font-black text-red-800" dir="ltr">
+                    -{periodSummary.expense.toLocaleString('ar-EG')} ج.م
+                  </p>
+                  <p className="text-[10px] text-red-600 mt-0.5">
+                    {periodSummary.expenseCount} حركة صرف ورواتب
+                  </p>
+                </div>
+
+                <div
+                  className={`border rounded-xl p-3 text-center shadow-2xs ${
+                    periodSummary.net >= 0
+                      ? 'bg-blue-50/80 border-blue-200 text-blue-900'
+                      : 'bg-orange-50/80 border-orange-200 text-orange-900'
+                  }`}
+                >
+                  <p className="text-[11px] font-bold mb-0.5">
+                    صافي الخزينة ({selectedMonthId ? 'الشهر المالي' : 'الفترة'})
+                  </p>
+                  <p className="text-lg font-black" dir="ltr">
+                    {periodSummary.net >= 0 ? '+' : ''}
+                    {periodSummary.net.toLocaleString('ar-EG')} ج.م
+                  </p>
+                  <p className="text-[10px] opacity-75 mt-0.5">
+                    {periodSummary.net >= 0 ? 'فائض مالي بعد المصروفات' : 'عجز مالي'}
+                  </p>
+                </div>
+
+                <div className="bg-gray-50 border border-gray-200/80 rounded-xl p-3 text-center shadow-2xs">
+                  <p className="text-[11px] text-gray-500 font-bold mb-0.5">
+                    إجمالي حركات الفترة
+                  </p>
+                  <p className="text-lg font-black text-gray-800" dir="ltr">
+                    {periodSummary.totalCount || total} <span className="text-xs font-normal text-gray-400">حركة</span>
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    المعروض بالجدول أدناه: {displayTransactions.length} حركة
+                  </p>
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -787,13 +947,23 @@ export function FinancialsTab() {
               </div>
             )}
             {!loading && (
-              <Pagination
-                page={page}
-                pageSize={PAGE_SIZE}
-                total={total}
-                onPageChange={setPage}
-                isLoading={loading}
-              />
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-gray-100">
+                <div className="text-xs text-gray-500 font-medium">
+                  إجمالي الصفحة المعروضة ({displayTransactions.length} حركة):
+                  <span className="text-emerald-700 font-bold mx-1">إيراد: +{pageStats.income.toLocaleString('ar-EG')} ج.م</span>
+                  <span className="text-gray-300">|</span>
+                  <span className="text-red-700 font-bold mx-1">مصروف: -{pageStats.expense.toLocaleString('ar-EG')} ج.م</span>
+                  <span className="text-gray-300">|</span>
+                  <span className="text-blue-700 font-bold mx-1">صافي: {pageStats.net >= 0 ? '+' : ''}{pageStats.net.toLocaleString('ar-EG')} ج.م</span>
+                </div>
+                <Pagination
+                  page={page}
+                  pageSize={PAGE_SIZE}
+                  total={total}
+                  onPageChange={setPage}
+                  isLoading={loading}
+                />
+              </div>
             )}
           </CardContent>
         </Card>
@@ -960,62 +1130,119 @@ export function FinancialsTab() {
         </div>
       )}
 
-      {/* مودال الطباعة وتصدير PDF لسجل الحركات */}
+      {/* مودال الطباعة وتصدير PDF لسجل الحركات للشهر المالي/الفترة بالكامل */}
       <PrintableReportModal
         isOpen={isPrintModalOpen}
         onClose={() => setIsPrintModalOpen(false)}
+        isLoading={printDataLoading}
         title="كشف الحركات والمعاملات المالية"
-        subtitle="سجل حركات الخزينة والإيرادات والمصروفات"
+        subtitle={`سجل حركات الخزينة والإيرادات والمصروفات — ${periodTitleLabel}`}
         dateRange={dateFrom && dateTo ? { from: dateFrom, to: dateTo } : undefined}
         metaItems={[
-          { label: 'إجمالي السجلات', value: `${transactions.length} حركة معروضة` },
-          { label: 'إجمالي الإيرادات', value: `+${pageStats.income.toLocaleString('ar-EG')} ج.م` },
-          { label: 'إجمالي المصروفات', value: `-${pageStats.expense.toLocaleString('ar-EG')} ج.م` },
-          { label: 'الصافي', value: `${pageStats.net >= 0 ? '+' : ''}${pageStats.net.toLocaleString('ar-EG')} ج.م` },
+          { label: 'الفترة المحددة', value: periodTitleLabel },
+          { label: 'إجمالي السجلات بالتقرير', value: `${printDisplayTransactions.length} حركة` },
+          { label: 'إجمالي الإيرادات', value: `+${periodSummary.income.toLocaleString('ar-EG')} ج.م` },
+          { label: 'إجمالي المصروفات', value: `-${periodSummary.expense.toLocaleString('ar-EG')} ج.م` },
+          { label: 'الصافي', value: `${periodSummary.net >= 0 ? '+' : ''}${periodSummary.net.toLocaleString('ar-EG')} ج.م` },
+        ]}
+        summaryCards={[
+          { label: 'إجمالي الإيرادات', value: `+${periodSummary.income.toLocaleString('ar-EG')} ج.م`, sub: `${periodSummary.incomeCount} حركة إيراد مقيدة` },
+          { label: 'إجمالي المصروفات', value: `-${periodSummary.expense.toLocaleString('ar-EG')} ج.م`, sub: `${periodSummary.expenseCount} حركة صرف ورواتب` },
+          { label: 'صافي الخزينة', value: `${periodSummary.net >= 0 ? '+' : ''}${periodSummary.net.toLocaleString('ar-EG')} ج.م`, sub: periodSummary.net >= 0 ? 'فائض مالي بعد المصروفات' : 'عجز مالي' },
+          { label: 'إجمالي الحركات', value: `${printDisplayTransactions.length} حركة`, sub: 'كامل الفترة المحددة' },
         ]}
         sections={[
           {
-            title: 'جدول الحركات المالية',
+            title: 'جدول الحركات والمعاملات المالية التفصيلي',
+            description: `كشف محاسبي تفصيلي لكافة المعاملات المالية المقيدة بنطاق: ${periodTitleLabel} (جاهز للطباعة على مقاس A4)`,
             columns: [
               {
-                header: 'التاريخ',
-                render: (r) => new Date(r.created_at).toLocaleDateString('ar-EG'),
+                header: 'التاريخ والوقت',
+                render: (r) => (
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-gray-800 block text-[11px]">
+                      {new Date(r.created_at).toLocaleDateString('ar-EG')}
+                    </span>
+                    <span className="text-[10px] text-gray-500 block" dir="ltr">
+                      {new Date(r.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                ),
               },
               {
                 header: 'النوع والتصنيف',
                 render: (r) => (
-                  <span>
-                    {TRANSACTION_TYPE_LABELS[toTransactionType(r.type)]} - {EXPENSE_GROUP_LABELS[r.category] || r.category || 'عام'}
-                  </span>
+                  <div className="space-y-0.5">
+                    <span
+                      className={`font-bold inline-block text-[10px] px-1.5 py-0.5 rounded ${
+                        r.type === 'income'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : r.type === 'salary'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}
+                    >
+                      {TRANSACTION_TYPE_LABELS[toTransactionType(r.type)] || r.type}
+                    </span>
+                    <span className="text-[10px] text-gray-600 block">
+                      {EXPENSE_GROUP_LABELS[r.category] || r.category || 'عام'}
+                    </span>
+                  </div>
                 ),
               },
               {
                 header: 'المبلغ',
                 align: 'left',
                 render: (r) => (
-                  <span dir="ltr" className="font-bold">
+                  <span
+                    dir="ltr"
+                    className={`font-black text-[11px] ${
+                      r.type === 'income' ? 'text-emerald-700' : 'text-red-700'
+                    }`}
+                  >
                     {r.type === 'income' ? '+' : '-'}
                     {Number(r.amount || 0).toLocaleString('ar-EG')} ج.م
                   </span>
                 ),
               },
               {
-                header: 'البيان',
-                key: 'description',
+                header: 'البيان / التفاصيل',
+                render: (r) => (
+                  <span className="text-gray-800 font-medium text-[11px]">
+                    {r.description || '—'}
+                  </span>
+                ),
               },
               {
                 header: 'العيادة',
-                render: (r) => r.clinics?.name || 'المركز العام',
+                render: (r) => (
+                  <span className="text-gray-700 text-[11px]">
+                    {r.clinics?.name || 'المركز العام'}
+                  </span>
+                ),
               },
               {
-                header: 'المستفيد',
-                render: (r) =>
-                  r.beneficiary
-                    ? `${r.beneficiary.first_name || ''} ${r.beneficiary.last_name || ''}`.trim()
-                    : '—',
+                header: 'المسؤول / المستفيد',
+                render: (r) => {
+                  if (r.beneficiary) {
+                    return (
+                      <span className="text-amber-800 font-semibold text-[10px]">
+                        مستفيد: {r.beneficiary.first_name || ''} {r.beneficiary.last_name || ''}
+                      </span>
+                    );
+                  }
+                  if (r.profiles) {
+                    return (
+                      <span className="text-gray-600 text-[10px]">
+                        {r.profiles.first_name || ''} {r.profiles.last_name || ''}
+                      </span>
+                    );
+                  }
+                  return <span className="text-gray-400 text-[10px]">النظام</span>;
+                },
               },
             ],
-            data: displayTransactions,
+            data: printDisplayTransactions,
           },
         ]}
       />

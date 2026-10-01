@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { Printer, X, FileText, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Printer, X, FileText, CheckCircle2, Loader2 } from 'lucide-react';
 
 export interface ReportSection {
   title?: string;
@@ -27,6 +27,7 @@ export interface PrintableReportModalProps {
   summaryCards?: { label: string; value: string; sub?: string }[];
   sections?: ReportSection[];
   children?: React.ReactNode;
+  isLoading?: boolean;
 }
 
 export function PrintableReportModal({
@@ -39,7 +40,10 @@ export function PrintableReportModal({
   summaryCards,
   sections,
   children,
+  isLoading = false,
 }: PrintableReportModalProps) {
+  const [printing, setPrinting] = useState(false);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) onClose();
@@ -51,7 +55,133 @@ export function PrintableReportModal({
   if (!isOpen) return null;
 
   const handlePrint = () => {
+    if (isLoading) return;
+    setPrinting(true);
+
+    const printContent = document.getElementById('printable-report-content');
+    if (printContent) {
+      try {
+        let iframe = document.getElementById('report-print-isolated-iframe') as HTMLIFrameElement | null;
+        if (!iframe) {
+          iframe = document.createElement('iframe');
+          iframe.id = 'report-print-isolated-iframe';
+          iframe.style.position = 'fixed';
+          iframe.style.right = '0';
+          iframe.style.bottom = '0';
+          iframe.style.width = '0';
+          iframe.style.height = '0';
+          iframe.style.border = 'none';
+          iframe.style.opacity = '0';
+          iframe.style.pointerEvents = 'none';
+          iframe.style.zIndex = '-9999';
+          document.body.appendChild(iframe);
+        }
+
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (doc) {
+          doc.open();
+          doc.write(`
+            <!DOCTYPE html>
+            <html dir="rtl" lang="ar">
+            <head>
+              <meta charset="utf-8">
+              <title>${title || 'تقرير مالي'}</title>
+              <style>
+                @page {
+                  size: A4 portrait;
+                  margin: 12mm 10mm 15mm 10mm;
+                }
+                * {
+                  box-sizing: border-box;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+                body {
+                  font-family: 'Segoe UI', Tahoma, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+                  margin: 0;
+                  padding: 0;
+                  color: #111827;
+                  background: #ffffff;
+                  font-size: 11px;
+                  line-height: 1.4;
+                  direction: rtl;
+                }
+                table {
+                  width: 100%;
+                  border-collapse: collapse;
+                  page-break-inside: auto;
+                  margin-top: 8px;
+                }
+                thead {
+                  display: table-header-group;
+                }
+                tfoot {
+                  display: table-footer-group;
+                }
+                tr {
+                  page-break-inside: avoid;
+                  break-inside: avoid;
+                }
+                th {
+                  background-color: #f3f4f6 !important;
+                  color: #1f2937;
+                  font-weight: 700;
+                  border: 1px solid #d1d5db;
+                  padding: 6px 8px;
+                  font-size: 10.5px;
+                  text-align: right;
+                }
+                td {
+                  border: 1px solid #e5e7eb;
+                  padding: 5px 8px;
+                  font-size: 10px;
+                }
+                .avoid-page-break {
+                  page-break-inside: avoid;
+                  break-inside: avoid;
+                }
+                .text-center { text-align: center; }
+                .text-left { text-align: left; }
+                .text-right { text-align: right; }
+                .font-bold { font-weight: bold; }
+                .font-black { font-weight: 900; }
+                .text-emerald-600 { color: #059669; }
+                .text-emerald-700 { color: #047857; }
+                .text-emerald-800 { color: #065f46; }
+                .text-red-600 { color: #dc2626; }
+                .text-red-700 { color: #b91c1c; }
+                .text-gray-400 { color: #9ca3af; }
+                .text-gray-500 { color: #6b7280; }
+                .text-gray-600 { color: #4b5563; }
+                .text-gray-700 { color: #374151; }
+                .text-gray-800 { color: #1f2937; }
+                .text-gray-900 { color: #111827; }
+                .bg-emerald-50 { background-color: #ecfdf5 !important; }
+                .bg-gray-50 { background-color: #f9fafb !important; }
+                .bg-white { background-color: #ffffff !important; }
+              </style>
+            </head>
+            <body>
+              ${printContent.innerHTML}
+            </body>
+            </html>
+          `);
+          doc.close();
+
+          setTimeout(() => {
+            iframe?.contentWindow?.focus();
+            iframe?.contentWindow?.print();
+            setPrinting(false);
+          }, 300);
+          return;
+        }
+      } catch (err) {
+        console.warn('Isolated iframe print failed, falling back to window.print()', err);
+      }
+    }
+
     window.print();
+    setPrinting(false);
   };
 
   return (
@@ -66,16 +196,26 @@ export function PrintableReportModal({
             </div>
             <div>
               <h2 className="text-base font-bold text-gray-900">معاينة التقرير والطباعة / PDF</h2>
-              <p className="text-xs text-gray-500">جاهز للطباعة أو الحفظ كملف PDF عالي الجودة يدعم اللغة العربية</p>
+              <p className="text-xs text-gray-500">جاهز للطباعة أو الحفظ كملف PDF عالي الجودة يدعم اللغة العربية ومقاس A4</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrint}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-sm transition-colors shadow-sm cursor-pointer"
+              disabled={isLoading || printing}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-sm transition-colors shadow-sm cursor-pointer"
             >
-              <Printer className="w-4 h-4" />
-              <span>طباعة / حفظ كـ PDF</span>
+              {printing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>جاري الطباعة...</span>
+                </>
+              ) : (
+                <>
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة / حفظ كـ PDF</span>
+                </>
+              )}
             </button>
             <button
               onClick={onClose}
@@ -94,7 +234,7 @@ export function PrintableReportModal({
           dir="rtl"
         >
           {/* Header */}
-          <div className="border-b-2 border-emerald-600 pb-4 flex items-start justify-between">
+          <div className="border-b-2 border-emerald-600 pb-4 flex items-start justify-between avoid-page-break">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="w-3 h-3 rounded-full bg-emerald-600 inline-block"></span>
@@ -112,7 +252,7 @@ export function PrintableReportModal({
           </div>
 
           {/* Date range & Meta badges */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-gray-50/90 rounded-xl p-3 border border-gray-100 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-gray-50/90 rounded-xl p-3 border border-gray-100 text-xs avoid-page-break">
             <div className="flex items-center gap-2">
               <span className="font-bold text-gray-600">الفترة الزمنية:</span>
               {dateRange ? (
@@ -137,7 +277,7 @@ export function PrintableReportModal({
 
           {/* Summary KPI Cards */}
           {summaryCards && summaryCards.length > 0 && (
-            <div className={`grid grid-cols-2 md:grid-cols-${Math.min(summaryCards.length, 4)} gap-3 print:grid-cols-3`}>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:grid-cols-4 avoid-page-break">
               {summaryCards.map((card, idx) => (
                 <div key={idx} className="bg-white border rounded-xl p-3.5 shadow-xs text-center border-t-2 border-t-emerald-600">
                   <p className="text-xs text-gray-500 font-medium mb-1">{card.label}</p>
@@ -148,14 +288,23 @@ export function PrintableReportModal({
             </div>
           )}
 
+          {/* Loading Indicator inside modal */}
+          {isLoading && (
+            <div className="py-12 text-center space-y-3">
+              <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mx-auto" />
+              <p className="text-sm font-bold text-gray-700">جاري تجميع وتنسيق كافة بيانات الشهر المالي / الفترة للطباعة...</p>
+              <p className="text-xs text-gray-400">سيتم تجهيز التقرير بجميع الحركات تلقائياً بمقاس A4</p>
+            </div>
+          )}
+
           {/* Custom Content */}
-          {children}
+          {!isLoading && children}
 
           {/* Standard Sections */}
-          {sections && sections.map((sec, secIdx) => (
+          {!isLoading && sections && sections.map((sec, secIdx) => (
             <div key={secIdx} className="space-y-2 pt-2">
               {sec.title && (
-                <div className="border-r-4 border-emerald-600 pr-2">
+                <div className="border-r-4 border-emerald-600 pr-2 avoid-page-break">
                   <h3 className="font-bold text-gray-800 text-sm">{sec.title}</h3>
                   {sec.description && <p className="text-xs text-gray-500">{sec.description}</p>}
                 </div>
@@ -188,11 +337,11 @@ export function PrintableReportModal({
                     ) : (
                       sec.data.map((row, rIdx) => (
                         <tr key={rIdx} className={rIdx % 2 === 1 ? 'bg-gray-50/50' : 'bg-white'}>
-                          <td className="p-2.5 text-center text-gray-400 font-mono text-[11px]">{rIdx + 1}</td>
+                          <td className="p-2 text-center text-gray-400 font-mono text-[11px]">{rIdx + 1}</td>
                           {sec.columns.map((col, cIdx) => (
                             <td
                               key={cIdx}
-                              className={`p-2.5 ${
+                              className={`p-2 ${
                                 col.align === 'center' ? 'text-center' : col.align === 'left' ? 'text-left' : 'text-right'
                               }`}
                             >
@@ -209,7 +358,7 @@ export function PrintableReportModal({
           ))}
 
           {/* Signatures & Footer (Print Only / Clean look) */}
-          <div className="pt-8 mt-6 border-t border-gray-200 text-xs text-gray-500 flex justify-between items-end print:pt-6">
+          <div className="pt-8 mt-6 border-t border-gray-200 text-xs text-gray-500 flex justify-between items-end print:pt-6 avoid-page-break">
             <div className="text-center space-y-6">
               <p className="font-bold text-gray-700">إعداد وتدقيق الحسابات</p>
               <div className="w-32 border-b border-gray-300"></div>
@@ -231,7 +380,7 @@ export function PrintableReportModal({
         <div className="print:hidden px-6 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
           <div className="flex items-center gap-1.5 text-emerald-700">
             <CheckCircle2 className="w-4 h-4" />
-            <span>يدعم حفظ PDF المباشر عبر أمر الطباعة (Save as PDF)</span>
+            <span>يدعم حفظ PDF المباشر عبر أمر الطباعة (Save as PDF) بمقاس A4</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -242,10 +391,20 @@ export function PrintableReportModal({
             </button>
             <button
               onClick={handlePrint}
-              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl transition-colors cursor-pointer"
+              disabled={isLoading || printing}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl transition-colors cursor-pointer"
             >
-              <Printer className="w-4 h-4" />
-              <span>طباعة المستند</span>
+              {printing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>جاري التحضير...</span>
+                </>
+              ) : (
+                <>
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة المستند</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -253,3 +412,4 @@ export function PrintableReportModal({
     </div>
   );
 }
+

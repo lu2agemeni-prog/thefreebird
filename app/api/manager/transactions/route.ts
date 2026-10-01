@@ -20,6 +20,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const sortOrder = searchParams.get('sortOrder') === 'asc';
   const dateFrom = searchParams.get('dateFrom'); // YYYY-MM-DD
   const dateTo = searchParams.get('dateTo'); // YYYY-MM-DD
+  const fetchAll = searchParams.get('fetchAll') === 'true' || searchParams.get('all') === 'true';
 
   let query = supabase
     .from('transactions')
@@ -43,13 +44,122 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     query = query.or(`description.ilike.%${q}%,category.ilike.%${q}%`);
   }
 
+  // في حالة طلب كافة البيانات للطباعة أو التصدير للشهر المالي/الفترة
+  if (fetchAll) {
+    const { data, error, count } = await query.limit(5000);
+
+    if (error) {
+      return NextResponse.json({ error: 'تعذر تحميل المعاملات المالية.' }, { status: 500 });
+    }
+
+    let income = 0;
+    let expense = 0;
+    let incomeCount = 0;
+    let expenseCount = 0;
+
+    (data || []).forEach((r: any) => {
+      const amt = Number(r.amount || 0);
+      if (r.type === 'income') {
+        if (amt > 0) {
+          income += amt;
+          incomeCount++;
+        }
+      } else {
+        expense += amt;
+        expenseCount++;
+      }
+    });
+
+    return NextResponse.json({
+      rows: data || [],
+      total: count || (data?.length || 0),
+      summary: {
+        income,
+        expense,
+        net: income - expense,
+        totalCount: incomeCount + expenseCount,
+        incomeCount,
+        expenseCount,
+      },
+    });
+  }
+
+  // الجلب الافتراضي المرقم للصفحة الحالية
   const { data, error, count } = await query.range(from, to);
 
   if (error) {
     return NextResponse.json({ error: 'تعذر تحميل المعاملات المالية.' }, { status: 500 });
   }
 
-  return NextResponse.json({ rows: data || [], total: count || 0, page, pageSize });
+  // حساب إحصائيات الشهر المالي / الفترة الزمنية المحددة بالكامل (وليس مجرد الصفحة الحالية)
+  let sumQuery = supabase
+    .from('transactions')
+    .select('id, type, amount, created_at, clinic_id, description');
+
+  if (type) sumQuery = sumQuery.eq('type', type);
+  if (clinicId) sumQuery = sumQuery.eq('clinic_id', clinicId);
+  if (expenseGroup) sumQuery = sumQuery.eq('expense_group', expenseGroup);
+  if (dateFrom) sumQuery = sumQuery.gte('created_at', `${dateFrom}T00:00:00`);
+  if (dateTo) sumQuery = sumQuery.lte('created_at', `${dateTo}T23:59:59`);
+  if (q) {
+    sumQuery = sumQuery.or(`description.ilike.%${q}%,category.ilike.%${q}%`);
+  }
+
+  const { data: sumRows } = await sumQuery.limit(5000);
+
+  let periodIncome = 0;
+  let periodExpense = 0;
+  let periodIncomeCount = 0;
+  let periodExpenseCount = 0;
+
+  if (sumRows) {
+    const validSumRows: any[] = [];
+    sumRows.forEach((t: any) => {
+      if (t.type === 'income') {
+        if (Number(t.amount) === 0) return;
+        const curTime = t.created_at ? new Date(t.created_at).getTime() : 0;
+        const curDesc = (t.description || '').trim().toLowerCase();
+        const isTwin = validSumRows.some((prev) => {
+          if (prev.type !== 'income') return false;
+          if (Number(prev.amount) !== Number(t.amount)) return false;
+          const prevTime = prev.created_at ? new Date(prev.created_at).getTime() : 0;
+          const prevDesc = (prev.description || '').trim().toLowerCase();
+          const quickTwin = Math.abs(curTime - prevTime) <= 60000 && (prev.clinic_id === t.clinic_id || !prev.clinic_id || !t.clinic_id);
+          const descTwin = curDesc && curDesc === prevDesc && Math.abs(curTime - prevTime) <= 86400000;
+          return quickTwin || descTwin;
+        });
+        if (!isTwin) validSumRows.push(t);
+      } else {
+        validSumRows.push(t);
+      }
+    });
+
+    validSumRows.forEach((r: any) => {
+      const amt = Number(r.amount || 0);
+      if (r.type === 'income') {
+        periodIncome += amt;
+        periodIncomeCount++;
+      } else {
+        periodExpense += amt;
+        periodExpenseCount++;
+      }
+    });
+  }
+
+  return NextResponse.json({
+    rows: data || [],
+    total: count || 0,
+    page,
+    pageSize,
+    summary: {
+      income: periodIncome,
+      expense: periodExpense,
+      net: periodIncome - periodExpense,
+      totalCount: periodIncomeCount + periodExpenseCount,
+      incomeCount: periodIncomeCount,
+      expenseCount: periodExpenseCount,
+    },
+  });
 }
 
 // ─── PUT: تعديل حركة مالية بواسطة المدير ───
