@@ -7,7 +7,7 @@
 // المرسل مدير، وتوزّع الإشعار بكفاءة على الوجهة المطلوبة).
 // ============================================================================
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Megaphone, Send, Loader2, Users, Stethoscope, User, Search, CheckCircle2 } from 'lucide-react';
+import { Megaphone, Send, Loader2, Users, Stethoscope, User, Search, CheckCircle2, BellRing } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { supabase } from '@/lib/supabase';
@@ -128,6 +128,21 @@ export function BroadcastNotificationsTab() {
 
   return (
     <div className="space-y-6">
+      {/* بطاقة التوجيه إلى نظام تذكير المواعيد الآلي */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-l from-emerald-50 via-white to-white border border-emerald-200 p-4 rounded-2xl shadow-2xs">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl">
+            <BellRing className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-gray-800">نظام تذكير المواعيد الآلي (24h قبل الكشف)</h4>
+            <p className="text-xs text-gray-500">
+              يمكنك جدولة وإرسال تذكيرات المواعيد تلقائياً عبر SMS و Push للمرضى قبل 24 ساعة من الموعد من تبويب &quot;تذكير المواعيد (SMS & Push)&quot;.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

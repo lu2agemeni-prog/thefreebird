@@ -14,6 +14,7 @@ import { Sidebar, SidebarItem } from './Sidebar';
 import {
   Building, Calculator, Stethoscope, Activity, QrCode, Shield,
   BarChart, FileText, Newspaper, List, FlaskConical, Wallet, Megaphone, User, Users, Percent, Printer, PieChart,
+  BellRing,
 } from 'lucide-react';
 import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
 import { QueueMediaManager } from './manager/QueueMediaManager';
@@ -35,6 +36,7 @@ import { LabPrintTab } from './shared/LabPrintTab';
 import { LabAccountsTab } from './manager/tabs/LabAccountsTab';
 import { AdditionalAccountsTab } from './manager/tabs/AdditionalAccountsTab';
 import { BroadcastNotificationsTab } from './manager/tabs/BroadcastNotificationsTab';
+import { AppointmentRemindersTab } from './manager/tabs/AppointmentRemindersTab';
 import { AccountProfileTab } from './shared/AccountProfileTab';
 
 const managerNav: SidebarItem[] = [
@@ -53,6 +55,7 @@ const managerNav: SidebarItem[] = [
   { name: 'الحسابات الإضافية', id: 'additional_accounts', icon: Wallet },
   { name: 'عروض وخصومات', id: 'offers', icon: Percent },
   { name: 'الإشعارات', id: 'notifications_broadcast', icon: Megaphone },
+  { name: 'تذكير المواعيد (SMS & Push)', id: 'appointment_reminders', icon: BellRing },
   { name: 'الملف الشخصي', id: 'profile', icon: User },
   { name: 'الماليات والأرباح', id: 'financials', icon: Calculator },
   { name: 'الرسوم البيانية المالية', id: 'financial_charts', icon: PieChart },
@@ -71,7 +74,7 @@ export function ManagerDashboard() {
         <div className="max-w-6xl mx-auto">
           <h2 className="text-3xl font-bold text-gray-800 mb-8">{managerNav.find(n => n.id === activeTab)?.name}</h2>
 
-          {activeTab === 'dashboard' && <DashboardOverviewTab />}
+          {activeTab === 'dashboard' && <DashboardOverviewTab onNavigateTab={setActiveTab} />}
           {activeTab === 'patient_guide' && <PatientGuideTab />}
           {activeTab === 'doctors' && <DoctorsTab />}
           {activeTab === 'clinics' && <ClinicsTab />}
@@ -88,6 +91,7 @@ export function ManagerDashboard() {
           {activeTab === 'additional_accounts' && <AdditionalAccountsTab />}
           {activeTab === 'offers' && <OffersTab />}
           {activeTab === 'notifications_broadcast' && <BroadcastNotificationsTab />}
+          {activeTab === 'appointment_reminders' && <AppointmentRemindersTab />}
           {activeTab === 'profile' && <AccountProfileTab />}
           {activeTab === 'financials' && <FinancialsTab />}
           {activeTab === 'financial_charts' && <AccountantChartsTab />}
