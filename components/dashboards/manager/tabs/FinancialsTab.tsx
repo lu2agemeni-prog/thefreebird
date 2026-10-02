@@ -54,6 +54,7 @@ import { PrintableReportModal } from '@/components/ui/printable-report-modal';
 import { ProfitReportPanel } from './ProfitReportPanel';
 import { EditTransactionModal } from './EditTransactionModal';
 import { AccountantChartsTab } from '@/components/dashboards/accountant/AccountantChartsTab';
+import { DailyFinancialLedger } from './DailyFinancialLedger';
 
 const PAGE_SIZE = 15;
 
@@ -69,7 +70,7 @@ const EXPENSE_GROUP_LABELS: Record<string, string> = {
 };
 
 export function FinancialsTab() {
-  const [view, setView] = useState<'list' | 'profit_report' | 'charts'>('list');
+  const [view, setView] = useState<'list' | 'daily_ledger' | 'profit_report' | 'charts'>('list');
   const [transactions, setTransactions] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -463,6 +464,16 @@ export function FinancialsTab() {
             سجل الحركات والمعاملات
           </button>
           <button
+            onClick={() => setView('daily_ledger')}
+            className={`px-5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              view === 'daily_ledger'
+                ? 'bg-white text-emerald-800 shadow-xs'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            السجل اليومي للعيادات (21 - 20)
+          </button>
+          <button
             onClick={() => setView('profit_report')}
             className={`px-5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               view === 'profit_report'
@@ -529,7 +540,9 @@ export function FinancialsTab() {
         </div>
       )}
 
-      {view === 'profit_report' ? (
+      {view === 'daily_ledger' ? (
+        <DailyFinancialLedger />
+      ) : view === 'profit_report' ? (
         <ProfitReportPanel />
       ) : view === 'charts' ? (
         <AccountantChartsTab />
