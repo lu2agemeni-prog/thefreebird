@@ -31,10 +31,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
   Activity, Loader2, Users, Volume2, ChevronLeft,
   Hash, Stethoscope, UserCheck, CheckCircle2, ListChecks, Clock, Sparkles, Search, X, RotateCcw,
+  Zap, UserPlus, Plus,
 } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { AddVisitModal } from './AddVisitModal';
+import { QuickTokenModal } from './QuickTokenModal';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
 
 function todayStr() {
@@ -61,6 +63,11 @@ export function SecretaryCallQueue() {
   const [pickOpen, setPickOpen] = useState(false);
   const [pickSearch, setPickSearch] = useState('');
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+
+  // سحب دور سريع واستكمال بيانات الزيارة
+  const [showQuickTokenModal, setShowQuickTokenModal] = useState(false);
+  const [showAddVisitModal, setShowAddVisitModal] = useState(false);
+  const [completingQueueItem, setCompletingQueueItem] = useState<any | null>(null);
 
   const fetchCompletedToday = async () => {
     const todayStart = new Date();
@@ -344,8 +351,31 @@ export function SecretaryCallQueue() {
           </div>
           <div>
             <h2 className="text-2xl md:text-3xl font-bold text-gray-800">النداء الآلي</h2>
-            <p className="text-xs text-gray-500">التحكم في ترتيب النداء — إضافة المرضى من تبويب «دليل المرضى».</p>
+            <p className="text-xs text-gray-500">التحكم في ترتيب النداء وسحب الأدوار الفورية والزيارات.</p>
           </div>
+        </div>
+
+        {/* أزرار سحب دور سريع وإضافة زيارة */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setShowQuickTokenModal(true)}
+            className="flex items-center gap-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black px-4 py-2.5 rounded-xl text-xs shadow-md shadow-amber-600/25 transition-all cursor-pointer hover:scale-102"
+            title="سحب رقم دور فوري في ثانية واحدة أثناء الزحام"
+          >
+            <Zap className="w-4 h-4 fill-amber-200" />
+            <span>سحب دور سريع ⚡ (تذكرة فورية)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowAddVisitModal(true)}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-xs transition-colors cursor-pointer"
+            title="تسجيل زيارة كاملة مع الخدمات والتحصيل"
+          >
+            <Plus className="w-4 h-4" />
+            <span>إضافة زيارة كاملة</span>
+          </button>
         </div>
       </div>
 
@@ -613,10 +643,15 @@ export function SecretaryCallQueue() {
                         isNext ? 'bg-emerald-50 border-emerald-200 ring-1 ring-emerald-200' : 'bg-white border-gray-200'
                       }`}>
                         <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0 flex-wrap">
                             {isNext && (
                               <span className="text-[10px] font-bold bg-emerald-600 text-white px-1.5 py-0.5 rounded shrink-0 flex items-center gap-1">
                                 <Sparkles className="w-3 h-3" /> التالي
+                              </span>
+                            )}
+                            {!q.visit_group_id && (
+                              <span className="text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1">
+                                <Zap className="w-3 h-3 text-amber-600 fill-amber-500" /> دور سريع ⚡ (بيانات غير مكتملة)
                               </span>
                             )}
                             <span className="font-bold text-gray-800 truncate">{q.patient_name}</span>
@@ -642,7 +677,7 @@ export function SecretaryCallQueue() {
                           ) : null;
                         })()}
 
-                        {/* أدوات التحكم في الزيارة: نداء الآن، إنهاء المقابلة مباشرة، ضم خدمة */}
+                        {/* أدوات التحكم في الزيارة: نداء الآن، إنهاء المقابلة مباشرة، استكمال بيانات الزيارة / ضم خدمة */}
                         <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 flex-wrap gap-2">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <button
@@ -670,12 +705,26 @@ export function SecretaryCallQueue() {
                             </button>
                           </div>
 
-                          <button
-                            onClick={() => openAddService(q)}
-                            className="text-xs font-bold text-gray-500 hover:text-emerald-700 hover:underline"
-                          >
-                            + ضم خدمة
-                          </button>
+                          <div className="flex items-center gap-2">
+                            {!q.visit_group_id ? (
+                              <button
+                                type="button"
+                                onClick={() => setCompletingQueueItem(q)}
+                                className="text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                                title="استكمال بيانات المريض والخدمات والتحصيل المالي لهذا الدور"
+                              >
+                                <UserPlus className="w-3.5 h-3.5 text-amber-700" />
+                                <span>استكمال بيانات الزيارة</span>
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => openAddService(q)}
+                                className="text-xs font-bold text-gray-500 hover:text-emerald-700 hover:underline cursor-pointer"
+                              >
+                                + ضم خدمة
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -778,6 +827,56 @@ export function SecretaryCallQueue() {
           onAdded={() => {
             setAddServiceForRow(null);
             fetchQueueOnly();
+          }}
+        />
+      )}
+
+      {/* مودال سحب دور سريع بنقرة واحدة */}
+      <QuickTokenModal
+        isOpen={showQuickTokenModal}
+        onClose={() => setShowQuickTokenModal(false)}
+        clinics={clinics}
+        doctors={doctors}
+        defaultClinicId={selectedClinicId}
+        onSuccess={(info) => {
+          fetchQueueOnly();
+          setAddedToast(`⚡ تم سحب الدور السريع بنجاح! رقم الدور: #${info.tokenNumber} في ${info.clinicName} (${info.patientName})`);
+          setTimeout(() => setAddedToast(null), 6000);
+        }}
+      />
+
+      {/* مودال استكمال بيانات دور سريع غير مكتمل */}
+      {completingQueueItem && (
+        <AddVisitModal
+          completeQueueVisit={{
+            id: completingQueueItem.id,
+            token_number: completingQueueItem.token_number,
+            clinic_id: completingQueueItem.clinic_id,
+            doctor_id: completingQueueItem.doctor_id,
+            patient_name: completingQueueItem.patient_name,
+            phone: completingQueueItem.phone,
+          }}
+          onClose={() => setCompletingQueueItem(null)}
+          onAdded={(info) => {
+            setCompletingQueueItem(null);
+            fetchQueueOnly();
+            setAddedToast(`✓ تم استكمال واعتماد بيانات الزيارة للدور #${info?.tokenNumber || completingQueueItem.token_number} بنجاح!`);
+            setTimeout(() => setAddedToast(null), 5000);
+          }}
+        />
+      )}
+
+      {/* مودال إضافة زيارة كاملة مباشرة من تبويب النداء الآلي */}
+      {showAddVisitModal && (
+        <AddVisitModal
+          onClose={() => setShowAddVisitModal(false)}
+          onAdded={(info) => {
+            setShowAddVisitModal(false);
+            fetchQueueOnly();
+            if (info?.tokenNumber) {
+              setAddedToast(`✓ تمت إضافة الزيارة بنجاح برقم دور #${info.tokenNumber}!`);
+              setTimeout(() => setAddedToast(null), 5000);
+            }
           }}
         />
       )}

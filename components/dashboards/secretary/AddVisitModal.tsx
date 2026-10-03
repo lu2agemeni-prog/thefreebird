@@ -75,12 +75,22 @@ interface AddVisitModalProps {
     clinicId: string | null;
     doctorId: string | null;
   };
+  /** استكمال بيانات دور سريع تم سحبه مسبقاً من شاشة النداء */
+  completeQueueVisit?: {
+    id: string;
+    token_number: number;
+    clinic_id: string;
+    doctor_id?: string | null;
+    patient_name?: string;
+    phone?: string | null;
+  };
 }
 
-export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: AddVisitModalProps) {
+export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo, completeQueueVisit }: AddVisitModalProps) {
   const { user } = useAuth();
   const isEditing = !!editVisit;
   const isAddingService = !!addServiceTo;
+  const isCompletingQueue = !!completeQueueVisit;
   const isAddServiceOnly = isAddingService;
 
   // ─── بيانات المرضى والعيادات والخدمات اللي بنجيبها من السيرفر ───
@@ -108,9 +118,15 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
   const [newPhone, setNewPhone] = useState('');
 
   // ─── بيانات الزيارة ───
-  const [visitDate, setVisitDate] = useState(editVisit?.visit_date || addServiceTo?.visitDate || todayStr());
-  const [clinicId, setClinicId] = useState(editVisit?.clinic_id || addServiceTo?.clinicId || '');
-  const [doctorId, setDoctorId] = useState(editVisit?.doctor_id || addServiceTo?.doctorId || '');
+  const [visitDate, setVisitDate] = useState(
+    editVisit?.visit_date || addServiceTo?.visitDate || todayStr()
+  );
+  const [clinicId, setClinicId] = useState(
+    editVisit?.clinic_id || addServiceTo?.clinicId || completeQueueVisit?.clinic_id || ''
+  );
+  const [doctorId, setDoctorId] = useState(
+    editVisit?.doctor_id || addServiceTo?.doctorId || completeQueueVisit?.doctor_id || ''
+  );
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>(
     editVisit
       ? [newServiceLine({
@@ -414,9 +430,30 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
       const { error: visitErr } = await supabase.from('patient_visits').insert(visitsToInsert);
       if (visitErr) throw visitErr;
 
-      // 6) لو الزيارة النهارده: نضيف سطر رئيسي في call_queue لشاشة النداء
-      //    paid_amount = 0 لمنع التريجر المالي لـ call_queue من إنشاء قيد مالي مكرر.
-      if (willCreateQueueRow) {
+      // 6) لو بنستكمل بيانات دور سريع تم سحبه مسبقاً من شاشة النداء:
+      //    نحدّث نفس صف call_queue القائم بالاسم ورقم الهاتف وربط الزيارة visit_group_id دون تغيير رقم الدور!
+      if (completeQueueVisit) {
+        const firstLine = filledLines[0];
+        const firstResolved = await resolveLine(firstLine);
+
+        const { error: queueUpdErr } = await supabase
+          .from('call_queue')
+          .update({
+            patient_name: patient.name,
+            phone: patient.phone,
+            patient_id: patient.source === 'registered' ? patient.id : null,
+            walk_in_patient_id: patient.source === 'walk_in' ? patient.id : null,
+            service_id: firstResolved.serviceId,
+            service_custom_name: firstResolved.customName,
+            doctor_id: doctorId || null,
+            visit_group_id: groupId,
+          })
+          .eq('id', completeQueueVisit.id);
+
+        if (queueUpdErr) throw queueUpdErr;
+
+        onAdded?.({ tokenNumber: completeQueueVisit.token_number, clinicId });
+      } else if (willCreateQueueRow) {
         const firstLine = filledLines[0];
         const firstResolved = await resolveLine(firstLine);
 
@@ -445,12 +482,6 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
           visit_group_id: groupId,
         }]).select().single();
         if (queueErr) throw queueErr;
-
-        // ملحوظة: أي خدمة تانية (من الثانية للتالتة) في نفس الزيارة اتسجلت
-        // بالفعل كصف مستقل في patient_visits فوق (بتاريخها وتحصيلها المالي
-        // الصحيح تلقائيًا). مبقاش لازم نكررها في queue_services — شاشة
-        // النداء والسجل الطبي بقى مصدرهم واحد بس (patient_visits عن طريق
-        // visit_group_id).
 
         onAdded?.({ tokenNumber: token as number, clinicId });
       } else {
@@ -611,10 +642,14 @@ export function AddVisitModal({ onClose, onAdded, editVisit, addServiceTo }: Add
     ? 'تعديل الزيارة'
     : isAddingService
     ? 'إضافة خدمة لنفس الزيارة'
+    : isCompletingQueue
+    ? `استكمال بيانات دور سريع (رقم #${completeQueueVisit?.token_number})`
     : 'إضافة زيارة';
 
   const submitLabel = isEditing
     ? 'حفظ التعديلات'
+    : isCompletingQueue
+    ? `حفظ واعتماد بيانات الدور #${completeQueueVisit?.token_number}`
     : isVisitForToday
     ? 'حفظ وإضافة لطابور النداء'
     : 'حفظ الزيارة';
