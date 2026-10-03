@@ -57,6 +57,13 @@ import {
   getCairoCurrentTime,
   createDefaultSchedules,
 } from '@/lib/doctor-schedules';
+import {
+  QueueLayoutConfig,
+  DEFAULT_QUEUE_LAYOUT_CONFIG,
+  fetchQueueLayoutConfig,
+  saveQueueLayoutConfig,
+} from '@/lib/queue-layout-config';
+import { QueueLayoutSettingsModal } from '@/components/queue/QueueLayoutSettingsModal';
 
 export function QueueMediaManager() {
   const [activeTab, setActiveTab] = useState<'doctors' | 'general' | 'preview'>('doctors');
@@ -99,6 +106,12 @@ export function QueueMediaManager() {
   const [newMediaOrder, setNewMediaOrder] = useState('0');
   const [uploadingGeneralFile, setUploadingGeneralFile] = useState(false);
   const [submittingGeneral, setSubmittingGeneral] = useState(false);
+
+  // تخصيص تخطيط وألوان الشاشة
+  const [showLayoutModal, setShowLayoutModal] = useState(false);
+  const [layoutConfig, setLayoutConfig] = useState<QueueLayoutConfig>(DEFAULT_QUEUE_LAYOUT_CONFIG);
+  const [isSavingLayout, setIsSavingLayout] = useState(false);
+  const [layoutSaveSuccess, setLayoutSaveSuccess] = useState(false);
 
   // جلب الوسائط العامة
   const fetchGeneralMedia = useCallback(async () => {
@@ -524,8 +537,21 @@ export function QueueMediaManager() {
           </div>
         </div>
 
-        {/* زر فتح شاشة النداء على التلفزيون */}
-        <div className="flex items-center gap-2">
+        {/* أزرار الإجراءات والشاشة */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={async () => {
+              const loaded = await fetchQueueLayoutConfig();
+              setLayoutConfig(loaded);
+              setShowLayoutModal(true);
+            }}
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-850 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-xs transition-colors cursor-pointer"
+          >
+            <Sliders className="w-4 h-4 text-emerald-400" />
+            <span>تخصيص تخطيط وألوان الشاشة</span>
+          </button>
+
           <a
             href="/queue"
             target="_blank"
@@ -1283,6 +1309,33 @@ export function QueueMediaManager() {
           </div>
         </div>
       )}
+
+      {/* نافذة تخصيص تخطيط وألوان الشاشة */}
+      <QueueLayoutSettingsModal
+        isOpen={showLayoutModal}
+        onClose={() => setShowLayoutModal(false)}
+        config={layoutConfig}
+        onChange={setLayoutConfig}
+        onSaveToDB={async () => {
+          setIsSavingLayout(true);
+          setLayoutSaveSuccess(false);
+          const res = await saveQueueLayoutConfig(layoutConfig);
+          setIsSavingLayout(false);
+          if (res.success) {
+            setLayoutSaveSuccess(true);
+            setTimeout(() => setLayoutSaveSuccess(false), 4000);
+          } else {
+            alert(res.error || 'تعذر حفظ الإعدادات');
+          }
+        }}
+        onResetToDefaults={() => {
+          if (confirm('هل ترغب حقاً في استعادة الإعدادات الأصلية للشاشة؟')) {
+            setLayoutConfig({ ...DEFAULT_QUEUE_LAYOUT_CONFIG });
+          }
+        }}
+        isSaving={isSavingLayout}
+        saveSuccess={layoutSaveSuccess}
+      />
     </div>
   );
 }
