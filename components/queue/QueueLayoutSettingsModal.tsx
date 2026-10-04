@@ -240,24 +240,40 @@ export function QueueLayoutSettingsModal({
               {/* عرض قسم الميديا والأطباء */}
               <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-5 space-y-4">
                 <div className="flex justify-between items-center text-sm font-bold">
-                  <span className="text-white">نسبة عرض قسم الميديا في الجزء العلوي</span>
+                  <span className="text-white">نسبة عرض قسم الميديا</span>
                   <span className="text-emerald-400 font-mono text-base bg-emerald-950/80 border border-emerald-500/40 px-3 py-1 rounded-xl">
-                    الميديا {config.mediaWidthPct}% / العيادات {100 - config.mediaWidthPct}%
+                    الميديا {config.mediaWidthPct}% / الجانب الآخر {100 - config.mediaWidthPct}%
                   </span>
                 </div>
                 <input
                   type="range"
                   min={25}
-                  max={75}
+                  max={85}
                   step={5}
                   value={config.mediaWidthPct}
                   onChange={(e) => updateConfig({ mediaWidthPct: Number(e.target.value) })}
                   className="w-full accent-emerald-500 cursor-pointer h-2 bg-slate-700 rounded-lg"
                 />
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>25% (ميديا صغيرة - تركيز على العيادات)</span>
-                  <span>50% (متساوي بالنصف)</span>
-                  <span>75% (ميديا كبيرة شاشات العرض)</span>
+                <div className="grid grid-cols-4 gap-2 pt-1">
+                  {[
+                    { pct: 50, label: '50% (متساوي)' },
+                    { pct: 60, label: '60% (ميديا عريضة)' },
+                    { pct: 70, label: '70% (موصى به)' },
+                    { pct: 80, label: '80% (ميديا عملاقة)' },
+                  ].map((p) => (
+                    <button
+                      key={p.pct}
+                      type="button"
+                      onClick={() => updateConfig({ mediaWidthPct: p.pct })}
+                      className={`py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        config.mediaWidthPct === p.pct
+                          ? 'bg-emerald-600 text-white shadow-md'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -499,6 +515,79 @@ export function QueueLayoutSettingsModal({
           {/* 3. تبويب المكان والترتيب */}
           {activeTab === 'layout' && (
             <div className="space-y-6">
+              {/* زر سريع لتطبيق التخطيط المفضل للمستخدم */}
+              <div className="bg-gradient-to-r from-emerald-950/80 via-slate-900 to-teal-950/80 border border-emerald-500/40 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
+                <div className="space-y-1 text-center sm:text-right">
+                  <div className="inline-flex items-center gap-1.5 text-xs font-black text-amber-300 bg-amber-500/10 border border-amber-500/30 px-3 py-0.5 rounded-full mb-1">
+                    <span>🌟 التخطيط السينمائي المفضل</span>
+                  </div>
+                  <h4 className="text-sm font-black text-white">الميديا على اليسار (70%) + العيادات والنداء فوق بعض على اليمين</h4>
+                  <p className="text-xs text-slate-300">
+                    تخطيط احترافي يعطي الميديا المساحة الأكبر للظهور مع ترتيب العيادات والنداء والانتظار رأسياً بجانبها.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateConfig({
+                      screenLayoutMode: 'split_columns',
+                      mediaPosition: 'left',
+                      mediaWidthPct: 70,
+                      showMedia: true,
+                      showClinics: true,
+                      showCurrentCall: true,
+                      showWaitingList: true,
+                    })
+                  }
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-5 py-2.5 rounded-xl transition-all shadow-md shrink-0 cursor-pointer"
+                >
+                  تطبيق هذا التخطيط الآن ✓
+                </button>
+              </div>
+
+              {/* اختيار نمط هيكل الشاشة */}
+              <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-5 space-y-3">
+                <h3 className="text-sm font-bold text-white">نمط تقسيم وهيكل الشاشة</h3>
+                <p className="text-xs text-slate-400">اختر طريقة تقسيم الشاشة بين الميديا وأقسام العيادات والنداء</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => updateConfig({ screenLayoutMode: 'split_columns' })}
+                    className={`p-4 rounded-2xl border text-right transition-all cursor-pointer flex items-center justify-between ${
+                      config.screenLayoutMode === 'split_columns'
+                        ? 'border-emerald-500 bg-emerald-950/40 text-white ring-2 ring-emerald-500/30'
+                        : 'border-slate-700 bg-slate-850 hover:bg-slate-800 text-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-sm">أعمدة جانبية كاملة (ميديا بجانب العيادات)</div>
+                      <div className="text-xs text-slate-400 mt-1">
+                        الميديا بارتفاع الشاشة الكامل، والعيادات والنداء وقائمة الانتظار فوق بعض
+                      </div>
+                    </div>
+                    {config.screenLayoutMode === 'split_columns' && <Check className="w-5 h-5 text-emerald-400" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => updateConfig({ screenLayoutMode: 'classic_rows' })}
+                    className={`p-4 rounded-2xl border text-right transition-all cursor-pointer flex items-center justify-between ${
+                      config.screenLayoutMode === 'classic_rows'
+                        ? 'border-emerald-500 bg-emerald-950/40 text-white ring-2 ring-emerald-500/30'
+                        : 'border-slate-700 bg-slate-850 hover:bg-slate-800 text-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-sm">صفوف أفقية كلاسيكية (ميديا بالأعلى)</div>
+                      <div className="text-xs text-slate-400 mt-1">
+                        قسم علوي للميديا والعيادات + قسم سفلي لكارت النداء وقائمة الانتظار
+                      </div>
+                    </div>
+                    {config.screenLayoutMode === 'classic_rows' && <Check className="w-5 h-5 text-emerald-400" />}
+                  </button>
+                </div>
+              </div>
+
               {/* موضع الميديا (يمين أو يسار) */}
               <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-5 space-y-3">
                 <h3 className="text-sm font-bold text-white">موضع قسم الميديا في الشاشة الرئيسية</h3>
@@ -928,6 +1017,52 @@ export function QueueLayoutSettingsModal({
                   </p>
                 </div>
               )}
+
+              {/* اتجاه حركة شريط الأخبار وتكرار النص */}
+              <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-white">اتجاه حركة النص وتكراره المتصل</h3>
+                  <span className="text-[11px] text-emerald-400 font-bold bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+                    تكرار متصل ورا بعضه ✓
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  يدور النص ويكرر نفسه ورا بعضه باستمرار ودون توقف أو فراغات. يمكنك اختيار اتجاه الحركة المناسب.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => updateConfig({ tickerDirection: 'ltr' })}
+                    className={`p-3.5 rounded-xl border text-right transition-all cursor-pointer flex items-center justify-between ${
+                      config.tickerDirection !== 'rtl'
+                        ? 'border-emerald-500 bg-emerald-950/40 text-white ring-2 ring-emerald-500/20'
+                        : 'border-slate-700 bg-slate-850 hover:bg-slate-800 text-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs text-white">من اليسار إلى اليمين (شائع بالقنوات) ◀</div>
+                      <div className="text-[11px] text-slate-400 mt-1">تتحرك الكلمات جهة اليمين بهدوء وسلاسة</div>
+                    </div>
+                    {config.tickerDirection !== 'rtl' && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => updateConfig({ tickerDirection: 'rtl' })}
+                    className={`p-3.5 rounded-xl border text-right transition-all cursor-pointer flex items-center justify-between ${
+                      config.tickerDirection === 'rtl'
+                        ? 'border-emerald-500 bg-emerald-950/40 text-white ring-2 ring-emerald-500/20'
+                        : 'border-slate-700 bg-slate-850 hover:bg-slate-800 text-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs text-white">من اليمين إلى اليسار ▶</div>
+                      <div className="text-[11px] text-slate-400 mt-1">تتحرك الكلمات جهة اليسار</div>
+                    </div>
+                    {config.tickerDirection === 'rtl' && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
+                  </button>
+                </div>
+              </div>
 
               {/* سرعة حركة الشريط وحجم الخط */}
               <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-5 space-y-4">

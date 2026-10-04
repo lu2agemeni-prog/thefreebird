@@ -105,6 +105,20 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
     return items;
   }, [config.tickerTextSource, config.tickerCustomText, news]);
 
+  // تكرار عناصر الشريط ورا بعضها بشكل متصل ومستمر دون أي فراغات
+  const baseItemsList = useMemo(() => {
+    if (tickerItems.length === 0) return [];
+    const list: Array<{ id: string; text: string; type: 'news' | 'announcement' }> = [];
+    // نضمن تكرار العناصر عدة مرات متتالية ورا بعضها مباشرة
+    const repeats = Math.max(12, Math.ceil(14 / tickerItems.length));
+    for (let r = 0; r < repeats; r++) {
+      tickerItems.forEach((item) => {
+        list.push(item);
+      });
+    }
+    return list;
+  }, [tickerItems]);
+
   if (!config.showNewsTicker) {
     return null;
   }
@@ -112,6 +126,7 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
   // مدة الحركة بالثواني - يتم ضمان قيمة كافية لحركة هادئة ومريحة للقراءة
   const durationSec = Math.max(20, config.tickerSpeedSeconds || 75);
   const fontSize = config.tickerFontSizePx || 15;
+  const isRtlMovement = config.tickerDirection === 'rtl';
 
   return (
     <div
@@ -127,19 +142,20 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
       onMouseLeave={() => setIsPaused(false)}
     >
       <style>{`
-        @keyframes ticker-marquee-seamless {
+        @keyframes ticker-marquee-move {
           0% {
-            transform: translateX(-50%);
+            transform: translateX(${isRtlMovement ? '0%' : '-50%'});
           }
           100% {
-            transform: translateX(0%);
+            transform: translateX(${isRtlMovement ? '-50%' : '0%'});
           }
         }
         .queue-marquee-track {
           display: inline-flex;
           align-items: center;
           white-space: nowrap;
-          animation: ticker-marquee-seamless ${durationSec}s linear infinite;
+          width: max-content;
+          animation: ticker-marquee-move ${durationSec}s linear infinite;
           will-change: transform;
         }
         .queue-marquee-track.paused {
@@ -160,46 +176,55 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
         <span className="sm:hidden">الأخبار</span>
       </div>
 
-      {/* مسار حركة النص المستمرة */}
-      <div className="flex-1 overflow-hidden relative h-full flex items-center">
+      {/* مسار حركة النص المستمرة المتكررة ورا بعضها بنظام LTR لضبط إحداثيات الحركة 100% */}
+      <div className="flex-1 overflow-hidden relative h-full flex items-center" dir="ltr">
         <div
           style={{ fontSize: `${fontSize}px` }}
-          className={`queue-marquee-track ${isPaused ? 'paused' : ''} gap-10 px-6 font-bold`}
+          className={`queue-marquee-track ${isPaused ? 'paused' : ''} gap-6 font-bold`}
         >
-          {tickerItems.map((item, idx) => (
-            <div key={`${item.id}-${idx}`} className="inline-flex items-center gap-2.5 shrink-0">
+          {/* النصف الأول من العناصر المتكررة ورا بعضها */}
+          {baseItemsList.map((item, idx) => (
+            <div
+              key={`rep1-${item.id}-${idx}`}
+              dir="rtl"
+              className="inline-flex items-center gap-2.5 shrink-0 px-2"
+            >
               {item.type === 'announcement' ? (
                 <span className="inline-flex items-center gap-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
                   <BellRing className="w-3 h-3" />
-                  <span>تنبيه هام</span>
+                  <span>تنبيه</span>
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
                   <Activity className="w-3 h-3" />
-                  <span>نصيحة طبية</span>
+                  <span>طبي</span>
                 </span>
               )}
               <span className="font-bold tracking-wide">{item.text}</span>
-              <span className="text-white/30 mr-4 font-mono font-normal">✦</span>
+              <span className="text-amber-400/90 mr-2 font-mono font-bold text-sm">✦</span>
             </div>
           ))}
 
-          {/* تكرار العناصر لضمان سلاسة الحركة المستمرة */}
-          {tickerItems.map((item, idx) => (
-            <div key={`dup-${item.id}-${idx}`} className="inline-flex items-center gap-2.5 shrink-0">
+          {/* النصف الثاني التوأم لضمان دوران متصل لانهائي دون أي انقطاع */}
+          {baseItemsList.map((item, idx) => (
+            <div
+              key={`rep2-${item.id}-${idx}`}
+              dir="rtl"
+              className="inline-flex items-center gap-2.5 shrink-0 px-2"
+            >
               {item.type === 'announcement' ? (
                 <span className="inline-flex items-center gap-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
                   <BellRing className="w-3 h-3" />
-                  <span>تنبيه هام</span>
+                  <span>تنبيه</span>
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
                   <Sparkles className="w-3 h-3" />
-                  <span>خبر طبي</span>
+                  <span>طبي</span>
                 </span>
               )}
               <span className="font-bold tracking-wide">{item.text}</span>
-              <span className="text-white/30 mr-4 font-mono font-normal">✦</span>
+              <span className="text-amber-400/90 mr-2 font-mono font-bold text-sm">✦</span>
             </div>
           ))}
         </div>

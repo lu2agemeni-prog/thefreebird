@@ -50,7 +50,9 @@ VALUES (
     "showCurrentCall": true,
     "showNewsTicker": true,
     "showHeader": true,
-    "mediaWidthPct": 56,
+    "screenLayoutMode": "split_columns",
+    "mediaPosition": "left",
+    "mediaWidthPct": 70,
     "bottomHeightPct": 32,
     "tickerHeightPx": 46,
     "tickerFontSizePx": 15,
@@ -63,7 +65,6 @@ VALUES (
     "headerHeightPx": 66,
     "doctorPhotoSizePx": 280,
     "doctorCardLayout": "side_by_side",
-    "mediaPosition": "right",
     "bottomOrder": "call_right_queue_left",
     "verticalOrder": "media_top_queue_bottom",
     "themePreset": "emerald_dark",
@@ -85,6 +86,7 @@ VALUES (
     "tickerBadgeTextColor": "#ffffff",
     "tickerTextSource": "both",
     "tickerCustomText": "مرحباً بكم في مركز الطائر الحر الطبي.. نتمنى لكم دوام الصحة والعافية.",
+    "tickerDirection": "ltr",
     "doctorAudioIntervalMinutes": 10
   }'::jsonb
 )

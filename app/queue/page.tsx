@@ -567,6 +567,8 @@ export default function QueueDisplay() {
   const hasUpperSection = config.showMedia || config.showClinics;
   // هل القسم السفلي ظاهر؟
   const hasLowerSection = config.showCurrentCall || config.showWaitingList;
+  // هل عمود الخدمات الجانبي (العيادات والنداء وقائمة الانتظار) ظاهر؟
+  const hasSideStack = config.showClinics || config.showCurrentCall || config.showWaitingList;
 
   // كثافة الكروت
   const cardPaddingClass =
@@ -822,9 +824,12 @@ export default function QueueDisplay() {
           </header>
         )}
 
-        {/* جسم الشاشة (وفق الترتيب العمودي المختار) */}
+        {/* جسم الشاشة (وفق نمط التخطيط والترتيب المختار) */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {config.verticalOrder === 'queue_top_media_bottom' ? (
+          {config.screenLayoutMode === 'split_columns' ? (
+            /* النمط السينمائي المتجاوب: ميديا بعرض 70% بجانب العيادات والنداء وقائمة الانتظار */
+            renderSplitColumnsLayout()
+          ) : config.verticalOrder === 'queue_top_media_bottom' ? (
             <>
               {/* القسم السفلي أصبح بالأعلى */}
               {hasLowerSection && renderLowerSection()}
@@ -1381,6 +1386,440 @@ export default function QueueDisplay() {
           <>
             {currentCallElement}
             {waitingListElement}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // دالة بناء التخطيط السينمائي: ميديا 70% على اليسار + العيادات والنداء وقائمة الانتظار فوق بعض على اليمين
+  function renderSplitColumnsLayout() {
+    const bothActive = config.showMedia && hasSideStack;
+    const mediaWidth = bothActive ? `${config.mediaWidthPct}%` : config.showMedia ? '100%' : '0%';
+    const stackWidth = bothActive ? `${100 - config.mediaWidthPct}%` : hasSideStack ? '100%' : '0%';
+
+    // 1. عمود الميديا لوحدها (بعرض 70% وبارتفاع كامل)
+    const mediaColumn = config.showMedia && (
+      <div
+        style={{ width: mediaWidth }}
+        className="relative bg-black flex flex-col items-center justify-center overflow-hidden h-full shrink-0 border-slate-800"
+      >
+        {mediaSlides.length === 0 ? (
+          <div className="text-slate-600 flex flex-col items-center gap-3 p-8 text-center">
+            <ImageIcon className="w-16 h-16 text-slate-700" />
+            <p className="text-lg font-bold text-slate-500">لا توجد وسائط مضافة حالياً</p>
+            <p className="text-xs text-slate-600">
+              يمكنك إضافة صور ومقاطع صوتية للأطباء من صفحة &quot;وسائط شاشة النداء&quot;
+            </p>
+          </div>
+        ) : currentSlide?.type === 'doctor' ? (
+          /* كارت إعلان الطبيب المتواجد (صورة مكبرة + مقطع صوتي + معلومات الطبيب) */
+          <div className="w-full h-full relative flex flex-col items-center justify-between p-6 sm:p-8 bg-gradient-to-b from-slate-900 via-slate-950 to-black text-white overflow-hidden animate-in fade-in duration-500">
+            {/* شارة إعلان الطبيب المتواجد */}
+            <div className="w-full flex items-center justify-between z-10 shrink-0">
+              <div
+                style={{
+                  backgroundColor: `${config.accentColor}25`,
+                  color: config.accentColor,
+                  borderColor: `${config.accentColor}40`,
+                }}
+                className="flex items-center gap-2 border px-4 py-1.5 rounded-full text-xs font-black shadow-lg"
+              >
+                <Stethoscope className="w-4 h-4" />
+                <span>طبيب متواجد بالمركز حالياً</span>
+              </div>
+
+              {/* موجات الصوت التفاعلية إذا كان المقطع الصوتي يعمل */}
+              {isAudioPlaying && (
+                <div className="flex items-center gap-1.5 bg-slate-900/80 border border-emerald-500/30 px-3.5 py-1.5 rounded-full">
+                  <Volume2 className="w-4 h-4 text-emerald-400 animate-pulse" />
+                  <div className="flex items-center gap-1 h-5">
+                    <span className="soundwave-bar w-1 bg-emerald-400 rounded-full" style={{ animationDelay: '0.1s' }} />
+                    <span className="soundwave-bar w-1 bg-emerald-400 rounded-full" style={{ animationDelay: '0.3s' }} />
+                    <span className="soundwave-bar w-1 bg-emerald-400 rounded-full" style={{ animationDelay: '0.2s' }} />
+                    <span className="soundwave-bar w-1 bg-emerald-400 rounded-full" style={{ animationDelay: '0.4s' }} />
+                  </div>
+                  <span className="text-[11px] text-emerald-300 font-bold mr-1">صوت الإعلان</span>
+                </div>
+              )}
+            </div>
+
+            {/* صورة الطبيب والمعلومات في المنتصف بالمقاس المكبر */}
+            <div
+              className={`flex ${
+                config.doctorCardLayout === 'stacked'
+                  ? 'flex-col items-center text-center'
+                  : 'flex-col md:flex-row items-center justify-center'
+              } gap-6 sm:gap-10 my-auto z-10 w-full max-w-4xl`}
+            >
+              {/* برواز صورة الطبيب بالمقاس المكبر */}
+              <div
+                style={{
+                  width: `${config.doctorPhotoSizePx || 280}px`,
+                  height: `${config.doctorPhotoSizePx || 280}px`,
+                  maxWidth: '85vw',
+                  maxHeight: '48vh',
+                }}
+                className="relative shrink-0 rounded-3xl overflow-hidden shadow-2xl transition-all duration-300"
+              >
+                <div
+                  style={{
+                    background: `linear-gradient(135deg, ${config.accentColor}, #0284c7)`,
+                  }}
+                  className="absolute -inset-2 rounded-3xl blur-md opacity-40 animate-pulse"
+                />
+                {currentSlide.photoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={currentSlide.photoUrl}
+                    alt={currentSlide.doctorName}
+                    className="relative w-full h-full rounded-3xl object-cover border-4 shadow-2xl transition-all duration-300"
+                    style={{ borderColor: `${config.accentColor}90` }}
+                  />
+                ) : (
+                  <div className="relative w-full h-full rounded-3xl bg-slate-800 border-4 border-slate-700 flex flex-col items-center justify-center text-slate-500 shadow-2xl">
+                    <Stethoscope className="w-20 h-20 text-emerald-400 mb-3" />
+                    <span className="text-sm font-bold">صورة الطبيب</span>
+                  </div>
+                )}
+              </div>
+
+              {/* بيانات الطبيب والعيادة */}
+              <div className="flex flex-col text-center md:text-right space-y-3">
+                <div>
+                  <span className="text-xs uppercase tracking-wider font-bold block mb-1" style={{ color: config.accentColor }}>
+                    {currentSlide.specialty || 'تخصص عام'}
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-white tracking-wide">
+                    {currentSlide.doctorName}
+                  </h2>
+                </div>
+
+                <div className="inline-flex items-center gap-2 bg-slate-800/90 border border-slate-700/80 px-4 py-2 rounded-2xl w-fit mx-auto md:mr-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="text-sm sm:text-base font-bold text-slate-200">
+                    {currentSlide.clinicName}
+                  </span>
+                </div>
+
+                {currentSlide.currentToken && (
+                  <div className="pt-2 flex items-center justify-center md:justify-start gap-2">
+                    <span className="text-xs text-slate-400">رقم الكشف الحالي بالعيادة:</span>
+                    <span
+                      style={{
+                        backgroundColor: `${config.accentColor}25`,
+                        color: config.accentColor,
+                        borderColor: `${config.accentColor}50`,
+                      }}
+                      className="text-xl font-black font-mono border px-3 py-0.5 rounded-lg"
+                    >
+                      #{currentSlide.currentToken}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* شريط التقدم السفلي للإعلان */}
+            <div className="w-full z-10 space-y-1.5 shrink-0">
+              <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                <span>إعلان الطبيب ({currentSlide.durationSeconds} ثانية)</span>
+                <span>
+                  {slideIndex + 1} من {mediaSlides.length}
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full transition-all duration-100 ease-linear rounded-full"
+                  style={{
+                    width: `${slideProgress}%`,
+                    backgroundColor: config.accentColor,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* شريحة الوسائط العامة (فيديو أو صورة) */
+          <div className="w-full h-full relative flex items-center justify-center overflow-hidden">
+            {currentSlide?.mediaType === 'video' ? (
+              <video
+                key={currentSlide.id}
+                src={currentSlide.url}
+                autoPlay
+                muted
+                loop
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={currentSlide?.id}
+                src={currentSlide?.url}
+                alt=""
+                className="w-full h-full object-contain"
+              />
+            )}
+
+            {/* شريط التقدم السفلي للوسائط العامة */}
+            <div className="absolute bottom-3 inset-x-6 z-10">
+              <div className="w-full h-1.5 bg-slate-800/80 backdrop-blur-xs rounded-full overflow-hidden">
+                <div
+                  className="h-full transition-all duration-100 ease-linear rounded-full"
+                  style={{
+                    width: `${slideProgress}%`,
+                    backgroundColor: config.accentColor,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+
+    // 2. عمود الخدمات والأطباء والنداء والانتظار فوق بعض
+    const sideStackColumn = hasSideStack && (
+      <div
+        style={{
+          width: stackWidth,
+          backgroundColor: config.bgColor,
+          borderColor: config.cardBorderColor,
+        }}
+        className="h-full flex flex-col overflow-hidden shrink-0 border-x"
+      >
+        {/* أ) كارت النداء المباشر الحالي (أعلى العمود) */}
+        {config.showCurrentCall && (
+          <div
+            style={{
+              background: config.callingCardBg,
+            }}
+            className="text-white flex flex-col items-center justify-center p-3.5 sm:p-4 relative overflow-hidden shadow-md shrink-0 border-b border-black/30 min-h-[140px]"
+          >
+            {currentCall ? (
+              <div className="text-center z-10 w-full animate-in zoom-in-95 duration-300">
+                <div className="inline-flex items-center gap-1.5 bg-black/40 text-white px-3.5 py-0.5 rounded-full text-xs font-black mb-1.5 shadow-md animate-pulse border border-white/30">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span>النداء الحالي المباشر</span>
+                </div>
+
+                <div
+                  style={{
+                    fontSize: `${Math.min(config.tokenFontSize, 70)}px`,
+                    color: config.callingTokenColor,
+                  }}
+                  className="font-black mb-0.5 font-mono tracking-wider drop-shadow-md leading-none"
+                >
+                  {currentCall.token_number}
+                </div>
+
+                <div className="text-xs sm:text-sm text-white/90 flex flex-col items-center justify-center gap-0.5 font-medium mt-1">
+                  <span className="text-white/80 text-[11px]">تفضل بالدخول إلى:</span>
+                  <span className="text-white font-black bg-black/50 px-3 py-1 rounded-xl border border-white/20 text-xs sm:text-sm truncate max-w-full">
+                    {currentCall.clinic_name || 'العيادة'}
+                    {currentCall.doctor_name ? ` (${currentCall.doctor_name})` : ''}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-xs flex flex-col items-center text-white/80 py-2">
+                <Monitor className="w-7 h-7 mb-1 text-white/60" />
+                <p className="font-bold text-xs sm:text-sm">في انتظار طلب الدور القادم...</p>
+                <p className="text-[10px] text-white/70 mt-0.5">يتم الإعلان فور استدعاء الطبيب أو السكرتارية</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ب) شبكة الأطباء والعيادات المتواجدين (وسط العمود) */}
+        {config.showClinics && (
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden p-3 border-b border-slate-800/80">
+            <div className="flex items-center justify-between mb-2 shrink-0">
+              <h3 className="text-xs sm:text-sm font-bold flex items-center gap-1.5" style={{ color: config.mutedTextColor }}>
+                <Stethoscope className="w-4 h-4" style={{ color: config.accentColor }} />
+                <span>العيادات المتواجدة ({presentDoctorsList.length})</span>
+              </h3>
+              <span
+                style={{
+                  backgroundColor: `${config.accentColor}15`,
+                  color: config.accentColor,
+                  borderColor: `${config.accentColor}30`,
+                }}
+                className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
+              >
+                تحديث حي
+              </span>
+            </div>
+
+            {presentDoctorsList.length === 0 ? (
+              <div
+                className="flex-1 flex flex-col items-center justify-center text-xs p-4 text-center"
+                style={{ color: config.mutedTextColor }}
+              >
+                <Stethoscope className="w-8 h-8 mb-1 opacity-30" />
+                <p className="font-bold">لا يوجد أطباء متواجدون حالياً</p>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
+                {presentDoctorsList.map((doc) => {
+                  const isCurrentInSlide =
+                    currentSlide?.type === 'doctor' && currentSlide.doctorId === doc.profile_id;
+
+                  return (
+                    <div
+                      key={doc.profile_id}
+                      style={{
+                        backgroundColor: config.cardBgColor,
+                        borderColor: isCurrentInSlide ? config.accentColor : config.cardBorderColor,
+                        boxShadow: isCurrentInSlide ? `0 0 15px ${config.accentColor}30` : undefined,
+                      }}
+                      className={`border rounded-xl ${cardPaddingClass} flex items-center gap-2.5 transition-all duration-300`}
+                    >
+                      {doc.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={doc.photoUrl}
+                          alt={doc.doctorName}
+                          className="w-10 h-10 rounded-lg object-cover shrink-0 border"
+                          style={{ borderColor: config.cardBorderColor }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            backgroundColor: `${config.accentColor}15`,
+                            color: config.accentColor,
+                            borderColor: `${config.accentColor}30`,
+                          }}
+                          className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border"
+                        >
+                          <Stethoscope className="w-5 h-5" />
+                        </div>
+                      )}
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1">
+                          <h4
+                            className="font-bold truncate text-xs sm:text-sm"
+                            style={{
+                              color: config.textColor,
+                              fontSize: config.clinicsFontSizePx ? `${config.clinicsFontSizePx}px` : undefined,
+                            }}
+                          >
+                            {doc.doctorName}
+                          </h4>
+                          {isCurrentInSlide && (
+                            <span
+                              className="w-1.5 h-1.5 rounded-full animate-ping shrink-0"
+                              style={{ backgroundColor: config.accentColor }}
+                            />
+                          )}
+                        </div>
+                        <p className="text-[11px] truncate" style={{ color: config.mutedTextColor }}>
+                          {doc.clinicName}
+                        </p>
+                      </div>
+
+                      {doc.currentToken && (
+                        <div
+                          style={{
+                            backgroundColor: `${config.accentColor}20`,
+                            color: config.accentColor,
+                            borderColor: `${config.accentColor}40`,
+                          }}
+                          className="text-xs font-black font-mono border px-2 py-0.5 rounded-lg shrink-0"
+                          title="رقم المريض الحالي"
+                        >
+                          #{doc.currentToken}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ج) قائمة الانتظار القادمة (أسفل العمود) */}
+        {config.showWaitingList && (
+          <div
+            style={{
+              backgroundColor: config.panelBgColor,
+              borderColor: config.cardBorderColor,
+            }}
+            className="p-3 overflow-y-auto shrink-0 max-h-[35%] min-h-[120px] flex flex-col"
+          >
+            <div className="flex items-center justify-between mb-2 shrink-0">
+              <h3 className="text-xs sm:text-sm font-bold flex items-center gap-2" style={{ color: config.mutedTextColor }}>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
+                </span>
+                <span>قائمة الانتظار ({waitingList.length})</span>
+              </h3>
+            </div>
+
+            {waitingList.length === 0 ? (
+              <div
+                className="flex-1 flex flex-col items-center justify-center text-xs p-2 text-center"
+                style={{ color: config.mutedTextColor }}
+              >
+                <p className="text-slate-500">لا يوجد مرضى في الانتظار حالياً</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5 overflow-y-auto pr-0.5">
+                {waitingList.map((q, idx) => (
+                  <div
+                    key={q.id}
+                    style={{
+                      backgroundColor: config.cardBgColor,
+                      borderColor: config.cardBorderColor,
+                    }}
+                    className={`border ${cardPaddingClass} rounded-xl flex justify-between items-center text-xs shadow-2xs`}
+                  >
+                    <div className="truncate flex-1 min-w-0 pr-1">
+                      <span className="font-bold block truncate text-[11px]" style={{ color: config.textColor }}>
+                        {idx + 1}. {q.clinic_name || 'العيادة'}
+                      </span>
+                    </div>
+                    <span
+                      style={{
+                        backgroundColor: `${config.accentColor}20`,
+                        color: config.accentColor,
+                        borderColor: `${config.accentColor}40`,
+                      }}
+                      className="font-mono font-black border px-2 py-0.5 rounded-lg text-xs shrink-0"
+                    >
+                      {q.token_number}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+
+    return (
+      <div
+        className="flex flex-1 overflow-hidden w-full h-full"
+        style={{ borderColor: config.cardBorderColor }}
+      >
+        {/* الترتيب وفقاً لـ mediaPosition في بيئة dir=rtl: */}
+        {config.mediaPosition === 'left' ? (
+          <>
+            {/* في اليمين: العيادات والنداء وقائمة الانتظار فوق بعض */}
+            {sideStackColumn}
+            {/* في اليسار: الميديا لوحدها بعرض 70% */}
+            {mediaColumn}
+          </>
+        ) : (
+          <>
+            {/* في اليمين: الميديا بعرض 70% */}
+            {mediaColumn}
+            {/* في اليسار: العيادات والنداء وقائمة الانتظار فوق بعض */}
+            {sideStackColumn}
           </>
         )}
       </div>
