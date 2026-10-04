@@ -34,6 +34,7 @@ import {
   EyeOff,
   Newspaper,
   Loader2,
+  Calendar,
 } from 'lucide-react';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
 import {
@@ -49,6 +50,7 @@ import {
   fetchQueueLayoutConfig,
   saveQueueLayoutConfig,
   sanitizeLayoutConfig,
+  formatQueueNumber,
 } from '@/lib/queue-layout-config';
 import { QueueNewsTicker } from '@/components/queue/QueueNewsTicker';
 import { QueueLayoutSettingsModal } from '@/components/queue/QueueLayoutSettingsModal';
@@ -102,6 +104,11 @@ export default function QueueDisplay() {
   const [muteDoctorAudio, setMuteDoctorAudio] = useState(false);
   const soundEnabledRef = useRef(false);
   const muteDoctorAudioRef = useRef(false);
+  const configRef = useRef(config);
+
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
 
   // تتبع فترات الإعلان الصوتي لتواجد الأطباء لمنع الإزعاج الصوتي المتكرر
   const lastDoctorAudioRoundFinishedAtRef = useRef<number>(0);
@@ -227,9 +234,10 @@ export default function QueueDisplay() {
           });
 
           if (noticeTimer.current) clearTimeout(noticeTimer.current);
+          const noticeDurationMs = (configRef.current.patientCallNoticeDurationSec || 8) * 1000;
           noticeTimer.current = setTimeout(() => {
             setDropNotice(null);
-          }, 11000);
+          }, noticeDurationMs);
         }
       }
     } catch (e) {
@@ -546,9 +554,11 @@ export default function QueueDisplay() {
   };
 
   const currentCall = queue.find((q) => q.status === 'calling');
-  const waitingList = queue.filter((q) => q.status === 'waiting').slice(0, 12);
+  const waitingList = queue
+    .filter((q) => q.status === 'waiting')
+    .slice(0, config.maxWaitingListItems || 12);
 
-  // إعدادات الخطوط
+  // إعدادات الخطوط العربية المتاحة
   const fontFamilyCss = useMemo(() => {
     switch (config.fontFamily) {
       case 'cairo':
@@ -557,6 +567,10 @@ export default function QueueDisplay() {
         return "'Tajawal', sans-serif";
       case 'almarai':
         return "'Almarai', sans-serif";
+      case 'readex':
+        return "'Readex Pro', sans-serif";
+      case 'ibm_plex':
+        return "'IBM Plex Sans Arabic', sans-serif";
       case 'system':
       default:
         return 'system-ui, -apple-system, sans-serif';
@@ -572,7 +586,43 @@ export default function QueueDisplay() {
 
   // كثافة الكروت
   const cardPaddingClass =
-    config.cardDensity === 'compact' ? 'p-2 sm:p-2.5' : config.cardDensity === 'spacious' ? 'p-4 sm:p-5' : 'p-3 sm:p-3.5';
+    config.cardDensity === 'compact'
+      ? 'p-2 sm:p-2.5'
+      : config.cardDensity === 'spacious'
+      ? 'p-4 sm:p-5'
+      : 'p-3 sm:p-3.5';
+
+  // استدارة زوايا الكروت
+  const cardRadiusClass =
+    config.cardBorderRadius === 'none'
+      ? 'rounded-none'
+      : config.cardBorderRadius === 'small'
+      ? 'rounded-lg'
+      : config.cardBorderRadius === 'large'
+      ? 'rounded-3xl'
+      : config.cardBorderRadius === 'full'
+      ? 'rounded-full'
+      : 'rounded-2xl';
+
+  // سمك حدود وإطار الكروت
+  const cardBorderWidthClass =
+    config.cardBorderWidth === 0
+      ? 'border-0'
+      : config.cardBorderWidth === 2
+      ? 'border-2'
+      : config.cardBorderWidth === 3
+      ? 'border-[3px]'
+      : 'border';
+
+  // تأثير وميض وتوهج كارت النداء المباشر
+  const callPulseClass =
+    config.callingPulseEffect === 'none'
+      ? ''
+      : config.callingPulseEffect === 'gentle'
+      ? 'animate-pulse'
+      : config.callingPulseEffect === 'neon'
+      ? 'animate-pulse shadow-[0_0_35px_rgba(255,255,255,0.35)]'
+      : 'animate-pulse drop-shadow-xl';
 
   return (
     <div
@@ -581,13 +631,14 @@ export default function QueueDisplay() {
         color: config.textColor,
         fontFamily: fontFamilyCss,
         fontWeight: config.fontWeight === 'black' ? 900 : 700,
+        zoom: config.zoom || 1,
       }}
       className="h-screen flex flex-col overflow-hidden relative select-none transition-colors duration-300"
       dir="rtl"
       onMouseMove={handleMouseMove}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&family=Cairo:wght@400;600;700;900&family=Tajawal:wght@400;500;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&family=Cairo:wght@400;600;700;900&family=Tajawal:wght@400;500;700;900&family=Readex+Pro:wght@400;600;700&family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap');
 
         @keyframes drop-notice-fall {
           0% { transform: translateY(-130%); opacity: 0; }
@@ -779,22 +830,52 @@ export default function QueueDisplay() {
                 <Monitor className="w-6 h-6" />
               </div>
               <div>
-                <h1 className="text-lg sm:text-xl font-black tracking-wide" style={{ color: config.textColor }}>
-                  مركز الطائر الحر الطبي
+                <h1
+                  className="font-black tracking-wide"
+                  style={{
+                    color: config.textColor,
+                    fontSize: `${config.headerTitleFontSizePx || 20}px`,
+                  }}
+                >
+                  {config.centerTitle || 'مركز الطائر الحر الطبي'}
                 </h1>
-                <p className="text-[11px] font-semibold flex items-center gap-1" style={{ color: config.accentColor }}>
+                <p
+                  className="font-semibold flex items-center gap-1"
+                  style={{
+                    color: config.accentColor,
+                    fontSize: `${config.headerSubtitleFontSizePx || 11}px`,
+                  }}
+                >
                   <span
                     className="w-2 h-2 rounded-full animate-ping inline-block"
                     style={{ backgroundColor: config.accentColor }}
                   />
-                  <span>شاشة العرض والنداء الآلي المباشر</span>
+                  <span>{config.centerSubtitle || 'شاشة العرض والنداء الآلي المباشر'}</span>
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-5">
+            <div className="flex items-center gap-3 sm:gap-5">
+              {/* تاريخ اليوم الهجري / الميلادي */}
+              {config.showDate !== false && (
+                <div
+                  style={{ color: config.mutedTextColor }}
+                  className="hidden md:flex items-center gap-1.5 text-xs font-bold border border-slate-700/60 px-3 py-1 rounded-full bg-slate-800/40"
+                >
+                  <Calendar className="w-3.5 h-3.5" style={{ color: config.accentColor }} />
+                  <span>
+                    {currentTime.toLocaleDateString('ar-EG', {
+                      weekday: 'short',
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
+                  </span>
+                </div>
+              )}
+
               {/* مؤشر الصوت النشط */}
-              {isAudioPlaying && (
+              {config.showAudioIndicator !== false && isAudioPlaying && (
                 <div
                   style={{
                     backgroundColor: `${config.accentColor}15`,
@@ -804,22 +885,25 @@ export default function QueueDisplay() {
                   className="flex items-center gap-2 border px-3 py-1 rounded-full text-xs font-bold animate-pulse"
                 >
                   <Volume2 className="w-4 h-4" />
-                  <span>مقطع صوتي يعمل الآن</span>
+                  <span className="hidden sm:inline">مقطع صوتي يعمل الآن</span>
                 </div>
               )}
 
               {/* الساعة الحية */}
-              <div
-                className="text-xl sm:text-2xl font-black font-mono tracking-wider"
-                dir="ltr"
-                style={{ color: config.accentColor }}
-              >
-                {currentTime.toLocaleTimeString('ar-EG', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit',
-                })}
-              </div>
+              {config.showClock !== false && (
+                <div
+                  className="text-xl sm:text-2xl font-black font-mono tracking-wider"
+                  dir="ltr"
+                  style={{ color: config.accentColor }}
+                >
+                  {currentTime.toLocaleTimeString('ar-EG', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: config.clockFormat !== '24h',
+                  })}
+                </div>
+              )}
             </div>
           </header>
         )}
@@ -1578,6 +1662,250 @@ export default function QueueDisplay() {
       </div>
     );
 
+    // عناصر العمود الجانبي المكونة لهيكل الشاشة
+    // 1) كارت النداء المباشر الحالي
+    const sideStackCallElement = config.showCurrentCall && (
+      <div
+        style={{
+          background: config.callingCardBg,
+        }}
+        className={`text-white flex flex-col items-center justify-center p-3.5 sm:p-4 relative overflow-hidden shadow-md shrink-0 border-b border-black/30 min-h-[140px] ${callPulseClass}`}
+      >
+        {currentCall ? (
+          <div className="text-center z-10 w-full animate-in zoom-in-95 duration-300">
+            <div className="inline-flex items-center gap-1.5 bg-black/40 text-white px-3.5 py-0.5 rounded-full text-xs font-black mb-1.5 shadow-md animate-pulse border border-white/30">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span>النداء الحالي المباشر</span>
+            </div>
+
+            <div
+              style={{
+                fontSize: `${Math.min(config.tokenFontSize || 76, 120)}px`,
+                color: config.callingTokenColor,
+              }}
+              className="font-black mb-0.5 font-mono tracking-wider drop-shadow-md leading-none"
+            >
+              {formatQueueNumber(currentCall.token_number, config.numberFormat)}
+            </div>
+
+            <div className="text-xs sm:text-sm text-white/90 flex flex-col items-center justify-center gap-0.5 font-medium mt-1">
+              <span className="text-white/80 text-[11px]">تفضل بالدخول إلى:</span>
+              <span
+                style={{ fontSize: `${config.callingDetailsFontSizePx || 14}px` }}
+                className="text-white font-black bg-black/50 px-3 py-1 rounded-xl border border-white/20 truncate max-w-full"
+              >
+                {currentCall.clinic_name || 'العيادة'}
+                {currentCall.doctor_name ? ` (${currentCall.doctor_name})` : ''}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center text-xs flex flex-col items-center text-white/80 py-2">
+            <Monitor className="w-7 h-7 mb-1 text-white/60" />
+            <p className="font-bold text-xs sm:text-sm">في انتظار طلب الدور القادم...</p>
+            <p className="text-[10px] text-white/70 mt-0.5">يتم الإعلان فور استدعاء الطبيب أو السكرتارية</p>
+          </div>
+        )}
+      </div>
+    );
+
+    // 2) شبكة الأطباء والعيادات المتواجدين
+    const sideStackClinicsElement = config.showClinics && (
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden p-3 border-b border-slate-800/80">
+        <div className="flex items-center justify-between mb-2 shrink-0">
+          <h3 className="text-xs sm:text-sm font-bold flex items-center gap-1.5" style={{ color: config.mutedTextColor }}>
+            <Stethoscope className="w-4 h-4" style={{ color: config.accentColor }} />
+            <span>العيادات المتواجدة ({presentDoctorsList.length})</span>
+          </h3>
+          <span
+            style={{
+              backgroundColor: `${config.accentColor}15`,
+              color: config.accentColor,
+              borderColor: `${config.accentColor}30`,
+            }}
+            className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
+          >
+            تحديث حي
+          </span>
+        </div>
+
+        {presentDoctorsList.length === 0 ? (
+          <div
+            className="flex-1 flex flex-col items-center justify-center text-xs p-4 text-center"
+            style={{ color: config.mutedTextColor }}
+          >
+            <Stethoscope className="w-8 h-8 mb-1 opacity-30" />
+            <p className="font-bold">لا يوجد أطباء متواجدون حالياً</p>
+          </div>
+        ) : (
+          <div
+            className={`flex-1 overflow-y-auto ${
+              config.clinicsGridColumns === 2
+                ? 'grid grid-cols-2 gap-2'
+                : config.clinicsGridColumns === 3
+                ? 'grid grid-cols-3 gap-2'
+                : 'space-y-2'
+            } pr-0.5`}
+          >
+            {presentDoctorsList.map((doc) => {
+              const isCurrentInSlide =
+                currentSlide?.type === 'doctor' && currentSlide.doctorId === doc.profile_id;
+              const photoSize = config.doctorCardPhotoSizePx || 44;
+
+              return (
+                <div
+                  key={doc.profile_id}
+                  style={{
+                    backgroundColor: config.cardBgColor,
+                    borderColor: isCurrentInSlide ? config.accentColor : config.cardBorderColor,
+                    boxShadow: isCurrentInSlide ? `0 0 15px ${config.accentColor}30` : undefined,
+                  }}
+                  className={`${cardBorderWidthClass} ${cardRadiusClass} ${cardPaddingClass} flex items-center gap-2.5 transition-all duration-300`}
+                >
+                  {doc.photoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={doc.photoUrl}
+                      alt={doc.doctorName}
+                      style={{
+                        width: `${photoSize}px`,
+                        height: `${photoSize}px`,
+                        borderColor: config.cardBorderColor,
+                      }}
+                      className="rounded-lg object-cover shrink-0 border"
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: `${photoSize}px`,
+                        height: `${photoSize}px`,
+                        backgroundColor: `${config.accentColor}15`,
+                        color: config.accentColor,
+                        borderColor: `${config.accentColor}30`,
+                      }}
+                      className="rounded-lg flex items-center justify-center shrink-0 border"
+                    >
+                      <Stethoscope className="w-5 h-5" />
+                    </div>
+                  )}
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1">
+                      <h4
+                        className="font-bold truncate text-xs sm:text-sm"
+                        style={{
+                          color: config.textColor,
+                          fontSize: config.clinicsFontSizePx ? `${config.clinicsFontSizePx}px` : undefined,
+                        }}
+                      >
+                        {doc.doctorName}
+                      </h4>
+                      {isCurrentInSlide && (
+                        <span
+                          className="w-1.5 h-1.5 rounded-full animate-ping shrink-0"
+                          style={{ backgroundColor: config.accentColor }}
+                        />
+                      )}
+                    </div>
+                    <p className="text-[11px] truncate" style={{ color: config.mutedTextColor }}>
+                      {doc.clinicName}
+                    </p>
+                  </div>
+
+                  {doc.currentToken && (
+                    <div
+                      style={{
+                        backgroundColor: `${config.accentColor}20`,
+                        color: config.accentColor,
+                        borderColor: `${config.accentColor}40`,
+                      }}
+                      className="text-xs font-black font-mono border px-2 py-0.5 rounded-lg shrink-0"
+                      title="رقم المريض الحالي"
+                    >
+                      #{formatQueueNumber(doc.currentToken, config.numberFormat)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+
+    // 3) قائمة الانتظار القادمة
+    const sideStackWaitingListElement = config.showWaitingList && (
+      <div
+        style={{
+          backgroundColor: config.panelBgColor,
+          borderColor: config.cardBorderColor,
+        }}
+        className="p-3 overflow-y-auto shrink-0 max-h-[35%] min-h-[120px] flex flex-col"
+      >
+        <div className="flex items-center justify-between mb-2 shrink-0">
+          <h3 className="text-xs sm:text-sm font-bold flex items-center gap-2" style={{ color: config.mutedTextColor }}>
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
+            </span>
+            <span>قائمة الانتظار ({waitingList.length})</span>
+          </h3>
+        </div>
+
+        {waitingList.length === 0 ? (
+          <div
+            className="flex-1 flex flex-col items-center justify-center text-xs p-2 text-center"
+            style={{ color: config.mutedTextColor }}
+          >
+            <p className="text-slate-500">لا يوجد مرضى في الانتظار حالياً</p>
+          </div>
+        ) : (
+          <div
+            className={`grid ${
+              config.waitingListColumns === 1
+                ? 'grid-cols-1'
+                : config.waitingListColumns === 3
+                ? 'grid-cols-3'
+                : 'grid-cols-2'
+            } gap-1.5 overflow-y-auto pr-0.5`}
+          >
+            {waitingList.map((q, idx) => (
+              <div
+                key={q.id}
+                style={{
+                  backgroundColor: config.cardBgColor,
+                  borderColor: config.cardBorderColor,
+                }}
+                className={`${cardBorderWidthClass} ${cardRadiusClass} ${cardPaddingClass} flex justify-between items-center text-xs shadow-2xs`}
+              >
+                <div className="truncate flex-1 min-w-0 pr-1">
+                  <span
+                    className="font-bold block truncate"
+                    style={{
+                      color: config.textColor,
+                      fontSize: config.waitingListFontSizePx ? `${config.waitingListFontSizePx}px` : '11px',
+                    }}
+                  >
+                    {idx + 1}. {q.clinic_name || 'العيادة'}
+                  </span>
+                </div>
+                <span
+                  style={{
+                    backgroundColor: `${config.accentColor}20`,
+                    color: config.accentColor,
+                    borderColor: `${config.accentColor}40`,
+                  }}
+                  className="font-mono font-black border px-2 py-0.5 rounded-lg text-xs shrink-0"
+                >
+                  #{formatQueueNumber(q.token_number, config.numberFormat)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+
     // 2. عمود الخدمات والأطباء والنداء والانتظار فوق بعض
     const sideStackColumn = hasSideStack && (
       <div
@@ -1588,215 +1916,24 @@ export default function QueueDisplay() {
         }}
         className="h-full flex flex-col overflow-hidden shrink-0 border-x"
       >
-        {/* أ) كارت النداء المباشر الحالي (أعلى العمود) */}
-        {config.showCurrentCall && (
-          <div
-            style={{
-              background: config.callingCardBg,
-            }}
-            className="text-white flex flex-col items-center justify-center p-3.5 sm:p-4 relative overflow-hidden shadow-md shrink-0 border-b border-black/30 min-h-[140px]"
-          >
-            {currentCall ? (
-              <div className="text-center z-10 w-full animate-in zoom-in-95 duration-300">
-                <div className="inline-flex items-center gap-1.5 bg-black/40 text-white px-3.5 py-0.5 rounded-full text-xs font-black mb-1.5 shadow-md animate-pulse border border-white/30">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  <span>النداء الحالي المباشر</span>
-                </div>
-
-                <div
-                  style={{
-                    fontSize: `${Math.min(config.tokenFontSize, 70)}px`,
-                    color: config.callingTokenColor,
-                  }}
-                  className="font-black mb-0.5 font-mono tracking-wider drop-shadow-md leading-none"
-                >
-                  {currentCall.token_number}
-                </div>
-
-                <div className="text-xs sm:text-sm text-white/90 flex flex-col items-center justify-center gap-0.5 font-medium mt-1">
-                  <span className="text-white/80 text-[11px]">تفضل بالدخول إلى:</span>
-                  <span className="text-white font-black bg-black/50 px-3 py-1 rounded-xl border border-white/20 text-xs sm:text-sm truncate max-w-full">
-                    {currentCall.clinic_name || 'العيادة'}
-                    {currentCall.doctor_name ? ` (${currentCall.doctor_name})` : ''}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center text-xs flex flex-col items-center text-white/80 py-2">
-                <Monitor className="w-7 h-7 mb-1 text-white/60" />
-                <p className="font-bold text-xs sm:text-sm">في انتظار طلب الدور القادم...</p>
-                <p className="text-[10px] text-white/70 mt-0.5">يتم الإعلان فور استدعاء الطبيب أو السكرتارية</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ب) شبكة الأطباء والعيادات المتواجدين (وسط العمود) */}
-        {config.showClinics && (
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden p-3 border-b border-slate-800/80">
-            <div className="flex items-center justify-between mb-2 shrink-0">
-              <h3 className="text-xs sm:text-sm font-bold flex items-center gap-1.5" style={{ color: config.mutedTextColor }}>
-                <Stethoscope className="w-4 h-4" style={{ color: config.accentColor }} />
-                <span>العيادات المتواجدة ({presentDoctorsList.length})</span>
-              </h3>
-              <span
-                style={{
-                  backgroundColor: `${config.accentColor}15`,
-                  color: config.accentColor,
-                  borderColor: `${config.accentColor}30`,
-                }}
-                className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
-              >
-                تحديث حي
-              </span>
-            </div>
-
-            {presentDoctorsList.length === 0 ? (
-              <div
-                className="flex-1 flex flex-col items-center justify-center text-xs p-4 text-center"
-                style={{ color: config.mutedTextColor }}
-              >
-                <Stethoscope className="w-8 h-8 mb-1 opacity-30" />
-                <p className="font-bold">لا يوجد أطباء متواجدون حالياً</p>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
-                {presentDoctorsList.map((doc) => {
-                  const isCurrentInSlide =
-                    currentSlide?.type === 'doctor' && currentSlide.doctorId === doc.profile_id;
-
-                  return (
-                    <div
-                      key={doc.profile_id}
-                      style={{
-                        backgroundColor: config.cardBgColor,
-                        borderColor: isCurrentInSlide ? config.accentColor : config.cardBorderColor,
-                        boxShadow: isCurrentInSlide ? `0 0 15px ${config.accentColor}30` : undefined,
-                      }}
-                      className={`border rounded-xl ${cardPaddingClass} flex items-center gap-2.5 transition-all duration-300`}
-                    >
-                      {doc.photoUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={doc.photoUrl}
-                          alt={doc.doctorName}
-                          className="w-10 h-10 rounded-lg object-cover shrink-0 border"
-                          style={{ borderColor: config.cardBorderColor }}
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            backgroundColor: `${config.accentColor}15`,
-                            color: config.accentColor,
-                            borderColor: `${config.accentColor}30`,
-                          }}
-                          className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border"
-                        >
-                          <Stethoscope className="w-5 h-5" />
-                        </div>
-                      )}
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1">
-                          <h4
-                            className="font-bold truncate text-xs sm:text-sm"
-                            style={{
-                              color: config.textColor,
-                              fontSize: config.clinicsFontSizePx ? `${config.clinicsFontSizePx}px` : undefined,
-                            }}
-                          >
-                            {doc.doctorName}
-                          </h4>
-                          {isCurrentInSlide && (
-                            <span
-                              className="w-1.5 h-1.5 rounded-full animate-ping shrink-0"
-                              style={{ backgroundColor: config.accentColor }}
-                            />
-                          )}
-                        </div>
-                        <p className="text-[11px] truncate" style={{ color: config.mutedTextColor }}>
-                          {doc.clinicName}
-                        </p>
-                      </div>
-
-                      {doc.currentToken && (
-                        <div
-                          style={{
-                            backgroundColor: `${config.accentColor}20`,
-                            color: config.accentColor,
-                            borderColor: `${config.accentColor}40`,
-                          }}
-                          className="text-xs font-black font-mono border px-2 py-0.5 rounded-lg shrink-0"
-                          title="رقم المريض الحالي"
-                        >
-                          #{doc.currentToken}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ج) قائمة الانتظار القادمة (أسفل العمود) */}
-        {config.showWaitingList && (
-          <div
-            style={{
-              backgroundColor: config.panelBgColor,
-              borderColor: config.cardBorderColor,
-            }}
-            className="p-3 overflow-y-auto shrink-0 max-h-[35%] min-h-[120px] flex flex-col"
-          >
-            <div className="flex items-center justify-between mb-2 shrink-0">
-              <h3 className="text-xs sm:text-sm font-bold flex items-center gap-2" style={{ color: config.mutedTextColor }}>
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
-                </span>
-                <span>قائمة الانتظار ({waitingList.length})</span>
-              </h3>
-            </div>
-
-            {waitingList.length === 0 ? (
-              <div
-                className="flex-1 flex flex-col items-center justify-center text-xs p-2 text-center"
-                style={{ color: config.mutedTextColor }}
-              >
-                <p className="text-slate-500">لا يوجد مرضى في الانتظار حالياً</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-1.5 overflow-y-auto pr-0.5">
-                {waitingList.map((q, idx) => (
-                  <div
-                    key={q.id}
-                    style={{
-                      backgroundColor: config.cardBgColor,
-                      borderColor: config.cardBorderColor,
-                    }}
-                    className={`border ${cardPaddingClass} rounded-xl flex justify-between items-center text-xs shadow-2xs`}
-                  >
-                    <div className="truncate flex-1 min-w-0 pr-1">
-                      <span className="font-bold block truncate text-[11px]" style={{ color: config.textColor }}>
-                        {idx + 1}. {q.clinic_name || 'العيادة'}
-                      </span>
-                    </div>
-                    <span
-                      style={{
-                        backgroundColor: `${config.accentColor}20`,
-                        color: config.accentColor,
-                        borderColor: `${config.accentColor}40`,
-                      }}
-                      className="font-mono font-black border px-2 py-0.5 rounded-lg text-xs shrink-0"
-                    >
-                      {q.token_number}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        {config.sideStackOrder === 'clinics_call_queue' ? (
+          <>
+            {sideStackClinicsElement}
+            {sideStackCallElement}
+            {sideStackWaitingListElement}
+          </>
+        ) : config.sideStackOrder === 'call_queue_clinics' ? (
+          <>
+            {sideStackCallElement}
+            {sideStackWaitingListElement}
+            {sideStackClinicsElement}
+          </>
+        ) : (
+          <>
+            {sideStackCallElement}
+            {sideStackClinicsElement}
+            {sideStackWaitingListElement}
+          </>
         )}
       </div>
     );

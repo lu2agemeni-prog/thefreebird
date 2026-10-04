@@ -15,10 +15,40 @@ import { supabase } from '@/lib/supabase';
 export type SectionPosition = 'right' | 'left';
 export type BottomOrder = 'call_right_queue_left' | 'call_left_queue_right' | 'call_center';
 export type VerticalOrder = 'media_top_queue_bottom' | 'queue_top_media_bottom';
+export type SideStackOrder = 'call_clinics_queue' | 'clinics_call_queue' | 'call_queue_clinics';
 export type ScreenLayoutMode = 'split_columns' | 'classic_rows';
-export type FontFamilyOption = 'cairo' | 'tajawal' | 'almarai' | 'system';
+export type FontFamilyOption = 'cairo' | 'tajawal' | 'almarai' | 'readex' | 'ibm_plex' | 'system';
 export type CardDensity = 'compact' | 'normal' | 'spacious';
-export type ThemePresetKey = 'emerald_dark' | 'navy_blue' | 'midnight_dark' | 'clean_light' | 'purple_luxury' | 'custom';
+export type CardGapSpacing = 'compact' | 'normal' | 'spacious';
+export type CardBorderRadius = 'none' | 'small' | 'medium' | 'large' | 'full';
+export type CallingPulseEffect = 'none' | 'gentle' | 'vibrant' | 'neon';
+export type TickerSeparator = 'star' | 'bar' | 'dot' | 'medical' | 'crescent' | 'sparkle';
+export type SlideTransitionEffect = 'fade' | 'slide' | 'zoom' | 'none';
+export type LayoutBlueprintKey =
+  | 'cinema_left'
+  | 'cinema_right'
+  | 'media_giant'
+  | 'half_and_half'
+  | 'call_focus'
+  | 'clinics_wall'
+  | 'pure_queue_no_media'
+  | 'cinema_fullscreen_ads'
+  | 'classic_rows'
+  | 'custom';
+
+export type ThemePresetKey =
+  | 'emerald_dark'
+  | 'navy_blue'
+  | 'midnight_dark'
+  | 'clean_light'
+  | 'purple_luxury'
+  | 'medical_teal'
+  | 'ruby_crimson'
+  | 'industrial_slate'
+  | 'golden_amber'
+  | 'cyber_neon'
+  | 'forest_green'
+  | 'custom';
 
 export interface QueueLayoutConfig {
   // 1. خيارات عرض وإخفاء الأقسام
@@ -26,31 +56,41 @@ export interface QueueLayoutConfig {
   showClinics: boolean;          // شبكة العيادات والأطباء المتواجدين
   showWaitingList: boolean;      // قائمة الانتظار القادمة
   showCurrentCall: boolean;      // كارت النداء الحالي المباشر
-  showNewsTicker: boolean;       // شريط الأخبار بالأسفل (جديد)
+  showNewsTicker: boolean;       // شريط الأخبار بالأسفل
   showHeader: boolean;           // الهيدر وشريط الترويسة العلوي (الشعار والساعة)
 
   // 2. المقاسات والأبعاد
-  mediaWidthPct: number;         // نسبة عرض قسم الميديا في القسم الرئيسي (30 - 80%)
-  bottomHeightPct: number;       // نسبة ارتفاع القسم السفلي من الشاشة (15 - 50%)
-  tickerHeightPx: number;        // ارتفاع شريط الأخبار بالأسفل بالبكسل (36 - 65px)
-  tickerFontSizePx: number;      // حجم خط شريط الأخبار بالبكسل (12 - 22px)
-  zoom: number;                  // زووم عام للنصوص والعناصر (0.8 - 1.4)
+  mediaWidthPct: number;         // نسبة عرض قسم الميديا في القسم الرئيسي (20 - 85%)
+  bottomHeightPct: number;       // نسبة ارتفاع القسم السفلي من الشاشة (15 - 55%)
+  tickerHeightPx: number;        // ارتفاع شريط الأخبار بالأسفل بالبكسل (32 - 85px)
+  tickerFontSizePx: number;      // حجم خط شريط الأخبار بالبكسل (12 - 28px)
+  zoom: number;                  // زووم عام للنصوص والعناصر (0.75 - 1.4)
   waitingListColumns: 1 | 2 | 3; // عدد أعمدة قائمة الانتظار
   clinicsGridColumns: 1 | 2 | 3; // عدد أعمدة كروت الأطباء المتواجدين
-  clinicsFontSizePx: number;     // حجم خط بطاقات الأطباء والعيادات بالبكسل (12 - 20px)
-  tokenFontSize: number;         // حجم خط رقم النداء بالبكسل (48 - 110px)
+  clinicsFontSizePx: number;     // حجم خط بطاقات الأطباء والعيادات بالبكسل (11 - 24px)
+  waitingListFontSizePx: number; // حجم خط عناصر قائمة الانتظار بالبكسل (10 - 22px)
+  doctorCardPhotoSizePx: number; // حجم صورة الطبيب في كروت العيادات (28 - 72px)
+  maxWaitingListItems: number;   // الحد الأقصى لعدد عناصر قائمة الانتظار المعروضة (4 - 30)
+  tokenFontSize: number;         // حجم خط رقم النداء بالبكسل (44 - 140px)
+  callingDetailsFontSizePx: number; // حجم خط تفاصيل النداء المباشر (12 - 28px)
   cardDensity: CardDensity;      // كثافة وحجم الكروت
-  headerHeightPx: number;        // ارتفاع شريط الترويسة العلوي بالبكسل (50 - 90px)
+  cardGapSpacing: CardGapSpacing;// التباعد بين الكروت
+  cardBorderRadius: CardBorderRadius; // استدارة زوايا الكروت
+  cardBorderWidth: 0 | 1 | 2 | 3; // سمك حدود وإطار الكروت (0, 1, 2, 3px)
+  headerHeightPx: number;        // ارتفاع شريط الترويسة العلوي بالبكسل (45 - 110px)
+  headerTitleFontSizePx: number; // حجم خط اسم المركز بالهيدر (14 - 32px)
+  headerSubtitleFontSizePx: number; // حجم خط النص الفرعي بالهيدر (10 - 18px)
 
   // 2.1 مقاسات إعلان الطبيب المتواجد
-  doctorPhotoSizePx: number;     // حجم صورة الطبيب في الإعلان بالبكسل (180 - 480px)
+  doctorPhotoSizePx: number;     // حجم صورة الطبيب في الإعلان بالبكسل (160 - 520px)
   doctorCardLayout: 'side_by_side' | 'stacked'; // طريقة عرض صورة الطبيب وبياناته
 
   // 3. الأماكن والترتيب في الشاشة
-  screenLayoutMode: ScreenLayoutMode; // نمط التخطيط: split_columns (أعمدة رأسية كاملة: ميديا 70% بجانب العيادات والنداء) أو classic_rows (صفوف أفقية كلاسيكية)
-  mediaPosition: SectionPosition; // مكان الميديا في القسم الرئيسي (يمين أو يسار)
+  screenLayoutMode: ScreenLayoutMode; // نمط التخطيط: split_columns أو classic_rows
+  mediaPosition: SectionPosition; // مكان الميديا (يمين أو يسار)
+  sideStackOrder: SideStackOrder; // ترتيب عناصر العمود الجانبي (نداء ثم عيادات ثم انتظار، أو عيادات أولاً)
   bottomOrder: BottomOrder;       // ترتيب كارت النداء وقائمة الانتظار بالأسفل
-  verticalOrder: VerticalOrder;   // ترتيب الأقسام عمودياً (الميديا بالأعلى أم النداء بالأعلى)
+  verticalOrder: VerticalOrder;   // ترتيب الأقسام عمودياً
 
   // 4. الألوان والقوالب
   themePreset: ThemePresetKey;
@@ -63,23 +103,42 @@ export interface QueueLayoutConfig {
   accentColor: string;           // لون التمييز واللمسات الحية
   callingCardBg: string;         // خلفية كارت النداء المباشر
   callingTokenColor: string;     // لون رقم النداء المباشر
+  callingPulseEffect: CallingPulseEffect; // تأثير وميض النداء (none, gentle, vibrant, neon)
 
-  // 5. الخطوط
+  // 5. الخطوط ونمط الأرقام
   fontFamily: FontFamilyOption;
-  fontWeight: 'bold' | 'black';
+  fontWeight: 'medium' | 'bold' | 'black';
+  numberFormat: 'western' | 'arabic'; // أرقام لاتينية (123) أو مشرقية عربية (١٢٣)
 
-  // 6. شريط الأخبار بالأسفل (جديد)
-  tickerSpeedSeconds: number;    // سرعة دوران شريط الأخبار بالثواني (20 - 240s)
+  // 6. شريط الأخبار بالأسفل والسرعة الهادئة الدقيقة
+  tickerSpeedSeconds: number;    // سرعة دوران شريط الأخبار بالثواني (20 - 400s) الافتراضي 120s فائق الهدوء
+  tickerSpeedPxPerSec: number;   // سرعة حركة النص بالبكسل/ثانية لضمان هدوء وثبات السرعة (10 - 90 px/s)
   tickerBgColor: string;         // خلفية شريط الأخبار
   tickerTextColor: string;       // لون نص شريط الأخبار
   tickerBadgeBg: string;         // خلفية شارة "أخبار المركز"
   tickerBadgeTextColor: string;  // لون نص شارة "أخبار المركز"
+  tickerBadgeText: string;       // نص شارة شريط الأخبار الثابتة
   tickerTextSource: 'medical_news' | 'custom' | 'both'; // مصدر الأخبار
   tickerCustomText: string;      // نص إعلاني إرشادي مخصص
   tickerDirection: 'ltr' | 'rtl'; // اتجاه حركة الشريط (من اليسار لليمين 'ltr' أو من اليمين لليسار 'rtl')
+  tickerSeparator: TickerSeparator; // شكل الفاصل بين الأخبار (star, bar, dot, medical, crescent, sparkle)
+  tickerPauseOnHover: boolean;   // إيقاف حركة شريط الأخبار عند الوقوف عليه بالماوس
 
-  // 7. إدارة الإعلانات الصوتية لتواجد الأطباء (جديد لمنع إزعاج العملاء)
-  doctorAudioIntervalMinutes: number; // الفترة الزمنية بين الإعلانات الصوتية لتواجد الأطباء بالدقائق (5, 10, 15, 20, 30 دقيقة، 0 للتكرار الدائم، -1 لكتم صوت الأطباء)
+  // 7. إدارة الإعلانات الصوتية وتوقيتات الشاشة
+  doctorAudioIntervalMinutes: number; // الفترة بين الإعلانات الصوتية لتواجد الأطباء (3, 5, 10, 15, 20, 30, 45 دقيقة، 0 للتكرار الدائم، -1 لكتم صوت الأطباء)
+  patientCallNoticeDurationSec: number; // مدة بقاء إشعار استدعاء المريض المنسدل بالثواني (3 - 25s)
+  slideDefaultDurationSec: number; // مدة عرض شريحة الميديا الافتراضية بالثواني (4 - 45s)
+  slideTransition: SlideTransitionEffect; // تأثير الانتقال بين الشرائح
+  showSlideProgressBar: boolean; // إظهار شريط تقدم الشريحة
+
+  // 8. نصوص وعناصر شريط الترويسة العلوي (Header)
+  centerTitle: string;           // اسم المركز بالهيدر
+  centerSubtitle: string;        // النص الفرعي بالهيدر
+  showClock: boolean;            // إظهار الساعة
+  clockFormat: '12h' | '24h';    // صيغة الساعة
+  showClockSeconds: boolean;     // إظهار الثواني في الساعة
+  showDate: boolean;             // إظهار التاريخ
+  showAudioIndicator: boolean;   // إظهار مؤشر الصوت
 }
 
 export const SETTINGS_KEY = 'queue_screen_layout_config';
@@ -179,9 +238,275 @@ export const THEME_PRESETS: Record<ThemePresetKey, {
       tickerBadgeTextColor: '#ffffff',
     },
   },
+  medical_teal: {
+    name: 'تركواز طبي حديث هادئ',
+    colors: {
+      bgColor: '#021817',
+      panelBgColor: '#062826',
+      cardBgColor: '#0c3836',
+      cardBorderColor: '#155e5b',
+      textColor: '#ffffff',
+      mutedTextColor: '#5eead4',
+      accentColor: '#14b8a6',
+      callingCardBg: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
+      callingTokenColor: '#ffffff',
+      tickerBgColor: '#021817',
+      tickerTextColor: '#ccfbf1',
+      tickerBadgeBg: '#0d9488',
+      tickerBadgeTextColor: '#ffffff',
+    },
+  },
+  ruby_crimson: {
+    name: 'عقيق كرزي دافئ ملكي',
+    colors: {
+      bgColor: '#140407',
+      panelBgColor: '#22080d',
+      cardBgColor: '#360c14',
+      cardBorderColor: '#5c1623',
+      textColor: '#ffffff',
+      mutedTextColor: '#fda4af',
+      accentColor: '#f43f5e',
+      callingCardBg: 'linear-gradient(135deg, #e11d48 0%, #be123c 100%)',
+      callingTokenColor: '#fef08a',
+      tickerBgColor: '#140407',
+      tickerTextColor: '#ffe4e6',
+      tickerBadgeBg: '#e11d48',
+      tickerBadgeTextColor: '#ffffff',
+    },
+  },
+  industrial_slate: {
+    name: 'رمادي داكن ناصع التباين',
+    colors: {
+      bgColor: '#0f172a',
+      panelBgColor: '#1e293b',
+      cardBgColor: '#334155',
+      cardBorderColor: '#475569',
+      textColor: '#ffffff',
+      mutedTextColor: '#cbd5e1',
+      accentColor: '#38bdf8',
+      callingCardBg: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+      callingTokenColor: '#fef08a',
+      tickerBgColor: '#090d16',
+      tickerTextColor: '#f8fafc',
+      tickerBadgeBg: '#2563eb',
+      tickerBadgeTextColor: '#ffffff',
+    },
+  },
+  golden_amber: {
+    name: 'فخامة الأسود والذهب الملكي',
+    colors: {
+      bgColor: '#0a0a0b',
+      panelBgColor: '#141416',
+      cardBgColor: '#1c1b18',
+      cardBorderColor: '#3a3322',
+      textColor: '#ffffff',
+      mutedTextColor: '#d4af37',
+      accentColor: '#fbbf24',
+      callingCardBg: 'linear-gradient(135deg, #b45309 0%, #d97706 50%, #f59e0b 100%)',
+      callingTokenColor: '#000000',
+      tickerBgColor: '#0c0a06',
+      tickerTextColor: '#fef3c7',
+      tickerBadgeBg: '#d97706',
+      tickerBadgeTextColor: '#000000',
+    },
+  },
+  cyber_neon: {
+    name: 'سايبر نيون أزرق وسماوي حديث',
+    colors: {
+      bgColor: '#030712',
+      panelBgColor: '#0b132b',
+      cardBgColor: '#1c2541',
+      cardBorderColor: '#3a506b',
+      textColor: '#ffffff',
+      mutedTextColor: '#6fffe9',
+      accentColor: '#00f5d4',
+      callingCardBg: 'linear-gradient(135deg, #00b4d8 0%, #0077b6 100%)',
+      callingTokenColor: '#ffffff',
+      tickerBgColor: '#020617',
+      tickerTextColor: '#e0f2fe',
+      tickerBadgeBg: '#00b4d8',
+      tickerBadgeTextColor: '#ffffff',
+    },
+  },
+  forest_green: {
+    name: 'أخضر غابات طبيعي هادئ',
+    colors: {
+      bgColor: '#05180f',
+      panelBgColor: '#0b291b',
+      cardBgColor: '#113c27',
+      cardBorderColor: '#1c5e3d',
+      textColor: '#ffffff',
+      mutedTextColor: '#86efac',
+      accentColor: '#22c55e',
+      callingCardBg: 'linear-gradient(135deg, #15803d 0%, #16a34a 100%)',
+      callingTokenColor: '#ffffff',
+      tickerBgColor: '#05180f',
+      tickerTextColor: '#dcfce7',
+      tickerBadgeBg: '#16a34a',
+      tickerBadgeTextColor: '#ffffff',
+    },
+  },
   custom: {
     name: 'تخصيص يدوي حر',
     colors: {},
+  },
+};
+
+export const LAYOUT_BLUEPRINTS: Record<LayoutBlueprintKey, {
+  name: string;
+  desc: string;
+  badge: string;
+  config: Partial<QueueLayoutConfig>;
+}> = {
+  cinema_left: {
+    name: 'سينمائي عريض (ميديا 70% يساراً)',
+    desc: 'الميديا منفردة 70% على اليسار والعيادات والنداء والانتظار فوق بعض على اليمين (المخطط الأكثر طلباً)',
+    badge: '🌟 التخطيط الموصى به',
+    config: {
+      screenLayoutMode: 'split_columns',
+      mediaPosition: 'left',
+      mediaWidthPct: 70,
+      showMedia: true,
+      showClinics: true,
+      showCurrentCall: true,
+      showWaitingList: true,
+      doctorPhotoSizePx: 320,
+      sideStackOrder: 'call_clinics_queue',
+    },
+  },
+  cinema_right: {
+    name: 'سينمائي معكوس (ميديا 70% يميناً)',
+    desc: 'الميديا على اليمين والعيادات والنداء وقائمة الانتظار على اليسار',
+    badge: 'تخطيط معكوس',
+    config: {
+      screenLayoutMode: 'split_columns',
+      mediaPosition: 'right',
+      mediaWidthPct: 70,
+      showMedia: true,
+      showClinics: true,
+      showCurrentCall: true,
+      showWaitingList: true,
+      doctorPhotoSizePx: 320,
+      sideStackOrder: 'call_clinics_queue',
+    },
+  },
+  media_giant: {
+    name: 'شاشة ميديا عملاقة (80% يساراً)',
+    desc: 'مساحة عريضة جداً 80% للفيديوهات وإعلانات الأطباء مع عمود نداء مدمج 20%',
+    badge: 'تلفزيون وإعلانات واسعة',
+    config: {
+      screenLayoutMode: 'split_columns',
+      mediaPosition: 'left',
+      mediaWidthPct: 80,
+      showMedia: true,
+      showClinics: true,
+      showCurrentCall: true,
+      showWaitingList: true,
+      doctorPhotoSizePx: 380,
+      tokenFontSize: 68,
+      clinicsFontSizePx: 12,
+    },
+  },
+  half_and_half: {
+    name: 'توازن متناصف (50% ميديا / 50% نداء وعيادات)',
+    desc: 'قسمة متساوية 50/50 بين شاشة الميديا وأقسام العيادات والانتظار',
+    badge: 'متوازن 50/50',
+    config: {
+      screenLayoutMode: 'split_columns',
+      mediaPosition: 'left',
+      mediaWidthPct: 50,
+      showMedia: true,
+      showClinics: true,
+      showCurrentCall: true,
+      showWaitingList: true,
+      tokenFontSize: 84,
+      clinicsGridColumns: 2,
+    },
+  },
+  call_focus: {
+    name: 'التركيز الفائق على النداء المباشر',
+    desc: 'تكبير كارت النداء المباشر للضعف مع خط عملاق 105px وميديا 52% لسرعة توجيه المرضى',
+    badge: 'تركيز على النداء',
+    config: {
+      screenLayoutMode: 'split_columns',
+      mediaPosition: 'left',
+      mediaWidthPct: 52,
+      tokenFontSize: 105,
+      callingPulseEffect: 'vibrant',
+      showCurrentCall: true,
+      showClinics: true,
+      showWaitingList: true,
+      sideStackOrder: 'call_clinics_queue',
+    },
+  },
+  clinics_wall: {
+    name: 'بانوراما العيادات والأطباء (Clinics Wall)',
+    desc: 'مساحة واسعة للعيادات والأطباء المتواجدين (60%) مع كروت فسيحة وميديا 40% للمراكز الكبيرة',
+    badge: 'مراكز العيادات المتعددة',
+    config: {
+      screenLayoutMode: 'split_columns',
+      mediaPosition: 'left',
+      mediaWidthPct: 40,
+      clinicsGridColumns: 2,
+      clinicsFontSizePx: 15,
+      cardDensity: 'spacious',
+      showClinics: true,
+      showMedia: true,
+      showCurrentCall: true,
+      showWaitingList: true,
+      sideStackOrder: 'clinics_call_queue',
+    },
+  },
+  pure_queue_no_media: {
+    name: 'لوحة استدعاء ومستشفيات نقية (بدون ميديا)',
+    desc: 'إخفاء الميديا تماماً واستغلال الشاشة بنسبة 100% للعيادات والنداء وقوائم الانتظار',
+    badge: 'شاشة طبية مركزة 100%',
+    config: {
+      screenLayoutMode: 'split_columns',
+      showMedia: false,
+      showClinics: true,
+      showCurrentCall: true,
+      showWaitingList: true,
+      tokenFontSize: 92,
+      waitingListColumns: 3,
+      clinicsGridColumns: 3,
+    },
+  },
+  cinema_fullscreen_ads: {
+    name: 'شاشة ميديا تلفزيونية كاملة (100% وسائط)',
+    desc: 'عرض الميديا الترويجية وإعلانات الأطباء بكامل الشاشة مع شريط الأخبار السفلي وشريط نداء مصغر',
+    badge: 'شاشة استراحة وتلفزيون',
+    config: {
+      screenLayoutMode: 'split_columns',
+      mediaWidthPct: 85,
+      showMedia: true,
+      showClinics: false,
+      showWaitingList: false,
+      showCurrentCall: true,
+      doctorPhotoSizePx: 420,
+    },
+  },
+  classic_rows: {
+    name: 'النمط الأفقي الكلاسيكي (قسم علوي وسفلي)',
+    desc: 'الميديا والعيادات بالأعلى وكارت النداء وقائمة الانتظار بعرض كامل بالأسفل',
+    badge: 'كلاسيكي تقليدي',
+    config: {
+      screenLayoutMode: 'classic_rows',
+      mediaWidthPct: 55,
+      bottomHeightPct: 32,
+      bottomOrder: 'call_right_queue_left',
+      verticalOrder: 'media_top_queue_bottom',
+      showMedia: true,
+      showClinics: true,
+      showCurrentCall: true,
+      showWaitingList: true,
+    },
+  },
+  custom: {
+    name: 'تخصيص يدوي حر',
+    desc: 'تعديل كافة المقاسات والأبعاد والخيارات يدوياً بحرية كاملة',
+    badge: 'مخصص بالكامل',
+    config: {},
   },
 };
 
@@ -199,9 +524,18 @@ export const DEFAULT_QUEUE_LAYOUT_CONFIG: QueueLayoutConfig = {
   waitingListColumns: 2,
   clinicsGridColumns: 2,
   clinicsFontSizePx: 14,
+  waitingListFontSizePx: 12,
+  doctorCardPhotoSizePx: 44,
+  maxWaitingListItems: 12,
   tokenFontSize: 76,
+  callingDetailsFontSizePx: 14,
   cardDensity: 'normal',
+  cardGapSpacing: 'normal',
+  cardBorderRadius: 'medium',
+  cardBorderWidth: 1,
   headerHeightPx: 66,
+  headerTitleFontSizePx: 20,
+  headerSubtitleFontSizePx: 11,
 
   doctorPhotoSizePx: 280,
   doctorCardLayout: 'side_by_side',
@@ -209,6 +543,7 @@ export const DEFAULT_QUEUE_LAYOUT_CONFIG: QueueLayoutConfig = {
   screenLayoutMode: 'split_columns', // النمط السينمائي المتجاوب: ميديا بعرض 70% بجانب العيادات والنداء
   mediaPosition: 'left', // الميديا على اليسار بعرض 70%
   mediaWidthPct: 70, // نسبة عرض قسم الميديا (70% للميديا و 30% للعيادات والنداء وقائمة الانتظار على اليمين)
+  sideStackOrder: 'call_clinics_queue',
   bottomHeightPct: 32,
   bottomOrder: 'call_right_queue_left', // كارت النداء على اليمين وقائمة الانتظار على اليسار
   verticalOrder: 'media_top_queue_bottom',
@@ -223,20 +558,38 @@ export const DEFAULT_QUEUE_LAYOUT_CONFIG: QueueLayoutConfig = {
   accentColor: '#10b981',
   callingCardBg: 'linear-gradient(135deg, #059669 0%, #0d9488 50%, #047857 100%)',
   callingTokenColor: '#ffffff',
+  callingPulseEffect: 'vibrant',
 
   fontFamily: 'cairo',
   fontWeight: 'bold',
+  numberFormat: 'western',
 
-  tickerSpeedSeconds: 75, // سرعة هادئة ومريحة ومقروءة جداً لشريط الأخبار
+  tickerSpeedSeconds: 120, // سرعة هادئة جداً ومريحة ومقروءة تماماً لشريط الأخبار (120 ثانية)
+  tickerSpeedPxPerSec: 22, // سرعة حركة النص بالبكسل/ثانية لضمان هدوء وثبات السرعة الدقيق
   tickerBgColor: '#090d16',
   tickerTextColor: '#f8fafc',
   tickerBadgeBg: '#059669',
   tickerBadgeTextColor: '#ffffff',
+  tickerBadgeText: 'أخبار المركز والتنبيهات',
   tickerTextSource: 'both',
   tickerCustomText: 'مرحباً بكم في مركز الطائر الحر الطبي.. نتمنى لكم دوام الصحة والعافية.',
   tickerDirection: 'ltr',
+  tickerSeparator: 'star',
+  tickerPauseOnHover: true,
 
   doctorAudioIntervalMinutes: 10, // تشغيل الإعلان الصوتي لتواجد الأطباء مرة واحدة كل 10 دقائق لتجنب الإزعاج
+  patientCallNoticeDurationSec: 8,
+  slideDefaultDurationSec: 10,
+  slideTransition: 'fade',
+  showSlideProgressBar: true,
+
+  centerTitle: 'مركز الطائر الحر الطبي',
+  centerSubtitle: 'شاشة العرض والنداء الآلي المباشر',
+  showClock: true,
+  clockFormat: '12h',
+  showClockSeconds: false,
+  showDate: true,
+  showAudioIndicator: true,
 };
 
 /**
@@ -255,23 +608,35 @@ export function sanitizeLayoutConfig(raw: any): QueueLayoutConfig {
     showNewsTicker: raw.showNewsTicker !== undefined ? Boolean(raw.showNewsTicker) : DEFAULT_QUEUE_LAYOUT_CONFIG.showNewsTicker,
     showHeader: raw.showHeader !== undefined ? Boolean(raw.showHeader) : DEFAULT_QUEUE_LAYOUT_CONFIG.showHeader,
 
-    mediaWidthPct: Math.min(80, Math.max(20, Number(raw.mediaWidthPct) || DEFAULT_QUEUE_LAYOUT_CONFIG.mediaWidthPct)),
+    mediaWidthPct: Math.min(85, Math.max(20, Number(raw.mediaWidthPct) || DEFAULT_QUEUE_LAYOUT_CONFIG.mediaWidthPct)),
     bottomHeightPct: Math.min(55, Math.max(15, Number(raw.bottomHeightPct) || DEFAULT_QUEUE_LAYOUT_CONFIG.bottomHeightPct)),
-    tickerHeightPx: Math.min(75, Math.max(34, Number(raw.tickerHeightPx) || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerHeightPx)),
-    tickerFontSizePx: Math.min(24, Math.max(12, Number(raw.tickerFontSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerFontSizePx)),
-    zoom: Math.min(1.5, Math.max(0.7, Number(raw.zoom) || DEFAULT_QUEUE_LAYOUT_CONFIG.zoom)),
+    tickerHeightPx: Math.min(85, Math.max(32, Number(raw.tickerHeightPx) || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerHeightPx)),
+    tickerFontSizePx: Math.min(28, Math.max(12, Number(raw.tickerFontSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerFontSizePx)),
+    zoom: Math.min(1.4, Math.max(0.7, Number(raw.zoom) || DEFAULT_QUEUE_LAYOUT_CONFIG.zoom)),
     waitingListColumns: [1, 2, 3].includes(raw.waitingListColumns) ? raw.waitingListColumns : DEFAULT_QUEUE_LAYOUT_CONFIG.waitingListColumns,
     clinicsGridColumns: [1, 2, 3].includes(raw.clinicsGridColumns) ? raw.clinicsGridColumns : DEFAULT_QUEUE_LAYOUT_CONFIG.clinicsGridColumns,
-    clinicsFontSizePx: Math.min(22, Math.max(11, Number(raw.clinicsFontSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.clinicsFontSizePx)),
-    tokenFontSize: Math.min(120, Math.max(40, Number(raw.tokenFontSize) || DEFAULT_QUEUE_LAYOUT_CONFIG.tokenFontSize)),
+    clinicsFontSizePx: Math.min(24, Math.max(11, Number(raw.clinicsFontSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.clinicsFontSizePx)),
+    waitingListFontSizePx: Math.min(22, Math.max(10, Number(raw.waitingListFontSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.waitingListFontSizePx)),
+    doctorCardPhotoSizePx: Math.min(72, Math.max(28, Number(raw.doctorCardPhotoSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.doctorCardPhotoSizePx)),
+    maxWaitingListItems: Math.min(30, Math.max(4, Number(raw.maxWaitingListItems) || DEFAULT_QUEUE_LAYOUT_CONFIG.maxWaitingListItems)),
+    tokenFontSize: Math.min(140, Math.max(40, Number(raw.tokenFontSize) || DEFAULT_QUEUE_LAYOUT_CONFIG.tokenFontSize)),
+    callingDetailsFontSizePx: Math.min(28, Math.max(12, Number(raw.callingDetailsFontSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.callingDetailsFontSizePx)),
     cardDensity: ['compact', 'normal', 'spacious'].includes(raw.cardDensity) ? raw.cardDensity : DEFAULT_QUEUE_LAYOUT_CONFIG.cardDensity,
-    headerHeightPx: Math.min(95, Math.max(45, Number(raw.headerHeightPx) || DEFAULT_QUEUE_LAYOUT_CONFIG.headerHeightPx)),
+    cardGapSpacing: ['compact', 'normal', 'spacious'].includes(raw.cardGapSpacing) ? raw.cardGapSpacing : DEFAULT_QUEUE_LAYOUT_CONFIG.cardGapSpacing,
+    cardBorderRadius: ['none', 'small', 'medium', 'large', 'full'].includes(raw.cardBorderRadius) ? raw.cardBorderRadius : DEFAULT_QUEUE_LAYOUT_CONFIG.cardBorderRadius,
+    cardBorderWidth: [0, 1, 2, 3].includes(raw.cardBorderWidth) ? raw.cardBorderWidth : DEFAULT_QUEUE_LAYOUT_CONFIG.cardBorderWidth,
+    headerHeightPx: Math.min(110, Math.max(45, Number(raw.headerHeightPx) || DEFAULT_QUEUE_LAYOUT_CONFIG.headerHeightPx)),
+    headerTitleFontSizePx: Math.min(32, Math.max(14, Number(raw.headerTitleFontSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.headerTitleFontSizePx)),
+    headerSubtitleFontSizePx: Math.min(18, Math.max(10, Number(raw.headerSubtitleFontSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.headerSubtitleFontSizePx)),
 
-    doctorPhotoSizePx: Math.min(500, Math.max(160, Number(raw.doctorPhotoSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.doctorPhotoSizePx)),
+    doctorPhotoSizePx: Math.min(520, Math.max(160, Number(raw.doctorPhotoSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.doctorPhotoSizePx)),
     doctorCardLayout: raw.doctorCardLayout === 'stacked' ? 'stacked' : 'side_by_side',
 
     screenLayoutMode: raw.screenLayoutMode === 'classic_rows' ? 'classic_rows' : 'split_columns',
     mediaPosition: raw.mediaPosition === 'right' ? 'right' : 'left',
+    sideStackOrder: ['call_clinics_queue', 'clinics_call_queue', 'call_queue_clinics'].includes(raw.sideStackOrder)
+      ? raw.sideStackOrder
+      : DEFAULT_QUEUE_LAYOUT_CONFIG.sideStackOrder,
     bottomOrder: ['call_right_queue_left', 'call_left_queue_right', 'call_center'].includes(raw.bottomOrder) ? raw.bottomOrder : DEFAULT_QUEUE_LAYOUT_CONFIG.bottomOrder,
     verticalOrder: raw.verticalOrder === 'queue_top_media_bottom' ? 'queue_top_media_bottom' : 'media_top_queue_bottom',
 
@@ -285,23 +650,50 @@ export function sanitizeLayoutConfig(raw: any): QueueLayoutConfig {
     accentColor: raw.accentColor || DEFAULT_QUEUE_LAYOUT_CONFIG.accentColor,
     callingCardBg: raw.callingCardBg || DEFAULT_QUEUE_LAYOUT_CONFIG.callingCardBg,
     callingTokenColor: raw.callingTokenColor || DEFAULT_QUEUE_LAYOUT_CONFIG.callingTokenColor,
+    callingPulseEffect: ['none', 'gentle', 'vibrant', 'neon'].includes(raw.callingPulseEffect) ? raw.callingPulseEffect : DEFAULT_QUEUE_LAYOUT_CONFIG.callingPulseEffect,
 
-    fontFamily: ['cairo', 'tajawal', 'almarai', 'system'].includes(raw.fontFamily) ? raw.fontFamily : DEFAULT_QUEUE_LAYOUT_CONFIG.fontFamily,
-    fontWeight: raw.fontWeight === 'black' ? 'black' : 'bold',
+    fontFamily: ['cairo', 'tajawal', 'almarai', 'readex', 'ibm_plex', 'system'].includes(raw.fontFamily) ? raw.fontFamily : DEFAULT_QUEUE_LAYOUT_CONFIG.fontFamily,
+    fontWeight: ['medium', 'bold', 'black'].includes(raw.fontWeight) ? raw.fontWeight : DEFAULT_QUEUE_LAYOUT_CONFIG.fontWeight,
+    numberFormat: raw.numberFormat === 'arabic' ? 'arabic' : 'western',
 
-    tickerSpeedSeconds: Math.min(240, Math.max(20, Number(raw.tickerSpeedSeconds) || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerSpeedSeconds)),
+    tickerSpeedSeconds: Math.min(400, Math.max(20, Number(raw.tickerSpeedSeconds) || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerSpeedSeconds)),
+    tickerSpeedPxPerSec: Math.min(90, Math.max(10, Number(raw.tickerSpeedPxPerSec) || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerSpeedPxPerSec)),
     tickerBgColor: raw.tickerBgColor || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerBgColor,
     tickerTextColor: raw.tickerTextColor || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerTextColor,
     tickerBadgeBg: raw.tickerBadgeBg || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerBadgeBg,
     tickerBadgeTextColor: raw.tickerBadgeTextColor || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerBadgeTextColor,
+    tickerBadgeText: typeof raw.tickerBadgeText === 'string' && raw.tickerBadgeText.trim() ? raw.tickerBadgeText.trim() : DEFAULT_QUEUE_LAYOUT_CONFIG.tickerBadgeText,
     tickerTextSource: ['medical_news', 'custom', 'both'].includes(raw.tickerTextSource) ? raw.tickerTextSource : DEFAULT_QUEUE_LAYOUT_CONFIG.tickerTextSource,
     tickerCustomText: typeof raw.tickerCustomText === 'string' ? raw.tickerCustomText : DEFAULT_QUEUE_LAYOUT_CONFIG.tickerCustomText,
     tickerDirection: raw.tickerDirection === 'rtl' ? 'rtl' : 'ltr',
+    tickerSeparator: ['star', 'bar', 'dot', 'medical', 'crescent', 'sparkle'].includes(raw.tickerSeparator) ? raw.tickerSeparator : DEFAULT_QUEUE_LAYOUT_CONFIG.tickerSeparator,
+    tickerPauseOnHover: raw.tickerPauseOnHover !== undefined ? Boolean(raw.tickerPauseOnHover) : DEFAULT_QUEUE_LAYOUT_CONFIG.tickerPauseOnHover,
 
     doctorAudioIntervalMinutes: Number.isFinite(Number(raw.doctorAudioIntervalMinutes))
       ? Number(raw.doctorAudioIntervalMinutes)
       : DEFAULT_QUEUE_LAYOUT_CONFIG.doctorAudioIntervalMinutes,
+    patientCallNoticeDurationSec: Math.min(25, Math.max(3, Number(raw.patientCallNoticeDurationSec) || DEFAULT_QUEUE_LAYOUT_CONFIG.patientCallNoticeDurationSec)),
+    slideDefaultDurationSec: Math.min(45, Math.max(4, Number(raw.slideDefaultDurationSec) || DEFAULT_QUEUE_LAYOUT_CONFIG.slideDefaultDurationSec)),
+    slideTransition: ['fade', 'slide', 'zoom', 'none'].includes(raw.slideTransition) ? raw.slideTransition : DEFAULT_QUEUE_LAYOUT_CONFIG.slideTransition,
+    showSlideProgressBar: raw.showSlideProgressBar !== undefined ? Boolean(raw.showSlideProgressBar) : DEFAULT_QUEUE_LAYOUT_CONFIG.showSlideProgressBar,
+
+    centerTitle: typeof raw.centerTitle === 'string' && raw.centerTitle.trim() ? raw.centerTitle.trim() : DEFAULT_QUEUE_LAYOUT_CONFIG.centerTitle,
+    centerSubtitle: typeof raw.centerSubtitle === 'string' && raw.centerSubtitle.trim() ? raw.centerSubtitle.trim() : DEFAULT_QUEUE_LAYOUT_CONFIG.centerSubtitle,
+    showClock: raw.showClock !== undefined ? Boolean(raw.showClock) : DEFAULT_QUEUE_LAYOUT_CONFIG.showClock,
+    clockFormat: raw.clockFormat === '24h' ? '24h' : '12h',
+    showClockSeconds: raw.showClockSeconds !== undefined ? Boolean(raw.showClockSeconds) : DEFAULT_QUEUE_LAYOUT_CONFIG.showClockSeconds,
+    showDate: raw.showDate !== undefined ? Boolean(raw.showDate) : DEFAULT_QUEUE_LAYOUT_CONFIG.showDate,
+    showAudioIndicator: raw.showAudioIndicator !== undefined ? Boolean(raw.showAudioIndicator) : DEFAULT_QUEUE_LAYOUT_CONFIG.showAudioIndicator,
   };
+}
+
+/**
+ * تحويل الأرقام إلى عربية مشرقية (١٢٣) إذا كان الخيار مفعلاً
+ */
+export function formatQueueNumber(num: number | string, format?: 'western' | 'arabic'): string {
+  if (format !== 'arabic') return String(num);
+  const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  return String(num).replace(/[0-9]/g, (w) => arabicDigits[+w]);
 }
 
 /**

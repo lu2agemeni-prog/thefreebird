@@ -9,7 +9,7 @@
 // - قابلية كاملة لتخصيص الألوان والسرعة والخط والأيقونات
 // ============================================================================
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Newspaper, BellRing, Sparkles, Activity } from 'lucide-react';
 import { QueueLayoutConfig } from '@/lib/queue-layout-config';
@@ -27,6 +27,8 @@ interface NewsItem {
 export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [isPaused, setIsPaused] = useState(false);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [measuredHalfWidth, setMeasuredHalfWidth] = useState(2400);
 
   // جلب آخر الأخبار الطبية
   useEffect(() => {
@@ -105,12 +107,12 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
     return items;
   }, [config.tickerTextSource, config.tickerCustomText, news]);
 
-  // تكرار عناصر الشريط ورا بعضها بشكل متصل ومستمر دون أي فراغات
+  // تكرار متوازن للعناصر ورا بعضها مباشرة لتغطية الشاشة مع الحفاظ على المقاس الواقعي
   const baseItemsList = useMemo(() => {
     if (tickerItems.length === 0) return [];
     const list: Array<{ id: string; text: string; type: 'news' | 'announcement' }> = [];
-    // نضمن تكرار العناصر عدة مرات متتالية ورا بعضها مباشرة
-    const repeats = Math.max(12, Math.ceil(14 / tickerItems.length));
+    const minItems = 5;
+    const repeats = Math.max(2, Math.ceil(minItems / tickerItems.length));
     for (let r = 0; r < repeats; r++) {
       tickerItems.forEach((item) => {
         list.push(item);
@@ -119,14 +121,49 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
     return list;
   }, [tickerItems]);
 
+  // قياس عرض النصف الفعلي للشريط بدقة لحساب مدة الحركة بثبات تام
+  useEffect(() => {
+    if (!trackRef.current) return;
+    const updateSize = () => {
+      if (trackRef.current) {
+        const fullWidth = trackRef.current.scrollWidth;
+        if (fullWidth > 100) {
+          setMeasuredHalfWidth(fullWidth / 2);
+        }
+      }
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(trackRef.current);
+    return () => ro.disconnect();
+  }, [baseItemsList]);
+
   if (!config.showNewsTicker) {
     return null;
   }
 
-  // مدة الحركة بالثواني - يتم ضمان قيمة كافية لحركة هادئة ومريحة للقراءة
-  const durationSec = Math.max(20, config.tickerSpeedSeconds || 75);
+  // مدة دورة شريط الأخبار بالثواني مباشرة من إعدادات المستخدم لضمان الهدوء التام والتحكم الدقيق
+  // يتم استخدام tickerSpeedSeconds مباشرة (الافتراضي 120 ثانية) بحيث يتحرك الشريط ببطء مريح جداً ومقروء
+  const configuredSeconds = Number(config.tickerSpeedSeconds) || 120;
+  const durationSec = Math.max(20, Math.min(500, configuredSeconds));
+
   const fontSize = config.tickerFontSizePx || 15;
   const isRtlMovement = config.tickerDirection === 'rtl';
+
+  const separatorChar =
+    config.tickerSeparator === 'bar'
+      ? '❙'
+      : config.tickerSeparator === 'dot'
+      ? '●'
+      : config.tickerSeparator === 'medical'
+      ? '⚕'
+      : config.tickerSeparator === 'crescent'
+      ? '🌙'
+      : config.tickerSeparator === 'sparkle'
+      ? '✨'
+      : '✦';
+
+  const badgeText = config.tickerBadgeText || 'أخبار المركز والتنبيهات';
 
   return (
     <div
@@ -138,7 +175,9 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
         fontSize: `${fontSize}px`,
       }}
       className="relative flex items-center overflow-hidden shrink-0 z-20 select-none shadow-xl"
-      onMouseEnter={() => setIsPaused(true)}
+      onMouseEnter={() => {
+        if (config.tickerPauseOnHover !== false) setIsPaused(true);
+      }}
       onMouseLeave={() => setIsPaused(false)}
     >
       <style>{`
@@ -172,13 +211,14 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
         className="h-full px-4 sm:px-5 flex items-center gap-2 font-black text-xs sm:text-sm tracking-wide shrink-0 z-10 shadow-md border-l border-white/20"
       >
         <Newspaper className="w-4 h-4 animate-bounce" />
-        <span className="hidden sm:inline">أخبار المركز والتنبيهات</span>
+        <span className="hidden sm:inline">{badgeText}</span>
         <span className="sm:hidden">الأخبار</span>
       </div>
 
       {/* مسار حركة النص المستمرة المتكررة ورا بعضها بنظام LTR لضبط إحداثيات الحركة 100% */}
       <div className="flex-1 overflow-hidden relative h-full flex items-center" dir="ltr">
         <div
+          ref={trackRef}
           style={{ fontSize: `${fontSize}px` }}
           className={`queue-marquee-track ${isPaused ? 'paused' : ''} gap-6 font-bold`}
         >
@@ -201,7 +241,9 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
                 </span>
               )}
               <span className="font-bold tracking-wide">{item.text}</span>
-              <span className="text-amber-400/90 mr-2 font-mono font-bold text-sm">✦</span>
+              <span className="text-amber-400/90 mr-2 font-mono font-bold text-sm">
+                {separatorChar}
+              </span>
             </div>
           ))}
 
@@ -224,7 +266,9 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
                 </span>
               )}
               <span className="font-bold tracking-wide">{item.text}</span>
-              <span className="text-amber-400/90 mr-2 font-mono font-bold text-sm">✦</span>
+              <span className="text-amber-400/90 mr-2 font-mono font-bold text-sm">
+                {separatorChar}
+              </span>
             </div>
           ))}
         </div>

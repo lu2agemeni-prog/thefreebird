@@ -79,15 +79,22 @@ VALUES (
     "callingTokenColor": "#ffffff",
     "fontFamily": "cairo",
     "fontWeight": "bold",
-    "tickerSpeedSeconds": 75,
+    "tickerSpeedSeconds": 120,
+    "tickerSpeedPxPerSec": 20,
     "tickerBgColor": "#090d16",
     "tickerTextColor": "#f8fafc",
     "tickerBadgeBg": "#059669",
     "tickerBadgeTextColor": "#ffffff",
+    "tickerBadgeText": "أخبار المركز والتنبيهات",
     "tickerTextSource": "both",
     "tickerCustomText": "مرحباً بكم في مركز الطائر الحر الطبي.. نتمنى لكم دوام الصحة والعافية.",
     "tickerDirection": "ltr",
-    "doctorAudioIntervalMinutes": 10
+    "tickerSeparator": "star",
+    "tickerPauseOnHover": true,
+    "sideStackOrder": "call_clinics_queue",
+    "doctorAudioIntervalMinutes": 10,
+    "patientCallNoticeDurationSec": 8,
+    "slideDefaultDurationSec": 10
   }'::jsonb
 )
 ON CONFLICT (key) DO UPDATE
