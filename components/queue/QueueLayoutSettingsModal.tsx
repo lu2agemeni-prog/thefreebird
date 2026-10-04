@@ -30,6 +30,11 @@ import {
   Check,
   AlertCircle,
   Loader2,
+  Volume2,
+  VolumeX,
+  Stethoscope,
+  Clock,
+  Image as ImageIcon,
 } from 'lucide-react';
 import {
   QueueLayoutConfig,
@@ -50,7 +55,7 @@ interface QueueLayoutSettingsModalProps {
   saveSuccess: boolean;
 }
 
-type TabKey = 'visibility' | 'dimensions' | 'layout' | 'colors' | 'typography' | 'ticker';
+type TabKey = 'visibility' | 'dimensions' | 'layout' | 'audio_announcements' | 'colors' | 'typography' | 'ticker';
 
 export function QueueLayoutSettingsModal({
   isOpen,
@@ -143,6 +148,12 @@ export function QueueLayoutSettingsModal({
             onClick={() => setActiveTab('layout')}
             icon={<Move className="w-4 h-4" />}
             label="المكان والترتيب"
+          />
+          <TabButton
+            active={activeTab === 'audio_announcements'}
+            onClick={() => setActiveTab('audio_announcements')}
+            icon={<Volume2 className="w-4 h-4 text-emerald-400" />}
+            label="صوت الأطباء وتكراره (جديد)"
           />
           <TabButton
             active={activeTab === 'colors'}
@@ -377,6 +388,111 @@ export function QueueLayoutSettingsModal({
                   </div>
                 </div>
               </div>
+
+              {/* تكبير صورة الطبيب في إعلان التواجد */}
+              <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-5 space-y-4">
+                <div className="flex justify-between items-center text-sm font-bold">
+                  <div className="flex items-center gap-2">
+                    <ImageIcon className="w-5 h-5 text-emerald-400" />
+                    <span className="text-white">حجم وتكبير صورة الطبيب في الإعلان</span>
+                  </div>
+                  <span className="text-emerald-400 font-mono text-base bg-emerald-950/80 border border-emerald-500/40 px-3 py-1 rounded-xl">
+                    {config.doctorPhotoSizePx || 280}px
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={180}
+                  max={460}
+                  step={10}
+                  value={config.doctorPhotoSizePx || 280}
+                  onChange={(e) => updateConfig({ doctorPhotoSizePx: Number(e.target.value) })}
+                  className="w-full accent-emerald-500 cursor-pointer h-2 bg-slate-700 rounded-lg"
+                />
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  {[
+                    { label: 'عادي (220px)', size: 220 },
+                    { label: 'كبير (280px)', size: 280 },
+                    { label: 'كبير جداً (360px)', size: 360 },
+                    { label: 'عملاق (440px)', size: 440 },
+                  ].map((preset) => (
+                    <button
+                      key={preset.size}
+                      type="button"
+                      onClick={() => updateConfig({ doctorPhotoSizePx: preset.size })}
+                      className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        config.doctorPhotoSizePx === preset.size
+                          ? 'bg-emerald-600 text-white shadow-md'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-slate-700/60 text-xs">
+                  <span className="text-slate-400">طريقة عرض إعلان الطبيب:</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => updateConfig({ doctorCardLayout: 'side_by_side' })}
+                      className={`px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer ${
+                        config.doctorCardLayout === 'side_by_side'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-700 text-slate-300'
+                      }`}
+                    >
+                      بجانب بعض (أفقي)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateConfig({ doctorCardLayout: 'stacked' })}
+                      className={`px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer ${
+                        config.doctorCardLayout === 'stacked'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-700 text-slate-300'
+                      }`}
+                    >
+                      صورة بارزة بالوسط (رأسي)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ارتفاع الهيدر وحجم خط بطاقات الأطباء */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-4 space-y-3">
+                  <div className="flex justify-between text-xs font-bold">
+                    <span>ارتفاع شريط الترويسة العلوي (الهيدر)</span>
+                    <span className="text-emerald-400 font-mono">{config.headerHeightPx || 66}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={50}
+                    max={90}
+                    step={2}
+                    value={config.headerHeightPx || 66}
+                    onChange={(e) => updateConfig({ headerHeightPx: Number(e.target.value) })}
+                    className="w-full accent-emerald-500 cursor-pointer h-2 bg-slate-700 rounded-lg"
+                  />
+                </div>
+
+                <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-4 space-y-3">
+                  <div className="flex justify-between text-xs font-bold">
+                    <span>حجم خط بطاقات الأطباء والعيادات</span>
+                    <span className="text-emerald-400 font-mono">{config.clinicsFontSizePx || 14}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={12}
+                    max={20}
+                    step={1}
+                    value={config.clinicsFontSizePx || 14}
+                    onChange={(e) => updateConfig({ clinicsFontSizePx: Number(e.target.value) })}
+                    className="w-full accent-emerald-500 cursor-pointer h-2 bg-slate-700 rounded-lg"
+                  />
+                </div>
+              </div>
             </div>
           )}
 
@@ -497,6 +613,78 @@ export function QueueLayoutSettingsModal({
                     <div className="font-bold text-sm">النداء وقائمة الانتظار بالأعلى ⬆</div>
                     <div className="text-xs text-slate-400 mt-1">والميديا والعيادات بالأسفل ⬇</div>
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* تبويب الصوت وإعلانات الأطباء (جديد لمنع الإزعاج) */}
+          {activeTab === 'audio_announcements' && (
+            <div className="space-y-6">
+              <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-4 text-xs text-emerald-200 flex items-center gap-3">
+                <Volume2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                <span>
+                  تحكم ذكي في فترات تشغيل الإعلان الصوتي للأطباء: لمنع إزعاج المرضى والعملاء في صالة الانتظار، يتم تشغيل النداء الصوتي لتواجد جميع الأطباء مرة واحدة فقط، ثم ينتظر النظام المدة التي تختارها قبل تكراره.
+                </span>
+              </div>
+
+              {/* اختيار الفاصل الزمني بالدقائق */}
+              <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-5 space-y-4">
+                <div className="flex justify-between items-center text-sm font-bold">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-emerald-400" />
+                    <span className="text-white">الفترة بين الإعلانات الصوتية لتواجد الأطباء</span>
+                  </div>
+                  <span className="text-emerald-400 font-mono text-xs sm:text-sm bg-emerald-950/80 border border-emerald-500/40 px-3 py-1 rounded-xl">
+                    {config.doctorAudioIntervalMinutes === -1
+                      ? 'صوت الأطباء مكتوم'
+                      : config.doctorAudioIntervalMinutes === 0
+                      ? 'مستمر مع كل دورة'
+                      : `كل ${config.doctorAudioIntervalMinutes} دقائق`}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+                  {[
+                    { minutes: 5, label: 'كل 5 دقائق', desc: 'تكرار صوتي خفيف' },
+                    { minutes: 10, label: 'كل 10 دقائق (موصى به)', desc: 'توازن مثالي بين الإعلان والهدوء' },
+                    { minutes: 15, label: 'كل 15 دقيقة', desc: 'هدوء أكبر للمرضى' },
+                    { minutes: 20, label: 'كل 20 دقيقة', desc: 'فترات هدوء طويلة' },
+                    { minutes: 30, label: 'كل 30 دقيقة', desc: 'إعلان مريح ونادر جداً' },
+                    { minutes: 0, label: 'مع كل دورة (دائم)', desc: 'يعمل مع كل ظهور للطبيب' },
+                    { minutes: -1, label: 'كتم صوت الأطباء', desc: 'صامت تماماً (نداء المرضى فقط يعمل)' },
+                  ].map((opt) => {
+                    const isSelected = config.doctorAudioIntervalMinutes === opt.minutes;
+                    return (
+                      <button
+                        key={opt.minutes}
+                        type="button"
+                        onClick={() => updateConfig({ doctorAudioIntervalMinutes: opt.minutes })}
+                        className={`p-4 rounded-2xl border text-right transition-all cursor-pointer ${
+                          isSelected
+                            ? 'border-emerald-500 bg-emerald-950/50 text-white ring-2 ring-emerald-500/30'
+                            : 'border-slate-700 bg-slate-850 hover:bg-slate-800 text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs sm:text-sm text-white">{opt.label}</span>
+                          {isSelected && <Check className="w-4 h-4 text-emerald-400" />}
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1">{opt.desc}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ملاحظة تأكيدية حول نداء المرضى */}
+              <div className="bg-slate-850 border border-slate-700/80 rounded-2xl p-4 flex items-start gap-3 text-xs text-slate-300">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <span className="font-bold text-white block">ملاحظة أولوية نداء المرضى:</span>
+                  <p className="text-slate-400 leading-relaxed">
+                    الإعداد أعلاه خاص فقط بالمقاطع الصوتية لإعلانات الأطباء. أما نداء استدعاء المريض للعيادة (الدور ورقم الكشف) فإنه يمتلك **أولوية مطلقة دائماً** ويقوم بإيقاف أي إعلان فوراً مع تشغيل نغمة النداء وشاشة المريض الكبيرة.
+                  </p>
                 </div>
               </div>
             </div>
@@ -741,27 +929,59 @@ export function QueueLayoutSettingsModal({
                 </div>
               )}
 
-              {/* سرعة حركة الشريط */}
+              {/* سرعة حركة الشريط وحجم الخط */}
               <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-5 space-y-4">
                 <div className="flex justify-between items-center text-sm font-bold">
-                  <span className="text-white">سرعة حركة النص بالشريط</span>
+                  <span className="text-white">سرعة حركة النص بالشريط (كلما زادت الثواني كلما تحرك الشريط ببطء وهدوء)</span>
                   <span className="text-emerald-400 font-mono text-base bg-emerald-950/80 border border-emerald-500/40 px-3 py-1 rounded-xl">
-                    دورة كل {config.tickerSpeedSeconds} ثانية
+                    {config.tickerSpeedSeconds} ثانية
                   </span>
                 </div>
                 <input
                   type="range"
-                  min={12}
-                  max={60}
-                  step={2}
+                  min={20}
+                  max={200}
+                  step={5}
                   value={config.tickerSpeedSeconds}
                   onChange={(e) => updateConfig({ tickerSpeedSeconds: Number(e.target.value) })}
                   className="w-full accent-emerald-500 cursor-pointer h-2 bg-slate-700 rounded-lg"
                 />
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>سريع (12 ثانية)</span>
-                  <span>متوسط (28 ثانية)</span>
-                  <span>هادئ وبطيء (60 ثانية)</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  {[
+                    { label: 'بطيء وهادئ جداً (140s)', sec: 140 },
+                    { label: 'بطيء ومريح (90s)', sec: 90 },
+                    { label: 'متزن قياسي (65s)', sec: 65 },
+                    { label: 'سريع (35s)', sec: 35 },
+                  ].map((p) => (
+                    <button
+                      key={p.sec}
+                      type="button"
+                      onClick={() => updateConfig({ tickerSpeedSeconds: p.sec })}
+                      className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        config.tickerSpeedSeconds === p.sec
+                          ? 'bg-emerald-600 text-white shadow-md'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="pt-3 border-t border-slate-700/70 space-y-2">
+                  <div className="flex justify-between items-center text-xs font-bold">
+                    <span className="text-slate-300">حجم خط نصوص شريط الأخبار</span>
+                    <span className="text-emerald-400 font-mono text-sm">{config.tickerFontSizePx || 15}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={12}
+                    max={22}
+                    step={1}
+                    value={config.tickerFontSizePx || 15}
+                    onChange={(e) => updateConfig({ tickerFontSizePx: Number(e.target.value) })}
+                    className="w-full accent-emerald-500 cursor-pointer h-2 bg-slate-700 rounded-lg"
+                  />
                 </div>
               </div>
 

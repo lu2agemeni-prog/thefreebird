@@ -109,7 +109,9 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
     return null;
   }
 
-  const durationSec = Math.max(12, config.tickerSpeedSeconds || 28);
+  // مدة الحركة بالثواني - يتم ضمان قيمة كافية لحركة هادئة ومريحة للقراءة
+  const durationSec = Math.max(20, config.tickerSpeedSeconds || 75);
+  const fontSize = config.tickerFontSizePx || 15;
 
   return (
     <div
@@ -118,25 +120,27 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
         backgroundColor: config.tickerBgColor,
         color: config.tickerTextColor,
         borderTop: `1px solid ${config.cardBorderColor || '#334155'}`,
+        fontSize: `${fontSize}px`,
       }}
       className="relative flex items-center overflow-hidden shrink-0 z-20 select-none shadow-xl"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
       <style>{`
-        @keyframes ticker-marquee-rtl {
+        @keyframes ticker-marquee-seamless {
           0% {
-            transform: translateX(-100%);
+            transform: translateX(-50%);
           }
           100% {
-            transform: translateX(100%);
+            transform: translateX(0%);
           }
         }
         .queue-marquee-track {
           display: inline-flex;
           align-items: center;
           white-space: nowrap;
-          animation: ticker-marquee-rtl ${durationSec}s linear infinite;
+          animation: ticker-marquee-seamless ${durationSec}s linear infinite;
+          will-change: transform;
         }
         .queue-marquee-track.paused {
           animation-play-state: paused;
@@ -158,7 +162,10 @@ export function QueueNewsTicker({ config }: QueueNewsTickerProps) {
 
       {/* مسار حركة النص المستمرة */}
       <div className="flex-1 overflow-hidden relative h-full flex items-center">
-        <div className={`queue-marquee-track ${isPaused ? 'paused' : ''} gap-10 px-6 font-medium text-xs sm:text-sm`}>
+        <div
+          style={{ fontSize: `${fontSize}px` }}
+          className={`queue-marquee-track ${isPaused ? 'paused' : ''} gap-10 px-6 font-bold`}
+        >
           {tickerItems.map((item, idx) => (
             <div key={`${item.id}-${idx}`} className="inline-flex items-center gap-2.5 shrink-0">
               {item.type === 'announcement' ? (

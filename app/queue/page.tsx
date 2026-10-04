@@ -103,6 +103,10 @@ export default function QueueDisplay() {
   const soundEnabledRef = useRef(false);
   const muteDoctorAudioRef = useRef(false);
 
+  // تتبع فترات الإعلان الصوتي لتواجد الأطباء لمنع الإزعاج الصوتي المتكرر
+  const lastDoctorAudioRoundFinishedAtRef = useRef<number>(0);
+  const doctorsAnnouncedInActiveRoundRef = useRef<Set<string>>(new Set());
+
   // مراجع نداء المريض
   const lastAnnouncedIdRef = useRef<string | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -430,18 +434,60 @@ export default function QueueDisplay() {
     mediaCache.stopAllAudio();
     const pauseT = setTimeout(() => setIsAudioPlaying(false), 0);
 
-    // إذا لم يكن هناك نداء مريض وكان المقطع الصوتي متاحاً ولم يتم كتمه
-    if (
-      !dropNotice &&
-      currentSlide.type === 'doctor' &&
-      currentSlide.audioUrl &&
-      !muteDoctorAudioRef.current
-    ) {
+    // فحص إمكانية تشغيل الإعلان الصوتي لتواجد الطبيب وفقاً للمهلة الزمنية المحددة في الإعدادات
+    const shouldPlayDoctorVoice = () => {
+      if (dropNotice || muteDoctorAudioRef.current) return false;
+      if (currentSlide.type !== 'doctor' || !currentSlide.audioUrl) return false;
+
+      const intervalMinutes = config.doctorAudioIntervalMinutes;
+      // إذا كان الصوت مكتوماً (-1)
+      if (intervalMinutes === -1) return false;
+      // إذا كان مضبوطاً على التشغيل مع كل دورة (0)
+      if (intervalMinutes === 0) return true;
+
+      const now = Date.now();
+      const elapsedMinutes = (now - lastDoctorAudioRoundFinishedAtRef.current) / (60 * 1000);
+
+      // هل توجد دورة إعلانات أطباء نشطة حالياً؟
+      const isRoundActive = doctorsAnnouncedInActiveRoundRef.current.size > 0;
+
+      if (!isRoundActive) {
+        // لبدء دورة جديدة: إما أنها أول مرة من فتح الشاشة (0) أو انقضت الفترة المحددة بالدقائق
+        if (lastDoctorAudioRoundFinishedAtRef.current !== 0 && elapsedMinutes < intervalMinutes) {
+          return false; // ما زلنا في فترة الهدوء والراحة بين الإعلانات
+        }
+      }
+
+      // إذا كان هذا الطبيب قد تم الإعلان عنه صوتياً بالفعل في هذه الدورة
+      if (doctorsAnnouncedInActiveRoundRef.current.has(currentSlide.doctorId)) {
+        return false;
+      }
+
+      return true;
+    };
+
+    if (shouldPlayDoctorVoice() && currentSlide.type === 'doctor' && currentSlide.audioUrl) {
       const res = mediaCache.playDoctorAudio(currentSlide.audioUrl, () => {
         setIsAudioPlaying(false);
       });
       if (res.isPlaying) {
         setIsAudioPlaying(true);
+        // تسجيل أن هذا الطبيب تم الإعلان عنه في هذه الدورة
+        doctorsAnnouncedInActiveRoundRef.current.add(currentSlide.doctorId);
+
+        // فحص اكتمال الإعلان الصوتي لجميع الأطباء المتواجدين الذين لديهم مقاطع صوتية
+        const doctorsWithAudio = presentDoctorsList.filter((d) => d.audioUrl);
+        const allCompleted =
+          doctorsWithAudio.length > 0 &&
+          doctorsWithAudio.every((d) =>
+            doctorsAnnouncedInActiveRoundRef.current.has(d.profile_id)
+          );
+
+        if (allCompleted || doctorsAnnouncedInActiveRoundRef.current.size >= doctorsWithAudio.length) {
+          // اكتملت الدورة بالكامل! بدء مؤقت فترة الهدوء (5 أو 10 دقائق أو غيرها)
+          lastDoctorAudioRoundFinishedAtRef.current = Date.now();
+          doctorsAnnouncedInActiveRoundRef.current.clear();
+        }
       }
     }
 
@@ -715,6 +761,7 @@ export default function QueueDisplay() {
             style={{
               backgroundColor: config.panelBgColor,
               borderColor: config.cardBorderColor,
+              minHeight: `${config.headerHeightPx || 66}px`,
             }}
             className="px-6 sm:px-8 py-2.5 flex justify-between items-center shadow-lg border-b shrink-0 z-10"
           >
@@ -908,9 +955,23 @@ export default function QueueDisplay() {
             </div>
 
             {/* صورة الطبيب والمعلومات في المنتصف */}
-            <div className="flex flex-col md:flex-row items-center justify-center gap-6 sm:gap-10 my-auto z-10 w-full max-w-2xl">
-              {/* برواز صورة الطبيب */}
-              <div className="relative shrink-0">
+            <div
+              className={`flex ${
+                config.doctorCardLayout === 'stacked'
+                  ? 'flex-col items-center text-center'
+                  : 'flex-col md:flex-row items-center justify-center'
+              } gap-6 sm:gap-10 my-auto z-10 w-full max-w-4xl`}
+            >
+              {/* برواز صورة الطبيب بالمقاس المكبر والقابل للتحكم */}
+              <div
+                style={{
+                  width: `${config.doctorPhotoSizePx || 280}px`,
+                  height: `${config.doctorPhotoSizePx || 280}px`,
+                  maxWidth: '85vw',
+                  maxHeight: '48vh',
+                }}
+                className="relative shrink-0 rounded-3xl overflow-hidden shadow-2xl transition-all duration-300"
+              >
                 <div
                   style={{
                     background: `linear-gradient(135deg, ${config.accentColor}, #0284c7)`,
@@ -922,13 +983,13 @@ export default function QueueDisplay() {
                   <img
                     src={currentSlide.photoUrl}
                     alt={currentSlide.doctorName}
-                    className="relative w-44 h-44 sm:w-56 sm:h-56 rounded-2xl object-cover border-2 shadow-2xl"
-                    style={{ borderColor: `${config.accentColor}80` }}
+                    className="relative w-full h-full rounded-3xl object-cover border-4 shadow-2xl transition-all duration-300"
+                    style={{ borderColor: `${config.accentColor}90` }}
                   />
                 ) : (
-                  <div className="relative w-44 h-44 sm:w-56 sm:h-56 rounded-2xl bg-slate-800 border-2 border-slate-700 flex flex-col items-center justify-center text-slate-500 shadow-2xl">
-                    <Stethoscope className="w-16 h-16 text-emerald-400 mb-2" />
-                    <span className="text-xs font-bold">صورة الطبيب</span>
+                  <div className="relative w-full h-full rounded-3xl bg-slate-800 border-4 border-slate-700 flex flex-col items-center justify-center text-slate-500 shadow-2xl">
+                    <Stethoscope className="w-20 h-20 text-emerald-400 mb-3" />
+                    <span className="text-sm font-bold">صورة الطبيب</span>
                   </div>
                 )}
               </div>
@@ -1116,7 +1177,10 @@ export default function QueueDisplay() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <h4 className="font-bold text-xs sm:text-sm truncate" style={{ color: config.textColor }}>
+                      <h4
+                        className="font-bold truncate"
+                        style={{ color: config.textColor, fontSize: `${config.clinicsFontSizePx || 14}px` }}
+                      >
                         {doc.doctorName}
                       </h4>
                       {isCurrentInSlide && (

@@ -32,11 +32,18 @@ export interface QueueLayoutConfig {
   mediaWidthPct: number;         // نسبة عرض قسم الميديا في القسم الرئيسي (30 - 80%)
   bottomHeightPct: number;       // نسبة ارتفاع القسم السفلي من الشاشة (15 - 50%)
   tickerHeightPx: number;        // ارتفاع شريط الأخبار بالأسفل بالبكسل (36 - 65px)
+  tickerFontSizePx: number;      // حجم خط شريط الأخبار بالبكسل (12 - 22px)
   zoom: number;                  // زووم عام للنصوص والعناصر (0.8 - 1.4)
   waitingListColumns: 1 | 2 | 3; // عدد أعمدة قائمة الانتظار
   clinicsGridColumns: 1 | 2 | 3; // عدد أعمدة كروت الأطباء المتواجدين
+  clinicsFontSizePx: number;     // حجم خط بطاقات الأطباء والعيادات بالبكسل (12 - 20px)
   tokenFontSize: number;         // حجم خط رقم النداء بالبكسل (48 - 110px)
   cardDensity: CardDensity;      // كثافة وحجم الكروت
+  headerHeightPx: number;        // ارتفاع شريط الترويسة العلوي بالبكسل (50 - 90px)
+
+  // 2.1 مقاسات إعلان الطبيب المتواجد
+  doctorPhotoSizePx: number;     // حجم صورة الطبيب في الإعلان بالبكسل (180 - 480px)
+  doctorCardLayout: 'side_by_side' | 'stacked'; // طريقة عرض صورة الطبيب وبياناته
 
   // 3. الأماكن والترتيب في الشاشة
   mediaPosition: SectionPosition; // مكان الميديا في القسم الرئيسي (يمين أو يسار)
@@ -60,13 +67,16 @@ export interface QueueLayoutConfig {
   fontWeight: 'bold' | 'black';
 
   // 6. شريط الأخبار بالأسفل (جديد)
-  tickerSpeedSeconds: number;    // سرعة دوران شريط الأخبار بالثواني (15 - 60s)
+  tickerSpeedSeconds: number;    // سرعة دوران شريط الأخبار بالثواني (20 - 240s)
   tickerBgColor: string;         // خلفية شريط الأخبار
   tickerTextColor: string;       // لون نص شريط الأخبار
   tickerBadgeBg: string;         // خلفية شارة "أخبار المركز"
   tickerBadgeTextColor: string;  // لون نص شارة "أخبار المركز"
   tickerTextSource: 'medical_news' | 'custom' | 'both'; // مصدر الأخبار
   tickerCustomText: string;      // نص إعلاني إرشادي مخصص
+
+  // 7. إدارة الإعلانات الصوتية لتواجد الأطباء (جديد لمنع إزعاج العملاء)
+  doctorAudioIntervalMinutes: number; // الفترة الزمنية بين الإعلانات الصوتية لتواجد الأطباء بالدقائق (5, 10, 15, 20, 30 دقيقة، 0 للتكرار الدائم، -1 لكتم صوت الأطباء)
 }
 
 export const SETTINGS_KEY = 'queue_screen_layout_config';
@@ -183,11 +193,17 @@ export const DEFAULT_QUEUE_LAYOUT_CONFIG: QueueLayoutConfig = {
   mediaWidthPct: 56,
   bottomHeightPct: 32,
   tickerHeightPx: 46,
+  tickerFontSizePx: 15,
   zoom: 1,
   waitingListColumns: 2,
   clinicsGridColumns: 2,
+  clinicsFontSizePx: 14,
   tokenFontSize: 76,
   cardDensity: 'normal',
+  headerHeightPx: 66,
+
+  doctorPhotoSizePx: 280,
+  doctorCardLayout: 'side_by_side',
 
   mediaPosition: 'right', // الميديا على اليمين وشبكة الأطباء على اليسار
   bottomOrder: 'call_right_queue_left', // كارت النداء على اليمين وقائمة الانتظار على اليسار
@@ -207,13 +223,15 @@ export const DEFAULT_QUEUE_LAYOUT_CONFIG: QueueLayoutConfig = {
   fontFamily: 'cairo',
   fontWeight: 'bold',
 
-  tickerSpeedSeconds: 28,
+  tickerSpeedSeconds: 75, // سرعة هادئة ومريحة ومقروءة جداً لشريط الأخبار
   tickerBgColor: '#090d16',
   tickerTextColor: '#f8fafc',
   tickerBadgeBg: '#059669',
   tickerBadgeTextColor: '#ffffff',
   tickerTextSource: 'both',
   tickerCustomText: 'مرحباً بكم في مركز الطائر الحر الطبي.. نتمنى لكم دوام الصحة والعافية.',
+
+  doctorAudioIntervalMinutes: 10, // تشغيل الإعلان الصوتي لتواجد الأطباء مرة واحدة كل 10 دقائق لتجنب الإزعاج
 };
 
 /**
@@ -235,11 +253,17 @@ export function sanitizeLayoutConfig(raw: any): QueueLayoutConfig {
     mediaWidthPct: Math.min(80, Math.max(20, Number(raw.mediaWidthPct) || DEFAULT_QUEUE_LAYOUT_CONFIG.mediaWidthPct)),
     bottomHeightPct: Math.min(55, Math.max(15, Number(raw.bottomHeightPct) || DEFAULT_QUEUE_LAYOUT_CONFIG.bottomHeightPct)),
     tickerHeightPx: Math.min(75, Math.max(34, Number(raw.tickerHeightPx) || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerHeightPx)),
+    tickerFontSizePx: Math.min(24, Math.max(12, Number(raw.tickerFontSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerFontSizePx)),
     zoom: Math.min(1.5, Math.max(0.7, Number(raw.zoom) || DEFAULT_QUEUE_LAYOUT_CONFIG.zoom)),
     waitingListColumns: [1, 2, 3].includes(raw.waitingListColumns) ? raw.waitingListColumns : DEFAULT_QUEUE_LAYOUT_CONFIG.waitingListColumns,
     clinicsGridColumns: [1, 2, 3].includes(raw.clinicsGridColumns) ? raw.clinicsGridColumns : DEFAULT_QUEUE_LAYOUT_CONFIG.clinicsGridColumns,
+    clinicsFontSizePx: Math.min(22, Math.max(11, Number(raw.clinicsFontSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.clinicsFontSizePx)),
     tokenFontSize: Math.min(120, Math.max(40, Number(raw.tokenFontSize) || DEFAULT_QUEUE_LAYOUT_CONFIG.tokenFontSize)),
     cardDensity: ['compact', 'normal', 'spacious'].includes(raw.cardDensity) ? raw.cardDensity : DEFAULT_QUEUE_LAYOUT_CONFIG.cardDensity,
+    headerHeightPx: Math.min(95, Math.max(45, Number(raw.headerHeightPx) || DEFAULT_QUEUE_LAYOUT_CONFIG.headerHeightPx)),
+
+    doctorPhotoSizePx: Math.min(500, Math.max(160, Number(raw.doctorPhotoSizePx) || DEFAULT_QUEUE_LAYOUT_CONFIG.doctorPhotoSizePx)),
+    doctorCardLayout: raw.doctorCardLayout === 'stacked' ? 'stacked' : 'side_by_side',
 
     mediaPosition: raw.mediaPosition === 'left' ? 'left' : 'right',
     bottomOrder: ['call_right_queue_left', 'call_left_queue_right', 'call_center'].includes(raw.bottomOrder) ? raw.bottomOrder : DEFAULT_QUEUE_LAYOUT_CONFIG.bottomOrder,
@@ -259,13 +283,17 @@ export function sanitizeLayoutConfig(raw: any): QueueLayoutConfig {
     fontFamily: ['cairo', 'tajawal', 'almarai', 'system'].includes(raw.fontFamily) ? raw.fontFamily : DEFAULT_QUEUE_LAYOUT_CONFIG.fontFamily,
     fontWeight: raw.fontWeight === 'black' ? 'black' : 'bold',
 
-    tickerSpeedSeconds: Math.min(80, Math.max(10, Number(raw.tickerSpeedSeconds) || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerSpeedSeconds)),
+    tickerSpeedSeconds: Math.min(240, Math.max(20, Number(raw.tickerSpeedSeconds) || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerSpeedSeconds)),
     tickerBgColor: raw.tickerBgColor || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerBgColor,
     tickerTextColor: raw.tickerTextColor || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerTextColor,
     tickerBadgeBg: raw.tickerBadgeBg || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerBadgeBg,
     tickerBadgeTextColor: raw.tickerBadgeTextColor || DEFAULT_QUEUE_LAYOUT_CONFIG.tickerBadgeTextColor,
     tickerTextSource: ['medical_news', 'custom', 'both'].includes(raw.tickerTextSource) ? raw.tickerTextSource : DEFAULT_QUEUE_LAYOUT_CONFIG.tickerTextSource,
     tickerCustomText: typeof raw.tickerCustomText === 'string' ? raw.tickerCustomText : DEFAULT_QUEUE_LAYOUT_CONFIG.tickerCustomText,
+
+    doctorAudioIntervalMinutes: Number.isFinite(Number(raw.doctorAudioIntervalMinutes))
+      ? Number(raw.doctorAudioIntervalMinutes)
+      : DEFAULT_QUEUE_LAYOUT_CONFIG.doctorAudioIntervalMinutes,
   };
 }
 
