@@ -3,11 +3,17 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
-import { User, Save, Loader2, CheckCircle2, CalendarDays } from 'lucide-react';
+import { User, Save, Loader2, CheckCircle2, CalendarDays, Sparkles, Clock } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { WEEK_DAYS, workingDaysLabel } from '@/lib/types';
 import { AccountDangerZone } from '@/components/AccountDangerZone';
+import {
+  parseDoctorMediaMeta,
+  saveDoctorUnifiedProfileAndSchedule,
+  calculateDoctorPresence,
+  formatDoctorScheduleSummary,
+} from '@/lib/doctor-schedules';
 
 export function DoctorProfile() {
   const { user } = useAuth();
@@ -17,6 +23,7 @@ export function DoctorProfile() {
   const [bio, setBio] = useState('');
   const [specialty, setSpecialty] = useState('');
   const [workingDays, setWorkingDays] = useState<number[]>([]);
+  const [doctorRecord, setDoctorRecord] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -36,25 +43,21 @@ export function DoctorProfile() {
   async function fetchDoctorDetails() {
     setLoadError(null);
     setLoading(true);
-    const { data, error } = await supabase.from('doctors').select('*').eq('profile_id', user?.id).single();
+    const { data, error } = await supabase.from('doctors').select('*').eq('profile_id', user?.id).maybeSingle();
 
     if (error) {
-      // PGRST116: لا يوجد صف أطباء لهذا الحساب بعد — نموذج فارغ قابل للحفظ (إدراج لاحق)
-      if (error.code === 'PGRST116') {
-        setLoadError(null);
-      } else {
-        setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل بياناتك كطبيب.'));
-      }
+      setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل بياناتك كطبيب.'));
     } else if (data) {
-      setBio(data.bio || '');
+      setDoctorRecord(data);
+      const meta = parseDoctorMediaMeta(data.bio, data.working_days);
+      setBio(meta.bio_text || '');
       setSpecialty(data.specialty || '');
-      // working_days: jsonb array مثل [6,0,2] (نظام JS: 0=الأحد … 6=السبت)
       const days = Array.isArray(data.working_days) ? data.working_days.filter((d: unknown) => typeof d === 'number') : [];
       setWorkingDays(days);
       setDoctorExists(true);
     }
     setLoading(false);
-  };
+  }
 
   const toggleDay = (day: number) => {
     setWorkingDays(prev => (prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort((a, b) => a - b)));
@@ -70,45 +73,43 @@ export function DoctorProfile() {
     setSaveError(null);
     setSuccessMsg(null);
 
-    // Update profiles
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        phone: phone.trim(),
-      })
-      .eq('id', user?.id);
+    try {
+      // Update profiles
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          phone: phone.trim(),
+        })
+        .eq('id', user?.id);
 
-    // Update doctors (specialty/bio/working_days)
-    const doctorRow = {
-      bio: bio,
-      specialty: specialty.trim(),
-      working_days: workingDays,
-    };
-    let doctorError: any = null;
-    if (doctorExists) {
-      const res = await supabase
-        .from('doctors')
-        .update(doctorRow)
-        .eq('profile_id', user?.id);
-      doctorError = res.error;
-    } else {
-      const res = await supabase
-        .from('doctors')
-        .insert([{ profile_id: user?.id, clinic_id: null, ...doctorRow }]);
-      doctorError = res.error;
-    }
+      if (profileError) throw profileError;
 
-    setSaving(false);
-    if (!profileError && !doctorError) {
-      setSuccessMsg('تم تحديث البيانات الشخصية بنجاح.');
+      // Update doctors via unified single source of truth
+      const res = await saveDoctorUnifiedProfileAndSchedule(supabase, user!.id, {
+        specialty: specialty.trim(),
+        bioText: bio.trim(),
+        workingDays,
+      });
+
+      if (!res.success) {
+        throw new Error(res.error || 'تعذر تحديث ملف ومواعيد الطبيب.');
+      }
+
+      setSuccessMsg('تم تحديث البيانات الشخصية والمواعيد بنجاح ومزامنة التواجد في كافة الشاشات.');
       setDoctorExists(true);
-    } else {
-      const err = profileError || doctorError;
+      fetchDoctorDetails();
+    } catch (err: any) {
       setSaveError(getFriendlyErrorMessage(err, 'حدث خطأ أثناء حفظ البيانات.'));
+    } finally {
+      setSaving(false);
     }
   };
+
+  const presence = calculateDoctorPresence(doctorRecord || { is_present: false, bio: null, working_days: workingDays });
+  const meta = parseDoctorMediaMeta(doctorRecord?.bio, doctorRecord?.working_days || workingDays);
+  const scheduleSummary = formatDoctorScheduleSummary(meta.schedules, doctorRecord?.working_days || workingDays);
 
   if (loading) {
     return <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>;
@@ -119,9 +120,39 @@ export function DoctorProfile() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div className="flex items-center gap-3 mb-6">
-        <User className="w-8 h-8 text-emerald-600" />
-        <h2 className="text-3xl font-bold text-gray-800">الملف الشخصي والطبي</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          <User className="w-8 h-8 text-emerald-600" />
+          <h2 className="text-3xl font-bold text-gray-800">الملف الشخصي والطبي</h2>
+        </div>
+
+        {/* حالة التواجد الحية في شاشات المركز */}
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black shadow-xs ${
+              presence.isPresent
+                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                : 'bg-gray-100 text-gray-600 border border-gray-200'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                presence.isPresent ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'
+              }`}
+            />
+            {presence.isPresent ? 'متواجد الآن بالشاشات' : 'غير متواجد حالياً'}
+          </span>
+        </div>
+      </div>
+
+      {/* تنبيه حالة التواجد ومصدر الحقيقة الموحد */}
+      <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50/40 border border-emerald-200 rounded-xl p-3.5 text-xs text-emerald-950 flex items-start gap-2.5 shadow-xs">
+        <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+        <div className="space-y-0.5">
+          <div className="font-black text-emerald-900">مصدر الحقيقة الموحد لشاشات النداء الآلي وجداول الأطباء:</div>
+          <div className="text-emerald-800">{presence.reasonText}</div>
+          <div className="text-[11px] text-emerald-700 font-bold">جدول المواعيد المعتمد: {scheduleSummary}</div>
+        </div>
       </div>
 
       <Card>

@@ -31,13 +31,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
   Activity, Loader2, Users, Volume2, ChevronLeft,
   Hash, Stethoscope, UserCheck, CheckCircle2, ListChecks, Clock, Sparkles, Search, X, RotateCcw,
-  Zap, UserPlus, Plus,
+  Zap, UserPlus, Plus, BellRing,
 } from 'lucide-react';
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { AddVisitModal } from './AddVisitModal';
 import { QuickTokenModal } from './QuickTokenModal';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
+import { broadcastPatientCall, repeatPatientCall } from '@/lib/queue-broadcast';
+import { toggleDoctorPresenceUnified, calculateDoctorPresence } from '@/lib/doctor-schedules';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -60,6 +62,7 @@ export function SecretaryCallQueue() {
   const [presenceBusy, setPresenceBusy] = useState<string | null>(null);
   const [secretaryAlert, setSecretaryAlert] = useState<string | null>(null);
   const [addedToast, setAddedToast] = useState<string | null>(null);
+  const [repeatingCallId, setRepeatingCallId] = useState<string | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
   const [pickSearch, setPickSearch] = useState('');
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
@@ -139,7 +142,7 @@ export function SecretaryCallQueue() {
   const fetchDoctorsOnly = async () => {
     const { data, error } = await supabase
       .from('doctors')
-      .select('profile_id, clinic_id, is_present, specialty, profiles(first_name, last_name)');
+      .select('profile_id, clinic_id, is_present, specialty, bio, working_days, profiles(first_name, last_name)');
     if (!error && data) {
       setDoctors(data);
     }
@@ -198,14 +201,73 @@ export function SecretaryCallQueue() {
   };
 
   const announceAndRefresh = async (data: any) => {
+    let token = 0;
+    let clinicName = selectedClinic?.name || 'العيادة';
+    let audioNum = selectedClinic?.audio_number;
+    let qId = '';
+    let pName = '';
+
     if (Array.isArray(data)) {
-       const calling = data.find((q: any) => q.status === 'calling');
-       if (calling) {
-         playQueueAnnouncement(calling.token_number, calling.clinic?.name || 'العيادة', calling.clinic?.audio_number);
-       }
+      const calling = data.find((q: any) => q.status === 'calling');
+      if (calling) {
+        token = calling.token_number;
+        clinicName = calling.clinic?.name || selectedClinic?.name || 'العيادة';
+        audioNum = calling.clinic?.audio_number || selectedClinic?.audio_number;
+        qId = calling.id;
+        pName = calling.patient_name;
+        playQueueAnnouncement(token, clinicName, audioNum);
+      }
     } else if (data && data.status === 'calling') {
-       playQueueAnnouncement(data.token_number, selectedClinic?.name || 'العيادة', selectedClinic?.audio_number);
+      token = data.token_number;
+      qId = data.id;
+      pName = data.patient_name;
+      playQueueAnnouncement(token, clinicName, audioNum);
     }
+
+    if (token) {
+      broadcastPatientCall({
+        queueId: qId,
+        token: token,
+        patientName: pName,
+        clinicName: clinicName,
+        audioNumber: audioNum,
+        isRepeat: false,
+      });
+    }
+
+    fetchQueueOnly();
+  };
+
+  // تكرار النداء على مريض في الطابور مع بث فوري للشاشة والصوت
+  const handleRepeatCall = async (qItem: any) => {
+    if (!qItem) return;
+    setRepeatingCallId(qItem.id);
+    setActionError(null);
+
+    const clinicInfo = selectedClinic || clinics.find((c) => c.id === qItem.clinic_id);
+    const doctorInfo = doctors.find((d) => d.clinic_id === (clinicInfo?.id || qItem.clinic_id));
+    const doctorName = doctorInfo?.profiles
+      ? `د. ${doctorInfo.profiles.first_name} ${doctorInfo.profiles.last_name}`
+      : undefined;
+
+    const res = await repeatPatientCall(
+      { id: qItem.id, token_number: qItem.token_number, patient_name: qItem.patient_name },
+      {
+        name: clinicInfo?.name || 'العيادة',
+        audio_number: clinicInfo?.audio_number,
+        doctor_name: doctorName,
+      },
+      { playLocalAudio: true }
+    );
+
+    setRepeatingCallId(null);
+    if (!res.success) {
+      setActionError(res.error || 'تعذر تكرار النداء على الشاشة.');
+      return;
+    }
+
+    setAddedToast(`تم تكرار النداء لدور رقم #${qItem.token_number} على شاشة الانتظار بنجاح 🔔`);
+    setTimeout(() => setAddedToast(null), 4000);
     fetchQueueOnly();
   };
 
@@ -251,13 +313,10 @@ export function SecretaryCallQueue() {
 
   const togglePresence = async (profileId: string, current: boolean) => {
     setPresenceBusy(profileId);
-    const { error } = await supabase
-      .from('doctors')
-      .update({ is_present: !current, presence_updated_at: new Date().toISOString() })
-      .eq('profile_id', profileId);
+    const res = await toggleDoctorPresenceUnified(supabase, profileId, !current);
     setPresenceBusy(null);
-    if (error) {
-      setActionError(getFriendlyErrorMessage(error, 'تعذر تحديث حالة حضور الطبيب.'));
+    if (!res.success) {
+      setActionError(res.error || 'تعذر تحديث حالة حضور الطبيب.');
     } else {
       fetchDoctorsOnly();
     }
@@ -477,25 +536,32 @@ export function SecretaryCallQueue() {
                 <Stethoscope className="w-4 h-4" /> حضور الأطباء
               </h3>
               <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {doctors.map(d => (
-                  <div key={d.profile_id} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 hover:bg-gray-50">
-                    <div className="min-w-0">
-                      <div className="font-bold text-gray-800 text-sm truncate">
-                        د. {d.profiles?.first_name} {d.profiles?.last_name}
+                {doctors.map(d => {
+                  const presence = calculateDoctorPresence(d);
+                  return (
+                    <div key={d.profile_id} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 hover:bg-gray-50">
+                      <div className="min-w-0 flex-1 ml-2">
+                        <div className="font-bold text-gray-800 text-sm truncate">
+                          د. {d.profiles?.first_name} {d.profiles?.last_name}
+                        </div>
+                        <div className="text-[11px] text-gray-400 truncate">
+                          {d.specialty || 'طبيب'}
+                          {presence.activeShift ? ` • ${presence.activeShift.startTime} - ${presence.activeShift.endTime}` : ''}
+                        </div>
                       </div>
-                      {d.specialty && <div className="text-[11px] text-gray-400 truncate">{d.specialty}</div>}
+                      <button
+                        onClick={() => togglePresence(d.profile_id, !!d.is_present)}
+                        disabled={presenceBusy === d.profile_id}
+                        title={presence.reasonText}
+                        className={`shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full transition-colors disabled:opacity-50 cursor-pointer ${
+                          d.is_present ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                        }`}
+                      >
+                        {d.is_present ? 'متواجد' : 'غير متواجد'}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => togglePresence(d.profile_id, !!d.is_present)}
-                      disabled={presenceBusy === d.profile_id}
-                      className={`shrink-0 text-[11px] font-bold px-2 py-1 rounded-full transition-colors disabled:opacity-50 ${
-                        d.is_present ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
-                      }`}
-                    >
-                      {d.is_present ? 'متواجد' : 'غير متواجد'}
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
                 {doctors.length === 0 && (
                   <div className="text-center text-sm text-gray-400 py-4">لا يوجد أطباء مسجلون</div>
                 )}
@@ -539,6 +605,20 @@ export function SecretaryCallQueue() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => handleRepeatCall(currentCalling)}
+                        disabled={repeatingCallId === currentCalling.id}
+                        className="bg-amber-400 hover:bg-amber-300 text-amber-950 font-black px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95 disabled:opacity-50"
+                        title="تكرار نداء هذا المريض بالصوت وتنبيه شاشات الانتظار فوراً"
+                      >
+                        {repeatingCallId === currentCalling.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-amber-950" />
+                        ) : (
+                          <BellRing className="w-4 h-4 text-amber-950 animate-bounce" />
+                        )}
+                        <span>تكرار النداء على الشاشة 🔔</span>
+                      </button>
+
                       <button
                         onClick={() => updateQueueStatus(currentCalling.id, 'completed', currentCalling.patient_name)}
                         disabled={statusUpdatingId === currentCalling.id}
@@ -681,13 +761,29 @@ export function SecretaryCallQueue() {
                         <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 flex-wrap gap-2">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <button
-                              onClick={() => handleCallSpecificToken(q.token_number)}
-                              disabled={calling}
-                              className="text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors disabled:opacity-50"
-                              title="نداء هذا المريض الآن على الشاشات"
+                              onClick={() => {
+                                if (q.status === 'calling') {
+                                  handleRepeatCall(q);
+                                } else {
+                                  handleCallSpecificToken(q.token_number);
+                                }
+                              }}
+                              disabled={calling || repeatingCallId === q.id}
+                              className={`text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors disabled:opacity-50 ${
+                                q.status === 'calling'
+                                  ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                                  : 'text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200'
+                              }`}
+                              title={q.status === 'calling' ? 'تكرار نداء هذا المريض على الشاشات والصوت فوراً' : 'نداء هذا المريض الآن على الشاشات'}
                             >
-                              <Volume2 className="w-3.5 h-3.5 text-blue-600" />
-                              نداء الآن
+                              {repeatingCallId === q.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : q.status === 'calling' ? (
+                                <BellRing className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
+                              ) : (
+                                <Volume2 className="w-3.5 h-3.5 text-blue-600" />
+                              )}
+                              {q.status === 'calling' ? 'تكرار النداء 🔔' : 'نداء الآن'}
                             </button>
 
                             <button

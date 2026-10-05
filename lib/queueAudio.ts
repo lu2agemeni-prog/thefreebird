@@ -35,6 +35,12 @@ function speak(text: string): Promise<void> {
   });
 }
 
+export interface QueueAnnouncementOptions {
+  isRepeat?: boolean;
+  repeatTimes?: number;
+  chimeCount?: number;
+}
+
 /**
  * ينادي على رقم دور معيّن مع توجيهه لعيادة معيّنة.
  * ملفات الصوت المتوقعة:
@@ -45,28 +51,51 @@ function speak(text: string): Promise<void> {
 export async function playQueueAnnouncement(
   tokenNumber: number,
   clinicName: string,
-  audioNumber?: number | null
+  audioNumber?: number | null,
+  options?: QueueAnnouncementOptions
 ): Promise<void> {
-  try {
-    await playFile('/audio/ding.mp3');
-  } catch {
-    // تجاهل فشل نغمة التنبيه، النداء نفسه أهم
-  }
+  const isRepeat = !!options?.isRepeat;
+  const chimeCount = options?.chimeCount || (isRepeat ? 2 : 1);
+  const totalRounds = Math.max(1, Math.min(3, options?.repeatTimes || 1));
 
-  try {
-    await playFile(`/audio/${tokenNumber}.mp3`);
-  } catch {
-    await speak(`دور رقم ${tokenNumber}`);
-  }
+  for (let round = 0; round < totalRounds; round++) {
+    // 1. تشغيل نغمة التنبيه (ding) مع دعم التكرار السريع في حالة تكرار النداء
+    for (let c = 0; c < chimeCount; c++) {
+      try {
+        await playFile('/audio/ding.mp3');
+        if (c < chimeCount - 1) {
+          await new Promise((r) => setTimeout(r, 120));
+        }
+      } catch {
+        // تجاهل فشل نغمة التنبيه، النداء نفسه أهم
+      }
+    }
 
-  if (audioNumber) {
+    // 2. نطق رقم الدور
     try {
-      await playFile(`/audio/clinic${audioNumber}.mp3`);
-      return;
+      await playFile(`/audio/${tokenNumber}.mp3`);
     } catch {
-      // نكمل على TTS تحت
+      const prefix = isRepeat ? 'تكرار النداء.. ' : '';
+      await speak(`${prefix}دور رقم ${tokenNumber}`);
+    }
+
+    // 3. نطق اسم أو رقم العيادة
+    let playedClinicFile = false;
+    if (audioNumber) {
+      try {
+        await playFile(`/audio/clinic${audioNumber}.mp3`);
+        playedClinicFile = true;
+      } catch {
+        // نكمل على TTS تحت
+      }
+    }
+
+    if (!playedClinicFile) {
+      await speak(`تفضل بالدخول إلى ${clinicName}`);
+    }
+
+    if (round < totalRounds - 1) {
+      await new Promise((r) => setTimeout(r, 1200));
     }
   }
-
-  await speak(`تفضل بالدخول إلى ${clinicName}`);
 }

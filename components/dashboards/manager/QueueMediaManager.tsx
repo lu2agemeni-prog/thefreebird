@@ -56,6 +56,9 @@ import {
   syncDoctorsPresenceWithDatabase,
   getCairoCurrentTime,
   createDefaultSchedules,
+  extractWorkingDaysFromSchedules,
+  toggleDoctorPresenceUnified,
+  resetDoctorPresenceToScheduleUnified,
 } from '@/lib/doctor-schedules';
 import {
   QueueLayoutConfig,
@@ -205,7 +208,7 @@ export function QueueMediaManager() {
   // فتح مودال تعديل ميديا ومواعيد الطبيب
   const handleOpenEditDoctor = (doctor: any) => {
     setEditingDoctor(doctor);
-    const meta = parseDoctorMediaMeta(doctor.bio);
+    const meta = parseDoctorMediaMeta(doctor.bio, doctor.working_days);
     // لو مفيش صورة مسجلة في الميتا بس مسجلة في avatar_url للطبيب، نستخدمها كافتراضي
     if (!meta.photo_url && doctor.profiles?.avatar_url) {
       meta.photo_url = doctor.profiles.avatar_url;
@@ -314,7 +317,7 @@ export function QueueMediaManager() {
     }));
   };
 
-  // حفظ تعديلات الطبيب
+  // حفظ تعديلات الطبيب ومزامنة المواعيد مع أيام العمل وأوقات الشيفتات
   const handleSaveDoctorMeta = async () => {
     if (!editingDoctor) return;
 
@@ -322,28 +325,26 @@ export function QueueMediaManager() {
     setActionError(null);
     try {
       const bioPayload = serializeDoctorMediaMeta(editMeta);
-
-      const { error: updErr } = await supabase
-        .from('doctors')
-        .update({ bio: bioPayload })
-        .eq('profile_id', editingDoctor.profile_id);
-
-      if (updErr) throw updErr;
+      const workingDays = extractWorkingDaysFromSchedules(editMeta.schedules);
 
       // تحديث حالة الطبيب محلياً
       const updatedDoctor = { ...editingDoctor, bio: bioPayload };
       const { isPresent } = calculateDoctorPresence(updatedDoctor);
 
-      // تحديث عمود التواجد إذا تغير
-      await supabase
+      // تحديث موحد للبيو وأيام العمل وحالة التواجد والتوقيت معاً في عملية واحدة
+      const { error: updErr } = await supabase
         .from('doctors')
         .update({
+          bio: bioPayload,
+          working_days: workingDays,
           is_present: isPresent,
           presence_updated_at: new Date().toISOString(),
         })
         .eq('profile_id', editingDoctor.profile_id);
 
-      setSuccessBanner(`تم حفظ إعدادات ميديا ومواعيد د. ${editingDoctor.profiles?.first_name || ''} بنجاح.`);
+      if (updErr) throw updErr;
+
+      setSuccessBanner(`تم حفظ إعدادات ميديا ومواعيد د. ${editingDoctor.profiles?.first_name || ''} بنجاح ومزامنة أيام العمل.`);
       setTimeout(() => setSuccessBanner(null), 5000);
       setEditingDoctor(null);
       fetchDoctors();
@@ -354,38 +355,25 @@ export function QueueMediaManager() {
     }
   };
 
-  // تبديل التواجد يدوياً للطبيب من الجدول مباشرة
+  // تبديل التواجد يدوياً للطبيب من الجدول مباشرة عبر مصدر الحقيقة الموحد
   const handleToggleManualPresence = async (doctor: any) => {
     setActionError(null);
-    const { dateStr } = getCairoCurrentTime();
-    const currentMeta = parseDoctorMediaMeta(doctor.bio);
-    const nextPresence = !doctor.is_present;
-
-    const nextMeta: DoctorMediaMeta = {
-      ...currentMeta,
-      manual_override: {
-        is_active: true,
-        presence: nextPresence,
-        override_date: dateStr,
-        updated_at: new Date().toISOString(),
-      },
-    };
-
-    try {
-      const bioPayload = serializeDoctorMediaMeta(nextMeta);
-      const { error } = await supabase
-        .from('doctors')
-        .update({
-          bio: bioPayload,
-          is_present: nextPresence,
-          presence_updated_at: new Date().toISOString(),
-        })
-        .eq('profile_id', doctor.profile_id);
-
-      if (error) throw error;
+    const res = await toggleDoctorPresenceUnified(supabase, doctor.profile_id, !doctor.is_present);
+    if (!res.success) {
+      setActionError(res.error || 'تعذر تحديث حالة تواجد الطبيب يدوياً.');
+    } else {
       fetchDoctors();
-    } catch (err: any) {
-      setActionError(getFriendlyErrorMessage(err, 'تعذر تحديث حالة تواجد الطبيب يدوياً.'));
+    }
+  };
+
+  // استعادة التواجد التلقائي وفق جدول المواعيد الرسمي
+  const handleResetSchedulePresence = async (doctor: any) => {
+    setActionError(null);
+    const res = await resetDoctorPresenceToScheduleUnified(supabase, doctor.profile_id);
+    if (!res.success) {
+      setActionError(res.error || 'تعذر استعادة التواجد وفق الجدول.');
+    } else {
+      fetchDoctors();
     }
   };
 
@@ -654,7 +642,7 @@ export function QueueMediaManager() {
               {filteredDoctors.map((doc) => {
                 const docName = `د. ${doc.profiles?.first_name || ''} ${doc.profiles?.last_name || ''}`.trim();
                 const clinicName = doc.clinics?.name || 'غير محدد';
-                const meta = parseDoctorMediaMeta(doc.bio);
+                const meta = parseDoctorMediaMeta(doc.bio, doc.working_days);
                 const photo = meta.photo_url || doc.profiles?.avatar_url;
                 const audio = meta.audio_url;
                 const presenceStatus = calculateDoctorPresence(doc);

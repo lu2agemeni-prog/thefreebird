@@ -8,6 +8,7 @@ import { Activity, Volume2, Users, Loader2, Hash, Lock, BellRing, CheckCircle2, 
 import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
+import { broadcastPatientCall, repeatPatientCall } from '@/lib/queue-broadcast';
 
 export function DoctorCallQueue() {
   const { user } = useAuth();
@@ -20,6 +21,8 @@ export function DoctorCallQueue() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [queueLoadError, setQueueLoadError] = useState<string | null>(null);
   const [callInProgress, setCallInProgress] = useState(false);
+  const [repeatingToken, setRepeatingToken] = useState<number | null>(null);
+  const [repeatSuccessToast, setRepeatSuccessToast] = useState<string | null>(null);
   const [specificToken, setSpecificToken] = useState('');
   const [secretaryCallSent, setSecretaryCallSent] = useState(false);
   const [completedToday, setCompletedToday] = useState<any[]>([]);
@@ -115,7 +118,45 @@ export function DoctorCallQueue() {
     }
     setSpecificToken('');
     fetchQueue();
+    // بث لحظي للشاشة العامة وتشغيل الصوت
+    broadcastPatientCall({
+      queueId: data.id,
+      token: data.token_number,
+      patientName: data.patient_name,
+      clinicName: clinic?.name || 'العيادة',
+      audioNumber: clinic?.audio_number,
+      isRepeat: false,
+    });
     if (clinic) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
+  };
+
+  // دالة تكرار النداء للمريض الحالي
+  const handleRepeatCall = async (patient: any) => {
+    if (!doctorClinicId || !patient) return;
+    setRepeatingToken(patient.token_number);
+    setActionError(null);
+
+    const doctorName = user ? `د. ${user.first_name} ${user.last_name}` : clinic?.doctor_name;
+
+    const res = await repeatPatientCall(
+      { id: patient.id, token_number: patient.token_number, patient_name: patient.patient_name },
+      {
+        name: clinic?.name || 'العيادة',
+        audio_number: clinic?.audio_number,
+        doctor_name: doctorName,
+      },
+      { playLocalAudio: true }
+    );
+
+    setRepeatingToken(null);
+    if (!res.success) {
+      setActionError(res.error || 'تعذر تكرار النداء على الشاشة.');
+      return;
+    }
+
+    setRepeatSuccessToast(`تم إرسال تكرار النداء لدور رقم #${patient.token_number} للشاشات بنجاح 🔔`);
+    setTimeout(() => setRepeatSuccessToast(null), 4000);
+    fetchQueue();
   };
 
   const updateStatus = async (id: string, newStatus: string) => {
@@ -147,6 +188,15 @@ export function DoctorCallQueue() {
       return;
     }
     fetchQueue();
+    // بث لحظي للشاشة العامة وتشغيل الصوت
+    broadcastPatientCall({
+      queueId: data.id,
+      token: data.token_number,
+      patientName: data.patient_name,
+      clinicName: clinic?.name || 'العيادة',
+      audioNumber: clinic?.audio_number,
+      isRepeat: false,
+    });
     if (clinic) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
   };
 
@@ -165,6 +215,15 @@ export function DoctorCallQueue() {
       return;
     }
     fetchQueue();
+    // بث لحظي للشاشة العامة وتشغيل الصوت
+    broadcastPatientCall({
+      queueId: data.id,
+      token: data.token_number,
+      patientName: data.patient_name,
+      clinicName: clinic?.name || 'العيادة',
+      audioNumber: clinic?.audio_number,
+      isRepeat: false,
+    });
     if (clinic) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
   };
 
@@ -237,6 +296,13 @@ export function DoctorCallQueue() {
         <InlineError message={queueLoadError || actionError} />
       )}
 
+      {repeatSuccessToast && (
+        <div className="bg-amber-50 border-2 border-amber-300 text-amber-950 p-4 rounded-xl flex items-center gap-3 font-bold text-sm shadow-md animate-in fade-in duration-300">
+          <BellRing className="w-5 h-5 text-amber-600 animate-bounce shrink-0" />
+          <span>{repeatSuccessToast}</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <button
           onClick={handleCallNext}
@@ -307,6 +373,19 @@ export function DoctorCallQueue() {
                     </div>
                     <div className="flex flex-col sm:flex-row gap-2">
                       <button
+                        onClick={() => handleRepeatCall(p)}
+                        disabled={callInProgress || repeatingToken === p.token_number}
+                        className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-xl font-black shadow-sm text-sm flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+                        title="تكرار النداء الصوتي وتنبيه الشاشات فوراً لهذا المريض"
+                      >
+                        {repeatingToken === p.token_number ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        ) : (
+                          <BellRing className="w-4 h-4 text-white animate-bounce" />
+                        )}
+                        <span>تكرار النداء 🔔</span>
+                      </button>
+                      <button
                         onClick={() => completePatient(p.id)}
                         className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-blue-700 shadow-sm text-sm flex items-center justify-center gap-1.5 transition-all"
                         title="تسجيل انتهاء المقابلة وخروج المريض"
@@ -364,6 +443,14 @@ export function DoctorCallQueue() {
                             return;
                           }
                           fetchQueue();
+                          broadcastPatientCall({
+                            queueId: p.id,
+                            token: p.token_number,
+                            patientName: p.patient_name,
+                            clinicName: clinic?.name || 'العيادة',
+                            audioNumber: clinic?.audio_number,
+                            isRepeat: false,
+                          });
                           if (clinic && data) playQueueAnnouncement(data.token_number, clinic.name, clinic.audio_number).catch(() => {});
                         }}
                         disabled={callInProgress}

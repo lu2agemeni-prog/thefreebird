@@ -35,8 +35,15 @@ import {
   Newspaper,
   Loader2,
   Calendar,
+  BellRing,
 } from 'lucide-react';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
+import {
+  PATIENT_CALL_CHANNEL,
+  PATIENT_CALL_EVENT,
+  broadcastPatientCall,
+  repeatPatientCall,
+} from '@/lib/queue-broadcast';
 import {
   parseDoctorMediaMeta,
   calculateDoctorPresence,
@@ -114,14 +121,23 @@ export default function QueueDisplay() {
   const lastDoctorAudioRoundFinishedAtRef = useRef<number>(0);
   const doctorsAnnouncedInActiveRoundRef = useRef<Set<string>>(new Set());
 
-  // مراجع نداء المريض
+  // مراجع نداء المريض وتكرار النداء
   const lastAnnouncedIdRef = useRef<string | null>(null);
+  const lastAnnouncedCallKeyRef = useRef<string | null>(null);
+  const [repeatPulseKey, setRepeatPulseKey] = useState(0);
+  const [isRepeatCallNotice, setIsRepeatCallNotice] = useState(false);
+  const [isRepeatingCurrentCall, setIsRepeatingCurrentCall] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const slideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // إشعار النداء المنبثق
-  const [dropNotice, setDropNotice] = useState<{ token: number; clinicName: string; doctorName?: string } | null>(null);
+  const [dropNotice, setDropNotice] = useState<{
+    token: number;
+    clinicName: string;
+    doctorName?: string;
+    isRepeat?: boolean;
+  } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // نداء السكرتارية المباشر
@@ -205,45 +221,92 @@ export default function QueueDisplay() {
     setSoundEnabled(true);
   };
 
+  // دالة موحدة لإطلاق إعلان نداء المريض الصوتي والمرئي على الشاشة مع دعم تكرار النداء الكامل
+  const triggerPatientAnnouncement = useCallback((callData: {
+    id?: string;
+    token: number;
+    clinicName: string;
+    doctorName?: string;
+    clinicAudioNumber?: number | null;
+    isRepeat?: boolean;
+  }) => {
+    // 1. الأولوية المطلقة لنداء المريض: إيقاف أي صوت إعلان طبيب يعمل فوراً
+    mediaCache.stopAllAudio();
+    setIsAudioPlaying(false);
+
+    // 2. تفعيل تأثير الوميض للبطاقة
+    setRepeatPulseKey((prev) => prev + 1);
+    setIsRepeatCallNotice(!!callData.isRepeat);
+
+    // 3. تشغيل نغمة ونداء المريض الصوتي (مع نغمة مزدوجة عند تكرار النداء)
+    if (soundEnabledRef.current) {
+      playQueueAnnouncement(
+        callData.token,
+        callData.clinicName || '',
+        callData.clinicAudioNumber,
+        { isRepeat: callData.isRepeat }
+      ).catch(() => {});
+    }
+
+    // 4. إظهار كارت النداء الكبير المنسدل
+    setDropNotice({
+      token: callData.token,
+      clinicName: callData.clinicName || 'العيادة',
+      doctorName: callData.doctorName || '',
+      isRepeat: callData.isRepeat,
+    });
+
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    const noticeDurationMs = (configRef.current.patientCallNoticeDurationSec || 8) * 1000;
+    noticeTimer.current = setTimeout(() => {
+      setDropNotice(null);
+      setIsRepeatCallNotice(false);
+    }, noticeDurationMs);
+  }, []);
+
   // جلب وتحديث بيانات الطابور العام
   const fetchQueue = useCallback(async () => {
     try {
       const { data } = await supabase.rpc('get_public_queue_status');
       if (data) {
         setQueue(data);
-        const calling = data.find((q: any) => q.status === 'calling');
 
-        // اكتشاف استدعاء جديد لمريض
-        if (calling && calling.id !== lastAnnouncedIdRef.current) {
-          lastAnnouncedIdRef.current = calling.id;
-
-          // 1. الأولوية المطلقة لنداء المريض: إيقاف أي صوت إعلان طبيب يعمل فوراً
-          mediaCache.stopAllAudio();
-          setIsAudioPlaying(false);
-
-          // 2. تشغيل نغمة ونداء المريض الصوتي
-          if (soundEnabledRef.current) {
-            playQueueAnnouncement(calling.token_number, calling.clinic_name || '', calling.clinic_audio_number);
-          }
-
-          // 3. إظهار كارت النداء الكبير المنسدل
-          setDropNotice({
-            token: calling.token_number,
-            clinicName: calling.clinic_name || 'العيادة',
-            doctorName: calling.doctor_name || '',
+        // فرز المرضى قيد النداء حسب أحدث توقيت نداء (updated_at)
+        const callingList = data
+          .filter((q: any) => q.status === 'calling')
+          .sort((a: any, b: any) => {
+            const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+            const timeB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+            return timeB - timeA;
           });
 
-          if (noticeTimer.current) clearTimeout(noticeTimer.current);
-          const noticeDurationMs = (configRef.current.patientCallNoticeDurationSec || 8) * 1000;
-          noticeTimer.current = setTimeout(() => {
-            setDropNotice(null);
-          }, noticeDurationMs);
+        const calling = callingList[0];
+
+        // اكتشاف استدعاء جديد لمريض أو تكرار النداء
+        if (calling) {
+          const callKey = `${calling.id}_${calling.updated_at || ''}`;
+          const isRepeat = calling.id === lastAnnouncedIdRef.current && callKey !== lastAnnouncedCallKeyRef.current;
+          const isNewCall = calling.id !== lastAnnouncedIdRef.current;
+
+          if (isNewCall || isRepeat) {
+            lastAnnouncedIdRef.current = calling.id;
+            lastAnnouncedCallKeyRef.current = callKey;
+
+            triggerPatientAnnouncement({
+              id: calling.id,
+              token: calling.token_number,
+              clinicName: calling.clinic_name || 'العيادة',
+              doctorName: calling.doctor_name || '',
+              clinicAudioNumber: calling.clinic_audio_number,
+              isRepeat: isRepeat,
+            });
+          }
         }
       }
     } catch (e) {
       console.warn('Error fetching queue status:', e);
     }
-  }, []);
+  }, [triggerPatientAnnouncement]);
 
   // جلب بيانات الأطباء ومواعيدهم
   const fetchDoctorsAndPresence = useCallback(async () => {
@@ -334,6 +397,30 @@ export default function QueueDisplay() {
       })
       .subscribe();
 
+    // استقبال نداءات وتكرار نداء المرضى اللحظية عبر WebSockets (بزمن استجابة 0ms)
+    const channelPatientCalls = supabase
+      .channel(PATIENT_CALL_CHANNEL)
+      .on('broadcast', { event: PATIENT_CALL_EVENT }, (payload) => {
+        const p = payload.payload;
+        if (p && p.token) {
+          lastAnnouncedCallKeyRef.current = `${p.queueId || ''}_${p.timestamp || Date.now()}`;
+          lastAnnouncedIdRef.current = p.queueId || null;
+
+          triggerPatientAnnouncement({
+            id: p.queueId,
+            token: p.token,
+            clinicName: p.clinicName || 'العيادة',
+            doctorName: p.doctorName || '',
+            clinicAudioNumber: p.audioNumber,
+            isRepeat: !!p.isRepeat,
+          });
+
+          // تحديث بيانات الطابور للتأكد من المزامنة الكاملة
+          fetchQueue();
+        }
+      })
+      .subscribe();
+
     return () => {
       clearTimeout(t);
       clearInterval(clockTimer);
@@ -342,20 +429,21 @@ export default function QueueDisplay() {
       supabase.removeChannel(channelMedia);
       supabase.removeChannel(channelDoctors);
       supabase.removeChannel(channelAlerts);
+      supabase.removeChannel(channelPatientCalls);
       if (noticeTimer.current) clearTimeout(noticeTimer.current);
       if (secretaryAlertTimer.current) clearTimeout(secretaryAlertTimer.current);
       if (slideTimerRef.current) clearTimeout(slideTimerRef.current);
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
       mediaCache.stopAllAudio();
     };
-  }, [fetchQueue, fetchDoctorsAndPresence, fetchGeneralMedia]);
+  }, [fetchQueue, fetchDoctorsAndPresence, fetchGeneralMedia, triggerPatientAnnouncement]);
 
   // قائمة الأطباء المتواجدين حالياً
   const presentDoctorsList = useMemo(() => {
     return rawDoctors
       .map((doc) => {
         const presence = calculateDoctorPresence(doc);
-        const meta = parseDoctorMediaMeta(doc.bio);
+        const meta = parseDoctorMediaMeta(doc.bio, doc.working_days);
         const currentCallingInClinic = queue.find(
           (q) => q.clinic_id === doc.clinic_id && q.status === 'calling'
         );
@@ -553,7 +641,42 @@ export default function QueueDisplay() {
     }
   };
 
-  const currentCall = queue.find((q) => q.status === 'calling');
+  // المريض قيد النداء حالياً (مع إعطاء الأولوية للنداء الأحدث وفقاً لـ updated_at)
+  const currentCall = useMemo(() => {
+    const callingList = queue
+      .filter((q) => q.status === 'calling')
+      .sort((a, b) => {
+        const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const timeB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        return timeB - timeA;
+      });
+    return callingList[0] || null;
+  }, [queue]);
+
+  // دالة تكرار النداء المباشر على الشاشة للمريض الحالي
+  const handleRepeatCurrentCall = useCallback(async () => {
+    if (!currentCall || isRepeatingCurrentCall) return;
+    setIsRepeatingCurrentCall(true);
+    try {
+      await repeatPatientCall(
+        { id: currentCall.id, token_number: currentCall.token_number, patient_name: currentCall.patient_name },
+        { name: currentCall.clinic_name, audio_number: currentCall.clinic_audio_number, doctor_name: currentCall.doctor_name },
+        { playLocalAudio: false }
+      );
+      // تشغيل فوري على الشاشة الحالية
+      triggerPatientAnnouncement({
+        id: currentCall.id,
+        token: currentCall.token_number,
+        clinicName: currentCall.clinic_name || 'العيادة',
+        doctorName: currentCall.doctor_name || '',
+        clinicAudioNumber: currentCall.clinic_audio_number,
+        isRepeat: true,
+      });
+    } finally {
+      setTimeout(() => setIsRepeatingCurrentCall(false), 2000);
+    }
+  }, [currentCall, isRepeatingCurrentCall, triggerPatientAnnouncement]);
+
   const waitingList = queue
     .filter((q) => q.status === 'waiting')
     .slice(0, config.maxWaitingListItems || 12);
@@ -739,6 +862,24 @@ export default function QueueDisplay() {
 
         {/* أزرار التخصيص الكامل والحفظ والملء الشاشة */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* زر تكرار النداء للمريض الحالي إذا وجد */}
+          {currentCall && (
+            <button
+              type="button"
+              onClick={handleRepeatCurrentCall}
+              disabled={isRepeatingCurrentCall}
+              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-xl text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50"
+              title={`تكرار نداء المريض الحالي #${currentCall.token_number} فوراً`}
+            >
+              {isRepeatingCurrentCall ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <BellRing className="w-3.5 h-3.5 text-white animate-bounce" />
+              )}
+              <span>تكرار نداء #{currentCall.token_number} 🔔</span>
+            </button>
+          )}
+
           {/* زر فتح نافذة التخصيص الشاملة */}
           <button
             type="button"
@@ -933,15 +1074,30 @@ export default function QueueDisplay() {
         <QueueNewsTicker config={config} />
       </div>
 
-      {/* كارت النداء الكبير المنسدل من الأعلى عند استدعاء مريض (أولوية مطلقة) */}
+      {/* كارت النداء الكبير المنسدل من الأعلى عند استدعاء مريض أو تكرار النداء (أولوية مطلقة) */}
       {dropNotice && (
         <div className="fixed inset-x-0 top-0 z-[60] flex justify-center pointer-events-none p-4">
-          <div className="patient-call-notice mt-16 sm:mt-20 bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-700 text-white text-center rounded-3xl px-8 sm:px-14 py-6 sm:py-8 shadow-2xl border-4 border-white/40 max-w-2xl w-full">
-            <span className="inline-block bg-white text-emerald-900 text-xs sm:text-sm font-black px-4 py-1 rounded-full mb-3 shadow-md uppercase tracking-wider">
-              نداء مريض جديد
+          <div
+            className={`patient-call-notice mt-16 sm:mt-20 text-white text-center rounded-3xl px-8 sm:px-14 py-6 sm:py-8 shadow-2xl border-4 max-w-2xl w-full transition-all duration-300 ${
+              dropNotice.isRepeat
+                ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 border-amber-300 ring-8 ring-amber-400/30'
+                : 'bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-700 border-white/40'
+            }`}
+          >
+            <span
+              className={`inline-flex items-center gap-1.5 text-xs sm:text-sm font-black px-5 py-1.5 rounded-full mb-3 shadow-md uppercase tracking-wider ${
+                dropNotice.isRepeat
+                  ? 'bg-white text-amber-950 animate-pulse'
+                  : 'bg-white text-emerald-900'
+              }`}
+            >
+              <BellRing className={`w-4 h-4 ${dropNotice.isRepeat ? 'animate-bounce text-amber-600' : 'text-emerald-700'}`} />
+              <span>{dropNotice.isRepeat ? 'تكرار النداء على العميل 🔔' : 'نداء مريض جديد'}</span>
             </span>
-            <p className="text-2xl sm:text-3xl font-black mb-2">على العميل رقم</p>
-            <div className="text-7xl sm:text-8xl font-black font-mono tracking-widest my-2 text-amber-300 drop-shadow-lg">
+            <p className="text-2xl sm:text-3xl font-black mb-2">
+              {dropNotice.isRepeat ? 'تكرار النداء للعميل رقم' : 'على العميل رقم'}
+            </p>
+            <div className="text-7xl sm:text-8xl font-black font-mono tracking-widest my-2 text-amber-300 drop-shadow-lg animate-pulse">
               {dropNotice.token}
             </div>
             <p className="text-2xl sm:text-3xl font-black mt-2">
@@ -1350,9 +1506,17 @@ export default function QueueDisplay() {
       >
         {currentCall ? (
           <div className="text-center z-10 w-full animate-in zoom-in-95 duration-300">
-            <div className="inline-flex items-center gap-2 bg-black/40 text-white px-5 py-1 rounded-full text-xs sm:text-sm font-black mb-2 shadow-lg animate-pulse border border-white/30">
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              <span>النداء الحالي المباشر</span>
+            <div className="flex items-center justify-center gap-2 flex-wrap mb-2">
+              <div className="inline-flex items-center gap-2 bg-black/40 text-white px-5 py-1 rounded-full text-xs sm:text-sm font-black shadow-lg animate-pulse border border-white/30">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span>النداء الحالي المباشر</span>
+              </div>
+              {isRepeatCallNotice && (
+                <div className="inline-flex items-center gap-1.5 bg-amber-400 text-amber-950 px-3.5 py-1 rounded-full text-xs font-black shadow-lg animate-bounce border border-amber-200">
+                  <BellRing className="w-3.5 h-3.5" />
+                  <span>تكرار النداء 🔔</span>
+                </div>
+              )}
             </div>
 
             <div
@@ -1371,6 +1535,27 @@ export default function QueueDisplay() {
                 {currentCall.clinic_name || 'العيادة'}
                 {currentCall.doctor_name ? ` (${currentCall.doctor_name})` : ''}
               </span>
+            </div>
+
+            {/* زر تكرار النداء للمريض مباشرة من الكارت */}
+            <div className="mt-2.5 flex justify-center">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRepeatCurrentCall();
+                }}
+                disabled={isRepeatingCurrentCall}
+                className="inline-flex items-center gap-1.5 bg-black/40 hover:bg-black/60 text-amber-300 border border-amber-300/40 px-3.5 py-1 rounded-full text-xs font-black shadow-sm transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                title="تكرار نداء هذا المريض بصوت ونغمة فورية على الشاشة"
+              >
+                {isRepeatingCurrentCall ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300" />
+                ) : (
+                  <BellRing className="w-3.5 h-3.5 text-amber-300 animate-bounce" />
+                )}
+                <span>تكرار النداء 🔔</span>
+              </button>
             </div>
           </div>
         ) : (
@@ -1673,9 +1858,17 @@ export default function QueueDisplay() {
       >
         {currentCall ? (
           <div className="text-center z-10 w-full animate-in zoom-in-95 duration-300">
-            <div className="inline-flex items-center gap-1.5 bg-black/40 text-white px-3.5 py-0.5 rounded-full text-xs font-black mb-1.5 shadow-md animate-pulse border border-white/30">
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              <span>النداء الحالي المباشر</span>
+            <div className="flex items-center justify-center gap-1.5 flex-wrap mb-1.5">
+              <div className="inline-flex items-center gap-1.5 bg-black/40 text-white px-3.5 py-0.5 rounded-full text-xs font-black shadow-md animate-pulse border border-white/30">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span>النداء الحالي المباشر</span>
+              </div>
+              {isRepeatCallNotice && (
+                <div className="inline-flex items-center gap-1 bg-amber-400 text-amber-950 px-2.5 py-0.5 rounded-full text-[11px] font-black shadow-md animate-bounce border border-amber-200">
+                  <BellRing className="w-3 h-3" />
+                  <span>تكرار النداء 🔔</span>
+                </div>
+              )}
             </div>
 
             <div
@@ -1697,6 +1890,27 @@ export default function QueueDisplay() {
                 {currentCall.clinic_name || 'العيادة'}
                 {currentCall.doctor_name ? ` (${currentCall.doctor_name})` : ''}
               </span>
+            </div>
+
+            {/* زر تكرار النداء المباشر في العمود الجانبي */}
+            <div className="mt-2 flex justify-center">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRepeatCurrentCall();
+                }}
+                disabled={isRepeatingCurrentCall}
+                className="inline-flex items-center gap-1 bg-black/40 hover:bg-black/60 text-amber-300 border border-amber-300/40 px-3 py-0.5 rounded-full text-[11px] font-black shadow-sm transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                title="تكرار نداء هذا المريض بصوت ونغمة فورية على الشاشة"
+              >
+                {isRepeatingCurrentCall ? (
+                  <Loader2 className="w-3 h-3 animate-spin text-amber-300" />
+                ) : (
+                  <BellRing className="w-3 h-3 text-amber-300 animate-bounce" />
+                )}
+                <span>تكرار النداء 🔔</span>
+              </button>
             </div>
           </div>
         ) : (
