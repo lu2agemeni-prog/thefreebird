@@ -40,6 +40,13 @@ import { QuickTokenModal } from './QuickTokenModal';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
 import { broadcastPatientCall, repeatPatientCall } from '@/lib/queue-broadcast';
 import { toggleDoctorPresenceUnified, calculateDoctorPresence } from '@/lib/doctor-schedules';
+import {
+  autoCompleteExpiredQueueItems,
+  filterOutExpiredQueueItems,
+  getTimeRemainingBeforeExpiry,
+  getTimeSinceRegistration,
+  triggerAutoCompleteServer,
+} from '@/lib/queue-auto-complete';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -106,6 +113,10 @@ export function SecretaryCallQueue() {
   };
 
   const fetchQueueOnly = async () => {
+    // إنهاء تلقائي لأي دور مر عليه أكثر من ساعتين (عبر الخادم والعميل)
+    triggerAutoCompleteServer().catch(() => {});
+    await autoCompleteExpiredQueueItems(supabase).catch(() => {});
+
     const { data, error } = await supabase
       .from('call_queue')
       .select('*, clinic:clinic_id(name, audio_number), service:service_id(name, price), assigned_doctor:doctor_id(first_name, last_name)')
@@ -114,8 +125,14 @@ export function SecretaryCallQueue() {
     if (error) {
       setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل حالة النداء الآلي.'));
     } else if (data) {
+      // استبعاد أي دور منتهٍ تجاوز الساعتين لضمان تطابق الشاشات
+      const validData = filterOutExpiredQueueItems(data);
+      if (validData.length < data.length) {
+        triggerAutoCompleteServer().catch(() => {});
+      }
+
       // إرفاق إجمالي المبلغ المدفوع من patient_visits المرتبطة بالدور (المصدر المالي الحقيقي الموحد)
-      const groupIds = data.map((q: any) => q.visit_group_id).filter(Boolean);
+      const groupIds = validData.map((q: any) => q.visit_group_id).filter(Boolean);
       let paidMap: Record<string, number> = {};
       if (groupIds.length > 0) {
         const { data: pvData } = await supabase
@@ -128,7 +145,7 @@ export function SecretaryCallQueue() {
           }
         });
       }
-      const enhanced = data.map((q: any) => ({
+      const enhanced = validData.map((q: any) => ({
         ...q,
         display_paid_amount: q.visit_group_id && paidMap[q.visit_group_id] !== undefined
           ? paidMap[q.visit_group_id]
@@ -180,9 +197,15 @@ export function SecretaryCallQueue() {
       })
       .subscribe();
 
+    // فحص دوري كل 30 ثانية للإنهاء التلقائي بعد ساعتين
+    const expiryTimer = setInterval(() => {
+      fetchQueueOnly();
+    }, 30000);
+
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(callChannel);
+      clearInterval(expiryTimer);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -478,6 +501,19 @@ export function SecretaryCallQueue() {
         </div>
       )}
 
+      {/* شريط تنبيه الإنهاء التلقائي بعد ساعتين */}
+      <div className="bg-emerald-50/80 border border-emerald-200/80 rounded-xl px-4 py-2.5 text-xs text-emerald-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>
+            <strong>الإنهاء التلقائي بعد ساعتين:</strong> أي دور يمر عليه أكثر من ساعتين يُنهى ويُستبعد تلقائياً من شاشة النداء الآلي وقائمة الانتظار حتى في حال نسيان الضغط على &quot;انتهت المقابلة&quot;.
+          </span>
+        </div>
+        <span className="bg-emerald-200/70 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full text-[11px] shrink-0 self-start sm:self-auto">
+          نشط تلقائياً (120 دقيقة)
+        </span>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* ── العمود الأيسر: اختيار العيادة + الأطباء (4/12) ── */}
         <div className="lg:col-span-4 space-y-4">
@@ -589,6 +625,21 @@ export function SecretaryCallQueue() {
                       {currentCalling.assigned_doctor && (
                         <p className="text-xs opacity-75 mt-0.5">د. {currentCalling.assigned_doctor.first_name} {currentCalling.assigned_doctor.last_name}</p>
                       )}
+                      {(() => {
+                        const reg = getTimeSinceRegistration(currentCalling);
+                        const exp = getTimeRemainingBeforeExpiry(currentCalling);
+                        return (
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                            <span className="bg-emerald-900/60 text-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-emerald-300" />
+                              مسجل منذ: {reg.formatted}
+                            </span>
+                            <span className="bg-amber-400 text-amber-950 font-black px-2 py-0.5 rounded-md text-[11px]">
+                              إنهاء تلقائي بعد ساعتين (متبقي {exp.formatted})
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="text-7xl md:text-8xl font-black leading-none" dir="ltr">
                       #{currentCalling.token_number}
@@ -746,6 +797,16 @@ export function SecretaryCallQueue() {
                           {q.assigned_doctor && (
                             <span>د. {q.assigned_doctor.first_name} {q.assigned_doctor.last_name}</span>
                           )}
+                          {(() => {
+                            const reg = getTimeSinceRegistration(q);
+                            const exp = getTimeRemainingBeforeExpiry(q);
+                            return (
+                              <span className="text-gray-400 flex items-center gap-1 font-medium">
+                                <Clock className="w-3 h-3 text-gray-400" />
+                                مسجل منذ {reg.formatted} • ينتهي تلقائياً بعد {exp.formatted}
+                              </span>
+                            );
+                          })()}
                         </div>
                         {(() => {
                           const effPaid = Number((q as any).display_paid_amount ?? q.paid_amount ?? 0);

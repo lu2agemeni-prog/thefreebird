@@ -9,6 +9,13 @@ import { ErrorState, InlineError } from '@/components/ui/error-state';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
 import { broadcastPatientCall, repeatPatientCall } from '@/lib/queue-broadcast';
+import {
+  autoCompleteExpiredQueueItems,
+  filterOutExpiredQueueItems,
+  getTimeRemainingBeforeExpiry,
+  getTimeSinceRegistration,
+  triggerAutoCompleteServer,
+} from '@/lib/queue-auto-complete';
 
 export function DoctorCallQueue() {
   const { user } = useAuth();
@@ -44,6 +51,10 @@ export function DoctorCallQueue() {
 
   const fetchQueue = async () => {
     setQueueLoadError(null);
+    // إنهاء تلقائي لأي دور مر عليه أكثر من ساعتين (عبر الخادم والعميل)
+    triggerAutoCompleteServer().catch(() => {});
+    await autoCompleteExpiredQueueItems(supabase).catch(() => {});
+
     const { data, error } = await supabase
       .from('call_queue')
       .select('*')
@@ -53,7 +64,11 @@ export function DoctorCallQueue() {
     if (error) {
       setQueueLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل قائمة النداء.'));
     } else {
-      setQueue(data || []);
+      const validQueue = filterOutExpiredQueueItems(data || []);
+      if (validQueue.length < (data?.length || 0)) {
+        triggerAutoCompleteServer().catch(() => {});
+      }
+      setQueue(validQueue);
     }
     fetchCompletedToday();
   };
@@ -91,8 +106,15 @@ export function DoctorCallQueue() {
           fetchQueue();
         })
         .subscribe();
+
+      // فحص دوري كل 30 ثانية لتحديث الطابور وتنفيذ الإنهاء التلقائي بعد ساعتين
+      const expiryTimer = setInterval(() => {
+        fetchQueue();
+      }, 30000);
+
       return () => {
         supabase.removeChannel(channel);
+        clearInterval(expiryTimer);
       };
     }
   }, [doctorClinicId]);
@@ -350,6 +372,19 @@ export function DoctorCallQueue() {
         </button>
       </form>
 
+      {/* تنبيه نظام الإنهاء التلقائي بعد ساعتين */}
+      <div className="bg-blue-50/90 border border-blue-200/90 rounded-xl px-4 py-2.5 text-xs text-blue-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-blue-600 shrink-0" />
+          <span>
+            <strong>الإنهاء التلقائي بعد ساعتين:</strong> يتم إنهاء واستبعاد أي دور مر عليه أكثر من ساعتين تلقائياً من شاشة النداء والانتظار حتى في حال نسيان الضغط على &quot;انتهت المقابلة&quot;.
+          </span>
+        </div>
+        <span className="bg-blue-200/70 text-blue-800 font-bold px-2.5 py-0.5 rounded-full text-[11px] shrink-0 self-start sm:self-auto">
+          نشط تلقائياً (120 دقيقة)
+        </span>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="border-blue-100 shadow-md">
           <CardContent className="p-6">
@@ -367,9 +402,21 @@ export function DoctorCallQueue() {
                       <div className="text-sm font-bold text-blue-600 mb-1">رقم الدور</div>
                       <div className="text-4xl font-black text-blue-900">{p.token_number}</div>
                       <div className="font-bold text-lg text-blue-800 mt-2">{p.patient_name}</div>
-                          <div className="text-xs text-blue-500 mt-1" dir="ltr">
-                            {p.created_at ? new Date(p.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''}
+                      {(() => {
+                        const reg = getTimeSinceRegistration(p);
+                        const exp = getTimeRemainingBeforeExpiry(p);
+                        return (
+                          <div className="mt-2 space-y-1">
+                            <div className="text-xs text-blue-600 flex items-center gap-1 font-semibold">
+                              <Clock className="w-3.5 h-3.5 shrink-0" />
+                              <span>مسجل منذ: {reg.formatted}</span>
+                            </div>
+                            <div className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100/80 text-blue-800 border border-blue-200">
+                              <span>إنهاء تلقائي خلال: {exp.formatted}</span>
+                            </div>
                           </div>
+                        );
+                      })()}
                     </div>
                     <div className="flex flex-col sm:flex-row gap-2">
                       <button
@@ -425,7 +472,22 @@ export function DoctorCallQueue() {
                       <div className="bg-orange-100 text-orange-800 w-11 h-11 rounded-full flex items-center justify-center font-black text-lg shrink-0">
                         {p.token_number}
                       </div>
-                      <div className="font-bold text-gray-800 truncate">{p.patient_name}</div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-gray-800 truncate">{p.patient_name}</div>
+                        {(() => {
+                          const reg = getTimeSinceRegistration(p);
+                          const exp = getTimeRemainingBeforeExpiry(p);
+                          return (
+                            <div className="text-[11px] text-gray-500 flex items-center gap-2 mt-0.5">
+                              <span>مسجل منذ {reg.formatted}</span>
+                              <span className="text-gray-300">•</span>
+                              <span className={exp.minutesRemaining <= 30 ? 'text-amber-600 font-bold' : 'text-blue-600'}>
+                                إنهاء تلقائي بعد {exp.formatted}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button

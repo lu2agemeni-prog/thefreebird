@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { playQueueAnnouncement } from '@/lib/queueAudio';
+import { filterOutExpiredQueueItems, triggerAutoCompleteServer } from '@/lib/queue-auto-complete';
 import {
   Clock,
   Volume2,
@@ -180,7 +181,7 @@ export function PatientLiveQueue({ user, initialClinicId, initialToken }: Patien
         .order('token_number', { ascending: true });
 
       if (!error && data) {
-        return data as QueueItem[];
+        return filterOutExpiredQueueItems(data as QueueItem[]);
       }
       return [];
     } catch {
@@ -191,6 +192,7 @@ export function PatientLiveQueue({ user, initialClinicId, initialToken }: Patien
   // Primary loader & sync
   const refreshAll = useCallback(async (showIndicator = false) => {
     if (showIndicator) setIsRefreshing(true);
+    triggerAutoCompleteServer().catch(() => {});
 
     await fetchClinicsAndDoctors();
 

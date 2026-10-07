@@ -61,6 +61,11 @@ import {
 } from '@/lib/queue-layout-config';
 import { QueueNewsTicker } from '@/components/queue/QueueNewsTicker';
 import { QueueLayoutSettingsModal } from '@/components/queue/QueueLayoutSettingsModal';
+import {
+  autoCompleteExpiredQueueItems,
+  filterOutExpiredQueueItems,
+  triggerAutoCompleteServer,
+} from '@/lib/queue-auto-complete';
 
 interface DoctorMediaSlide {
   type: 'doctor';
@@ -264,15 +269,51 @@ export default function QueueDisplay() {
     }, noticeDurationMs);
   }, []);
 
-  // جلب وتحديث بيانات الطابور العام
+  // جلب وتحديث بيانات الطابور العام مع الإنهاء التلقائي للحالات بعد ساعتين من تسجيلها
   const fetchQueue = useCallback(async () => {
     try {
+      // 1. تشغيل فحص الإنهاء التلقائي لأي حالة مر عليها أكثر من ساعتين (عبر الخادم وقاعدة البيانات)
+      triggerAutoCompleteServer().catch(() => {});
+      autoCompleteExpiredQueueItems(supabase).catch((e) => {
+        console.warn('Queue auto-complete error:', e);
+      });
+
       const { data } = await supabase.rpc('get_public_queue_status');
       if (data) {
-        setQueue(data);
+        // إرفاق توقيت التسجيل الفعلي (created_at) لضمان دقة احتساب الساعتين من وقت تسجيل المريض وليس آخر تحديث
+        let enrichedData = data;
+        const ids = data.map((d: any) => d.id).filter(Boolean);
+        if (ids.length > 0) {
+          try {
+            const { data: times } = await supabase
+              .from('call_queue')
+              .select('id, created_at')
+              .in('id', ids);
+            if (times && times.length > 0) {
+              const timeMap = new Map<string, string>();
+              times.forEach((t: any) => {
+                if (t.created_at) timeMap.set(t.id, t.created_at);
+              });
+              enrichedData = data.map((d: any) => ({
+                ...d,
+                created_at: timeMap.get(d.id) || d.created_at || d.updated_at,
+              }));
+            }
+          } catch (tErr) {
+            console.warn('Error enriching queue created_at:', tErr);
+          }
+        }
+
+        // استبعاد أي دور تجاوز الساعتين فوراً من العرض والنداء
+        const validQueue = filterOutExpiredQueueItems(enrichedData);
+        if (validQueue.length < enrichedData.length) {
+          // في حال تم استبعاد أدوار منتهية، إطلاق تحديث قاعدة البيانات فوراً
+          triggerAutoCompleteServer().catch(() => {});
+        }
+        setQueue(validQueue);
 
         // فرز المرضى قيد النداء حسب أحدث توقيت نداء (updated_at)
-        const callingList = data
+        const callingList = validQueue
           .filter((q: any) => q.status === 'calling')
           .sort((a: any, b: any) => {
             const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
