@@ -122,6 +122,14 @@ class MediaCacheManager {
    * إيقاف فوري لكافة المقاطع الصوتية لإعطاء الأولوية المطلقة لنداء المريض
    */
   public stopAllAudio(): void {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch (e) {
+        // ignore
+      }
+    }
+
     if (this.currentlyPlayingAudio) {
       try {
         this.currentlyPlayingAudio.pause();

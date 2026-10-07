@@ -15,6 +15,10 @@ import {
   getTimeRemainingBeforeExpiry,
   getTimeSinceRegistration,
   triggerAutoCompleteServer,
+  QueueAutoExpireConfig,
+  DEFAULT_QUEUE_AUTO_EXPIRE_CONFIG,
+  fetchQueueAutoExpireConfig,
+  formatExpiryConfigSummary,
 } from '@/lib/queue-auto-complete';
 
 export function DoctorCallQueue() {
@@ -34,6 +38,7 @@ export function DoctorCallQueue() {
   const [secretaryCallSent, setSecretaryCallSent] = useState(false);
   const [completedToday, setCompletedToday] = useState<any[]>([]);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [autoExpireConfig, setAutoExpireConfig] = useState<QueueAutoExpireConfig>(DEFAULT_QUEUE_AUTO_EXPIRE_CONFIG);
 
   const fetchCompletedToday = async () => {
     if (!doctorClinicId) return;
@@ -51,9 +56,9 @@ export function DoctorCallQueue() {
 
   const fetchQueue = async () => {
     setQueueLoadError(null);
-    // إنهاء تلقائي لأي دور مر عليه أكثر من ساعتين (عبر الخادم والعميل)
-    triggerAutoCompleteServer().catch(() => {});
-    await autoCompleteExpiredQueueItems(supabase).catch(() => {});
+    // إنهاء تلقائي لأي دور مر عليه المدة المحددة من المدير (عبر الخادم والعميل)
+    triggerAutoCompleteServer(autoExpireConfig).catch(() => {});
+    await autoCompleteExpiredQueueItems(supabase, autoExpireConfig).catch(() => {});
 
     const { data, error } = await supabase
       .from('call_queue')
@@ -64,9 +69,9 @@ export function DoctorCallQueue() {
     if (error) {
       setQueueLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل قائمة النداء.'));
     } else {
-      const validQueue = filterOutExpiredQueueItems(data || []);
+      const validQueue = filterOutExpiredQueueItems(data || [], autoExpireConfig);
       if (validQueue.length < (data?.length || 0)) {
-        triggerAutoCompleteServer().catch(() => {});
+        triggerAutoCompleteServer(autoExpireConfig).catch(() => {});
       }
       setQueue(validQueue);
     }
@@ -94,6 +99,28 @@ export function DoctorCallQueue() {
   };
 
   useEffect(() => {
+    // جلب إعدادات الإنهاء التلقائي المعتمدة من المدير
+    fetchQueueAutoExpireConfig(supabase).then((cfg) => {
+      setAutoExpireConfig(cfg);
+    }).catch(() => {});
+
+    // الاستماع للتعديلات اللحظية على إعدادات الإنهاء التلقائي المعتمدة من المدير
+    const configChannel = supabase
+      .channel('queue_settings_broadcast')
+      .on('broadcast', { event: 'auto_expire_config_updated' }, (payload) => {
+        if (payload?.payload) {
+          setAutoExpireConfig(payload.payload);
+          fetchQueue();
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(configChannel);
+    };
+  }, []);
+
+  useEffect(() => {
     if (user?.id) fetchDoctorClinic();
   }, [user]);
 
@@ -107,7 +134,7 @@ export function DoctorCallQueue() {
         })
         .subscribe();
 
-      // فحص دوري كل 30 ثانية لتحديث الطابور وتنفيذ الإنهاء التلقائي بعد ساعتين
+      // فحص دوري كل 30 ثانية لتحديث الطابور وتنفيذ الإنهاء التلقائي
       const expiryTimer = setInterval(() => {
         fetchQueue();
       }, 30000);
@@ -117,7 +144,7 @@ export function DoctorCallQueue() {
         clearInterval(expiryTimer);
       };
     }
-  }, [doctorClinicId]);
+  }, [doctorClinicId, autoExpireConfig]);
 
   const handleCallSpecific = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -372,16 +399,16 @@ export function DoctorCallQueue() {
         </button>
       </form>
 
-      {/* تنبيه نظام الإنهاء التلقائي بعد ساعتين */}
+      {/* تنبيه نظام الإنهاء التلقائي وفق ضبط المدير */}
       <div className="bg-blue-50/90 border border-blue-200/90 rounded-xl px-4 py-2.5 text-xs text-blue-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
         <div className="flex items-center gap-2">
           <Clock className="w-4 h-4 text-blue-600 shrink-0" />
           <span>
-            <strong>الإنهاء التلقائي بعد ساعتين:</strong> يتم إنهاء واستبعاد أي دور مر عليه أكثر من ساعتين تلقائياً من شاشة النداء والانتظار حتى في حال نسيان الضغط على &quot;انتهت المقابلة&quot;.
+            <strong>الإنهاء التلقائي للأدوار ({formatExpiryConfigSummary(autoExpireConfig)}):</strong> يتم إنهاء واستبعاد أي دور مر عليه هذا الوقت تلقائياً من شاشة النداء والانتظار حتى في حال نسيان الضغط على &quot;انتهت المقابلة&quot;.
           </span>
         </div>
         <span className="bg-blue-200/70 text-blue-800 font-bold px-2.5 py-0.5 rounded-full text-[11px] shrink-0 self-start sm:self-auto">
-          نشط تلقائياً (120 دقيقة)
+          نشط ({formatExpiryConfigSummary(autoExpireConfig)})
         </span>
       </div>
 
@@ -404,7 +431,7 @@ export function DoctorCallQueue() {
                       <div className="font-bold text-lg text-blue-800 mt-2">{p.patient_name}</div>
                       {(() => {
                         const reg = getTimeSinceRegistration(p);
-                        const exp = getTimeRemainingBeforeExpiry(p);
+                        const exp = getTimeRemainingBeforeExpiry(p, autoExpireConfig);
                         return (
                           <div className="mt-2 space-y-1">
                             <div className="text-xs text-blue-600 flex items-center gap-1 font-semibold">
@@ -476,7 +503,7 @@ export function DoctorCallQueue() {
                         <div className="font-bold text-gray-800 truncate">{p.patient_name}</div>
                         {(() => {
                           const reg = getTimeSinceRegistration(p);
-                          const exp = getTimeRemainingBeforeExpiry(p);
+                          const exp = getTimeRemainingBeforeExpiry(p, autoExpireConfig);
                           return (
                             <div className="text-[11px] text-gray-500 flex items-center gap-2 mt-0.5">
                               <span>مسجل منذ {reg.formatted}</span>

@@ -1195,8 +1195,8 @@ export function QueueLayoutSettingsModal({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1">
                   {[
-                    { minutes: 5, label: 'كل 5 دقائق', desc: 'تكرار خفيف' },
-                    { minutes: 10, label: 'كل 10 دقائق (الموصى به)', desc: 'توازن مثالي بين الإعلان والهدوء' },
+                    { minutes: 5, label: 'كل 5 دقائق (الموصى به)', desc: 'طبيب واحد كل 5 دقائق بالتتابع ثم التكرار' },
+                    { minutes: 10, label: 'كل 10 دقائق', desc: 'توازن بين الإعلان والهدوء' },
                     { minutes: 15, label: 'كل 15 دقيقة', desc: 'هدوء أكبر للمرضى' },
                     { minutes: 20, label: 'كل 20 دقيقة', desc: 'فترات هدوء طويلة' },
                     { minutes: 30, label: 'كل 30 دقيقة', desc: 'إعلان نادر ومريح' },

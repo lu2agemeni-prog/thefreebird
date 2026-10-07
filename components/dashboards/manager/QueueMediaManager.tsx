@@ -67,9 +67,10 @@ import {
   saveQueueLayoutConfig,
 } from '@/lib/queue-layout-config';
 import { QueueLayoutSettingsModal } from '@/components/queue/QueueLayoutSettingsModal';
+import { QueueAutoExpireSettingsCard } from '@/components/queue/QueueAutoExpireSettingsCard';
 
 export function QueueMediaManager() {
-  const [activeTab, setActiveTab] = useState<'doctors' | 'general' | 'preview'>('doctors');
+  const [activeTab, setActiveTab] = useState<'doctors' | 'general' | 'auto_expire'>('doctors');
 
   // بيانات الوسائط العامة
   const [generalMedia, setGeneralMedia] = useState<any[]>([]);
@@ -584,6 +585,17 @@ export function QueueMediaManager() {
           <ImageIcon className="w-4 h-4 text-emerald-600" />
           <span>الوسائط العامة للمركز ({generalMedia.length})</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('auto_expire')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'auto_expire' ? 'bg-white text-emerald-800 shadow-xs' : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <Clock className="w-4 h-4 text-emerald-600" />
+          <span>مدة الإنهاء التلقائي للأدوار</span>
+        </button>
       </div>
 
       {/* التبويب 1: ميديا وإعلانات الأطباء ومواعيد العمل */}
@@ -912,6 +924,13 @@ export function QueueMediaManager() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* التبويب 3: مدة الإنهاء التلقائي للحالات والأدوار (تحكم المدير) */}
+      {activeTab === 'auto_expire' && (
+        <div className="space-y-4">
+          <QueueAutoExpireSettingsCard />
         </div>
       )}
 

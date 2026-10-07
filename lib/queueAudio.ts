@@ -99,3 +99,34 @@ export async function playQueueAnnouncement(
     }
   }
 }
+
+/**
+ * الإعلان الصوتي عن تواجد الطبيب عبر قراءة صوتية باللغة العربية (TTS)
+ * في حال عدم توفر مقطع صوتي مخصص مسجل للطبيب
+ */
+export function speakDoctorAnnouncement(
+  doctorName: string,
+  clinicName: string,
+  specialty?: string
+): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      resolve();
+      return;
+    }
+    try {
+      window.speechSynthesis.cancel();
+      const specText = specialty ? `، ${specialty}` : '';
+      const text = `يتواجد الآن في ${clinicName || 'العيادة'}: دكتور ${doctorName}${specText}.`;
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ar-EG';
+      utterance.rate = 0.92;
+      utterance.onend = () => resolve();
+      utterance.onerror = () => resolve();
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      resolve();
+    }
+  });
+}
+

@@ -577,7 +577,7 @@ export const DEFAULT_QUEUE_LAYOUT_CONFIG: QueueLayoutConfig = {
   tickerSeparator: 'star',
   tickerPauseOnHover: true,
 
-  doctorAudioIntervalMinutes: 10, // تشغيل الإعلان الصوتي لتواجد الأطباء مرة واحدة كل 10 دقائق لتجنب الإزعاج
+  doctorAudioIntervalMinutes: 5, // تشغيل الإعلان الصوتي والمرئي لتواجد طبيب واحد كل 5 دقائق بالتتابع ثم التكرار
   patientCallNoticeDurationSec: 8,
   slideDefaultDurationSec: 10,
   slideTransition: 'fade',

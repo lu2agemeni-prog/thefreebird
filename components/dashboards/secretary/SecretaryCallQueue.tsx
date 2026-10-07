@@ -46,7 +46,12 @@ import {
   getTimeRemainingBeforeExpiry,
   getTimeSinceRegistration,
   triggerAutoCompleteServer,
+  QueueAutoExpireConfig,
+  DEFAULT_QUEUE_AUTO_EXPIRE_CONFIG,
+  fetchQueueAutoExpireConfig,
+  formatExpiryConfigSummary,
 } from '@/lib/queue-auto-complete';
+import { QueueAutoExpireSettingsCard } from '@/components/queue/QueueAutoExpireSettingsCard';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -78,6 +83,10 @@ export function SecretaryCallQueue() {
   const [showQuickTokenModal, setShowQuickTokenModal] = useState(false);
   const [showAddVisitModal, setShowAddVisitModal] = useState(false);
   const [completingQueueItem, setCompletingQueueItem] = useState<any | null>(null);
+
+  // إعدادات الإنهاء التلقائي القابلة للتخصيص من المدير
+  const [autoExpireConfig, setAutoExpireConfig] = useState<QueueAutoExpireConfig>(DEFAULT_QUEUE_AUTO_EXPIRE_CONFIG);
+  const [showAutoExpireModal, setShowAutoExpireModal] = useState(false);
 
   const fetchCompletedToday = async () => {
     const todayStart = new Date();
@@ -113,9 +122,9 @@ export function SecretaryCallQueue() {
   };
 
   const fetchQueueOnly = async () => {
-    // إنهاء تلقائي لأي دور مر عليه أكثر من ساعتين (عبر الخادم والعميل)
-    triggerAutoCompleteServer().catch(() => {});
-    await autoCompleteExpiredQueueItems(supabase).catch(() => {});
+    // إنهاء تلقائي لأي دور مر عليه المدة المحددة من المدير (عبر الخادم والعميل)
+    triggerAutoCompleteServer(autoExpireConfig).catch(() => {});
+    await autoCompleteExpiredQueueItems(supabase, autoExpireConfig).catch(() => {});
 
     const { data, error } = await supabase
       .from('call_queue')
@@ -125,10 +134,10 @@ export function SecretaryCallQueue() {
     if (error) {
       setLoadError(getFriendlyErrorMessage(error, 'تعذر تحميل حالة النداء الآلي.'));
     } else if (data) {
-      // استبعاد أي دور منتهٍ تجاوز الساعتين لضمان تطابق الشاشات
-      const validData = filterOutExpiredQueueItems(data);
+      // استبعاد أي دور منتهٍ تجاوز المدة المحددة لضمان تطابق الشاشات
+      const validData = filterOutExpiredQueueItems(data, autoExpireConfig);
       if (validData.length < data.length) {
-        triggerAutoCompleteServer().catch(() => {});
+        triggerAutoCompleteServer(autoExpireConfig).catch(() => {});
       }
 
       // إرفاق إجمالي المبلغ المدفوع من patient_visits المرتبطة بالدور (المصدر المالي الحقيقي الموحد)
@@ -182,10 +191,26 @@ export function SecretaryCallQueue() {
 
   useEffect(() => {
     fetchAll();
+    // جلب إعدادات الإنهاء التلقائي المعتمدة من المدير
+    fetchQueueAutoExpireConfig(supabase).then((cfg) => {
+      setAutoExpireConfig(cfg);
+    }).catch(() => {});
+
     const channel = supabase
       .channel('secretary_queue_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'call_queue' }, () => fetchQueueOnly())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'doctors' }, () => fetchDoctorsOnly())
+      .subscribe();
+
+    // الاستماع للتعديلات اللحظية على إعدادات الإنهاء التلقائي
+    const configChannel = supabase
+      .channel('queue_settings_broadcast')
+      .on('broadcast', { event: 'auto_expire_config_updated' }, (payload) => {
+        if (payload?.payload) {
+          setAutoExpireConfig(payload.payload);
+          fetchQueueOnly();
+        }
+      })
       .subscribe();
 
     const callChannel = supabase
@@ -197,13 +222,14 @@ export function SecretaryCallQueue() {
       })
       .subscribe();
 
-    // فحص دوري كل 30 ثانية للإنهاء التلقائي بعد ساعتين
+    // فحص دوري كل 30 ثانية للإنهاء التلقائي
     const expiryTimer = setInterval(() => {
       fetchQueueOnly();
     }, 30000);
 
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(configChannel);
       supabase.removeChannel(callChannel);
       clearInterval(expiryTimer);
     };
@@ -501,18 +527,49 @@ export function SecretaryCallQueue() {
         </div>
       )}
 
-      {/* شريط تنبيه الإنهاء التلقائي بعد ساعتين */}
+      {/* شريط تنبيه وضبط الإنهاء التلقائي للأدوار */}
       <div className="bg-emerald-50/80 border border-emerald-200/80 rounded-xl px-4 py-2.5 text-xs text-emerald-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
         <div className="flex items-center gap-2">
           <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>
-            <strong>الإنهاء التلقائي بعد ساعتين:</strong> أي دور يمر عليه أكثر من ساعتين يُنهى ويُستبعد تلقائياً من شاشة النداء الآلي وقائمة الانتظار حتى في حال نسيان الضغط على &quot;انتهت المقابلة&quot;.
+            <strong>الإنهاء التلقائي للأدوار ({formatExpiryConfigSummary(autoExpireConfig)}):</strong> أي دور يمر عليه هذا الوقت يُنهى ويُستبعد تلقائياً من شاشة النداء وقائمة الانتظار حتى في حال نسيان الضغط على &quot;انتهت المقابلة&quot;.
           </span>
         </div>
-        <span className="bg-emerald-200/70 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full text-[11px] shrink-0 self-start sm:self-auto">
-          نشط تلقائياً (120 دقيقة)
-        </span>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <span className="bg-emerald-200/70 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full text-[11px] shrink-0">
+            {formatExpiryConfigSummary(autoExpireConfig)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowAutoExpireModal(true)}
+            className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-2.5 py-1 rounded-lg text-[11px] transition-colors cursor-pointer shadow-2xs"
+            title="تعديل وتحديد مدة الانتهاء التلقائي"
+          >
+            تعديل الضبط (المدير)
+          </button>
+        </div>
       </div>
+
+      {/* نافذة مودال ضبط مدة الإنهاء التلقائي للمدير */}
+      {showAutoExpireModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+          <div className="w-full max-w-3xl relative animate-in fade-in zoom-in-95">
+            <button
+              onClick={() => setShowAutoExpireModal(false)}
+              className="absolute top-4 left-4 z-10 bg-white/20 hover:bg-white/30 text-white rounded-full p-1.5 transition-colors"
+              title="إغلاق"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <QueueAutoExpireSettingsCard
+              onSaved={(newCfg) => {
+                setAutoExpireConfig(newCfg);
+                fetchQueueOnly();
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* ── العمود الأيسر: اختيار العيادة + الأطباء (4/12) ── */}
@@ -627,7 +684,7 @@ export function SecretaryCallQueue() {
                       )}
                       {(() => {
                         const reg = getTimeSinceRegistration(currentCalling);
-                        const exp = getTimeRemainingBeforeExpiry(currentCalling);
+                        const exp = getTimeRemainingBeforeExpiry(currentCalling, autoExpireConfig);
                         return (
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                             <span className="bg-emerald-900/60 text-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
@@ -635,7 +692,7 @@ export function SecretaryCallQueue() {
                               مسجل منذ: {reg.formatted}
                             </span>
                             <span className="bg-amber-400 text-amber-950 font-black px-2 py-0.5 rounded-md text-[11px]">
-                              إنهاء تلقائي بعد ساعتين (متبقي {exp.formatted})
+                              إنهاء تلقائي ({formatExpiryConfigSummary(autoExpireConfig)}) • متبقي {exp.formatted}
                             </span>
                           </div>
                         );
@@ -799,7 +856,7 @@ export function SecretaryCallQueue() {
                           )}
                           {(() => {
                             const reg = getTimeSinceRegistration(q);
-                            const exp = getTimeRemainingBeforeExpiry(q);
+                            const exp = getTimeRemainingBeforeExpiry(q, autoExpireConfig);
                             return (
                               <span className="text-gray-400 flex items-center gap-1 font-medium">
                                 <Clock className="w-3 h-3 text-gray-400" />

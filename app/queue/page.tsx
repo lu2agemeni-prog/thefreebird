@@ -37,7 +37,7 @@ import {
   Calendar,
   BellRing,
 } from 'lucide-react';
-import { playQueueAnnouncement } from '@/lib/queueAudio';
+import { playQueueAnnouncement, speakDoctorAnnouncement } from '@/lib/queueAudio';
 import {
   PATIENT_CALL_CHANNEL,
   PATIENT_CALL_EVENT,
@@ -65,6 +65,9 @@ import {
   autoCompleteExpiredQueueItems,
   filterOutExpiredQueueItems,
   triggerAutoCompleteServer,
+  fetchQueueAutoExpireConfig,
+  QueueAutoExpireConfig,
+  DEFAULT_QUEUE_AUTO_EXPIRE_CONFIG,
 } from '@/lib/queue-auto-complete';
 
 interface DoctorMediaSlide {
@@ -122,9 +125,27 @@ export default function QueueDisplay() {
     configRef.current = config;
   }, [config]);
 
-  // تتبع فترات الإعلان الصوتي لتواجد الأطباء لمنع الإزعاج الصوتي المتكرر
-  const lastDoctorAudioRoundFinishedAtRef = useRef<number>(0);
-  const doctorsAnnouncedInActiveRoundRef = useRef<Set<string>>(new Set());
+  // الإعلان المرئي والصوتي الدوري عن تواجد الأطباء (طبيب واحد كل 5 دقائق بالتتابع ثم تكرار من البداية)
+  const [doctorNotice, setDoctorNotice] = useState<{
+    doctorId: string;
+    doctorName: string;
+    clinicName: string;
+    specialty?: string;
+    photoUrl?: string;
+    currentToken?: number | null;
+  } | null>(null);
+  const doctorNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const doctorAnnouncementIndexRef = useRef<number>(0);
+  const isPatientCallActiveRef = useRef<boolean>(false);
+  const [isPatientCallActive, setIsPatientCallActive] = useState<boolean>(false);
+  const dropNoticeRef = useRef<{
+    token: number;
+    clinicName: string;
+    doctorName?: string;
+    isRepeat?: boolean;
+  } | null>(null);
+  const presentDoctorsListRef = useRef<any[]>([]);
+  const mediaSlidesRef = useRef<MediaSlideItem[]>([]);
 
   // مراجع نداء المريض وتكرار النداء
   const lastAnnouncedIdRef = useRef<string | null>(null);
@@ -145,15 +166,26 @@ export default function QueueDisplay() {
   } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => {
+    dropNoticeRef.current = dropNotice;
+  }, [dropNotice]);
+
   // نداء السكرتارية المباشر
   const [secretaryAlert, setSecretaryAlert] = useState<string | null>(null);
   const secretaryAlertTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // إعدادات الإنهاء التلقائي المعتمدة من المدير
+  const autoExpireConfigRef = useRef<QueueAutoExpireConfig>(DEFAULT_QUEUE_AUTO_EXPIRE_CONFIG);
 
   // 1. تحميل الإعدادات الافتراضية للشاشة من قاعدة البيانات والتخزين المحلي
   useEffect(() => {
     let isMounted = true;
     async function initConfig() {
       try {
+        fetchQueueAutoExpireConfig(supabase).then((cfg) => {
+          autoExpireConfigRef.current = cfg;
+        }).catch(() => {});
+
         const loaded = await fetchQueueLayoutConfig();
         if (isMounted) {
           setConfig(loaded);
@@ -226,8 +258,8 @@ export default function QueueDisplay() {
     setSoundEnabled(true);
   };
 
-  // دالة موحدة لإطلاق إعلان نداء المريض الصوتي والمرئي على الشاشة مع دعم تكرار النداء الكامل
-  const triggerPatientAnnouncement = useCallback((callData: {
+  // دالة موحدة لإطلاق إعلان نداء المريض الصوتي والمرئي على الشاشة مع أولوية مطلقة 100%
+  const triggerPatientAnnouncement = useCallback(async (callData: {
     id?: string;
     token: number;
     clinicName: string;
@@ -235,25 +267,26 @@ export default function QueueDisplay() {
     clinicAudioNumber?: number | null;
     isRepeat?: boolean;
   }) => {
-    // 1. الأولوية المطلقة لنداء المريض: إيقاف أي صوت إعلان طبيب يعمل فوراً
+    // 1. الأولوية المطلقة لنداء المريض: إيقاف أي صوت ميديا أو إعلان طبيب فوراً بدون أي تأخير (0ms)
+    isPatientCallActiveRef.current = true;
+    setIsPatientCallActive(true);
     mediaCache.stopAllAudio();
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch (e) {
+        // ignore
+      }
+    }
     setIsAudioPlaying(false);
+    // إخفاء إعلان الطبيب المرئي فوراً لإفساح الشاشة بالكامل لنداء المريض
+    setDoctorNotice(null);
 
     // 2. تفعيل تأثير الوميض للبطاقة
     setRepeatPulseKey((prev) => prev + 1);
     setIsRepeatCallNotice(!!callData.isRepeat);
 
-    // 3. تشغيل نغمة ونداء المريض الصوتي (مع نغمة مزدوجة عند تكرار النداء)
-    if (soundEnabledRef.current) {
-      playQueueAnnouncement(
-        callData.token,
-        callData.clinicName || '',
-        callData.clinicAudioNumber,
-        { isRepeat: callData.isRepeat }
-      ).catch(() => {});
-    }
-
-    // 4. إظهار كارت النداء الكبير المنسدل
+    // 3. إظهار كارت النداء الكبير المنسدل
     setDropNotice({
       token: callData.token,
       clinicName: callData.clinicName || 'العيادة',
@@ -267,14 +300,34 @@ export default function QueueDisplay() {
       setDropNotice(null);
       setIsRepeatCallNotice(false);
     }, noticeDurationMs);
+
+    // 4. تشغيل نغمة ونداء المريض الصوتي مع انتظار انتهائه كاملاً (صمت الميديا التام لحين انتهاء النداء)
+    try {
+      if (soundEnabledRef.current) {
+        await playQueueAnnouncement(
+          callData.token,
+          callData.clinicName || '',
+          callData.clinicAudioNumber,
+          { isRepeat: callData.isRepeat }
+        );
+      }
+    } catch (err) {
+      console.warn('Error in playQueueAnnouncement:', err);
+    } finally {
+      // بعد انتهاء نداء المريض بالكامل، يمكن استئناف العمليات العادية
+      isPatientCallActiveRef.current = false;
+      setIsPatientCallActive(false);
+    }
   }, []);
 
-  // جلب وتحديث بيانات الطابور العام مع الإنهاء التلقائي للحالات بعد ساعتين من تسجيلها
+  // جلب وتحديث بيانات الطابور العام مع الإنهاء التلقائي للحالات وفق ضبط المدير
   const fetchQueue = useCallback(async () => {
     try {
-      // 1. تشغيل فحص الإنهاء التلقائي لأي حالة مر عليها أكثر من ساعتين (عبر الخادم وقاعدة البيانات)
-      triggerAutoCompleteServer().catch(() => {});
-      autoCompleteExpiredQueueItems(supabase).catch((e) => {
+      const activeExpireCfg = autoExpireConfigRef.current;
+
+      // 1. تشغيل فحص الإنهاء التلقائي للحالات المتجاوزة للمدة (عبر الخادم وقاعدة البيانات)
+      triggerAutoCompleteServer(activeExpireCfg).catch(() => {});
+      autoCompleteExpiredQueueItems(supabase, activeExpireCfg).catch((e) => {
         console.warn('Queue auto-complete error:', e);
       });
 
@@ -304,11 +357,11 @@ export default function QueueDisplay() {
           }
         }
 
-        // استبعاد أي دور تجاوز الساعتين فوراً من العرض والنداء
-        const validQueue = filterOutExpiredQueueItems(enrichedData);
+        // استبعاد أي دور تجاوز المدة المحددة فوراً من العرض والنداء
+        const validQueue = filterOutExpiredQueueItems(enrichedData, activeExpireCfg);
         if (validQueue.length < enrichedData.length) {
           // في حال تم استبعاد أدوار منتهية، إطلاق تحديث قاعدة البيانات فوراً
-          triggerAutoCompleteServer().catch(() => {});
+          triggerAutoCompleteServer(activeExpireCfg).catch(() => {});
         }
         setQueue(validQueue);
 
@@ -462,6 +515,17 @@ export default function QueueDisplay() {
       })
       .subscribe();
 
+    // استقبال تحديث إعدادات الإنهاء التلقائي لحظياً من المدير عبر القناة اللحظية
+    const channelSettings = supabase
+      .channel('queue_settings_broadcast')
+      .on('broadcast', { event: 'auto_expire_config_updated' }, (payload) => {
+        if (payload?.payload) {
+          autoExpireConfigRef.current = payload.payload;
+          fetchQueue();
+        }
+      })
+      .subscribe();
+
     return () => {
       clearTimeout(t);
       clearInterval(clockTimer);
@@ -471,6 +535,7 @@ export default function QueueDisplay() {
       supabase.removeChannel(channelDoctors);
       supabase.removeChannel(channelAlerts);
       supabase.removeChannel(channelPatientCalls);
+      supabase.removeChannel(channelSettings);
       if (noticeTimer.current) clearTimeout(noticeTimer.current);
       if (secretaryAlertTimer.current) clearTimeout(secretaryAlertTimer.current);
       if (slideTimerRef.current) clearTimeout(slideTimerRef.current);
@@ -537,6 +602,104 @@ export default function QueueDisplay() {
     return list;
   }, [presentDoctorsList, generalMedia]);
 
+  // مزامنة المراجع اللحظية للأطباء والشرائح
+  useEffect(() => {
+    presentDoctorsListRef.current = presentDoctorsList;
+  }, [presentDoctorsList]);
+
+  useEffect(() => {
+    mediaSlidesRef.current = mediaSlides;
+  }, [mediaSlides]);
+
+  // دالة الإعلان الصوتي والمرئي الدوري عن تواجد الأطباء:
+  // طبيب واحد كل 5 دقائق بالتتابع الدائري، ثم التكرار من الأول وهكذا،
+  // مع استبعاد الصوت وتأجيل الإعلان فوراً إذا كان نداء المريض يعمل (الأولوية المطلقة للمريض).
+  const announceNextDoctor = useCallback(() => {
+    // 1. الأولوية المطلقة لنداء المريض: لا يتم تشغيل إعلان الطبيب إطلاقاً أثناء نداء المريض
+    if (isPatientCallActiveRef.current || dropNoticeRef.current) {
+      return;
+    }
+
+    const docs = presentDoctorsListRef.current;
+    if (!docs || docs.length === 0) return;
+
+    // 2. اختيار طبيب واحد بالتتابع الدائري من قائمة الأطباء المتواجدين
+    const index = doctorAnnouncementIndexRef.current % docs.length;
+    const targetDoctor = docs[index];
+    if (!targetDoctor) return;
+
+    // تحديث المؤشر للطبيب القادم في الدورة التالية (ثم يكرر من الأول)
+    doctorAnnouncementIndexRef.current = (index + 1) % docs.length;
+
+    // 3. الإعلان المرئي المنبثق عن تواجد الطبيب
+    setDoctorNotice({
+      doctorId: targetDoctor.profile_id,
+      doctorName: targetDoctor.doctorName,
+      clinicName: targetDoctor.clinicName,
+      specialty: targetDoctor.specialty,
+      photoUrl: targetDoctor.photoUrl,
+      currentToken: targetDoctor.currentToken,
+    });
+
+    if (doctorNoticeTimerRef.current) clearTimeout(doctorNoticeTimerRef.current);
+    doctorNoticeTimerRef.current = setTimeout(() => {
+      setDoctorNotice(null);
+    }, 14000);
+
+    // توجيه شريحة الميديا للطبيب إن وجدت لعرض صورته وتفاصيله على الشاشة الكبيرة
+    const slideIdx = mediaSlidesRef.current.findIndex(
+      (s) => s.type === 'doctor' && s.doctorId === targetDoctor.profile_id
+    );
+    if (slideIdx !== -1) {
+      setSlideIndex(slideIdx);
+    }
+
+    // 4. الإعلان الصوتي عن تواجد الطبيب (إذا كان الصوت مفعلاً وغير مكتوم)
+    const intervalMinutes = configRef.current.doctorAudioIntervalMinutes ?? 5;
+    if (intervalMinutes === -1 || muteDoctorAudioRef.current) return;
+
+    if (soundEnabledRef.current) {
+      setIsAudioPlaying(true);
+      if (targetDoctor.audioUrl) {
+        mediaCache.playDoctorAudio(targetDoctor.audioUrl, () => {
+          setIsAudioPlaying(false);
+        });
+      } else {
+        speakDoctorAnnouncement(
+          targetDoctor.doctorName,
+          targetDoctor.clinicName,
+          targetDoctor.specialty
+        ).then(() => {
+          setIsAudioPlaying(false);
+        });
+      }
+    }
+  }, []);
+
+  // مؤقت الإعلان عن طبيب واحد كل 5 دقائق بالتتابع الدائري
+  useEffect(() => {
+    const intervalMinutes = config.doctorAudioIntervalMinutes ?? 5;
+    if (intervalMinutes <= 0) return;
+
+    const intervalMs = intervalMinutes * 60 * 1000;
+
+    // الإعلان عن أول طبيب بعد 20 ثانية من بدء الشاشة والتحميل
+    const initialTimer = setTimeout(() => {
+      announceNextDoctor();
+    }, 20000);
+
+    // تكرار نداء طبيب واحد كل 5 دقائق بالتتابع الدائري ثم التكرار من البداية
+    const periodicTimer = setInterval(() => {
+      announceNextDoctor();
+    }, intervalMs);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(periodicTimer);
+      if (doctorNoticeTimerRef.current) clearTimeout(doctorNoticeTimerRef.current);
+    };
+  }, [config.doctorAudioIntervalMinutes, announceNextDoctor]);
+
   // التحميل المسبق للوسائط لتشغيل فوري بدون أي تأخير
   useEffect(() => {
     mediaSlides.forEach((slide) => {
@@ -561,70 +724,28 @@ export default function QueueDisplay() {
   }, [mediaSlides.length]);
 
   useEffect(() => {
-    if (!currentSlide || !config.showMedia) {
+    if (!currentSlide || !config.showMedia || dropNotice || isPatientCallActive) {
       mediaCache.stopAllAudio();
       const t = setTimeout(() => setIsAudioPlaying(false), 0);
       return () => clearTimeout(t);
     }
 
-    // إيقاف أي صوت سابق
+    // إيقاف أي صوت سابق مع كل تغيير شريحة
     mediaCache.stopAllAudio();
     const pauseT = setTimeout(() => setIsAudioPlaying(false), 0);
 
-    // فحص إمكانية تشغيل الإعلان الصوتي لتواجد الطبيب وفقاً للمهلة الزمنية المحددة في الإعدادات
-    const shouldPlayDoctorVoice = () => {
-      if (dropNotice || muteDoctorAudioRef.current) return false;
-      if (currentSlide.type !== 'doctor' || !currentSlide.audioUrl) return false;
-
-      const intervalMinutes = config.doctorAudioIntervalMinutes;
-      // إذا كان الصوت مكتوماً (-1)
-      if (intervalMinutes === -1) return false;
-      // إذا كان مضبوطاً على التشغيل مع كل دورة (0)
-      if (intervalMinutes === 0) return true;
-
-      const now = Date.now();
-      const elapsedMinutes = (now - lastDoctorAudioRoundFinishedAtRef.current) / (60 * 1000);
-
-      // هل توجد دورة إعلانات أطباء نشطة حالياً؟
-      const isRoundActive = doctorsAnnouncedInActiveRoundRef.current.size > 0;
-
-      if (!isRoundActive) {
-        // لبدء دورة جديدة: إما أنها أول مرة من فتح الشاشة (0) أو انقضت الفترة المحددة بالدقائق
-        if (lastDoctorAudioRoundFinishedAtRef.current !== 0 && elapsedMinutes < intervalMinutes) {
-          return false; // ما زلنا في فترة الهدوء والراحة بين الإعلانات
-        }
-      }
-
-      // إذا كان هذا الطبيب قد تم الإعلان عنه صوتياً بالفعل في هذه الدورة
-      if (doctorsAnnouncedInActiveRoundRef.current.has(currentSlide.doctorId)) {
-        return false;
-      }
-
-      return true;
-    };
-
-    if (shouldPlayDoctorVoice() && currentSlide.type === 'doctor' && currentSlide.audioUrl) {
+    // تشغيل صوت الشريحة فقط في حال كان خيار "مع كل دورة (دائم)" مضبوطاً على 0
+    if (
+      config.doctorAudioIntervalMinutes === 0 &&
+      !muteDoctorAudioRef.current &&
+      currentSlide.type === 'doctor' &&
+      currentSlide.audioUrl
+    ) {
       const res = mediaCache.playDoctorAudio(currentSlide.audioUrl, () => {
         setIsAudioPlaying(false);
       });
       if (res.isPlaying) {
         setIsAudioPlaying(true);
-        // تسجيل أن هذا الطبيب تم الإعلان عنه في هذه الدورة
-        doctorsAnnouncedInActiveRoundRef.current.add(currentSlide.doctorId);
-
-        // فحص اكتمال الإعلان الصوتي لجميع الأطباء المتواجدين الذين لديهم مقاطع صوتية
-        const doctorsWithAudio = presentDoctorsList.filter((d) => d.audioUrl);
-        const allCompleted =
-          doctorsWithAudio.length > 0 &&
-          doctorsWithAudio.every((d) =>
-            doctorsAnnouncedInActiveRoundRef.current.has(d.profile_id)
-          );
-
-        if (allCompleted || doctorsAnnouncedInActiveRoundRef.current.size >= doctorsWithAudio.length) {
-          // اكتملت الدورة بالكامل! بدء مؤقت فترة الهدوء (5 أو 10 دقائق أو غيرها)
-          lastDoctorAudioRoundFinishedAtRef.current = Date.now();
-          doctorsAnnouncedInActiveRoundRef.current.clear();
-        }
       }
     }
 
@@ -656,7 +777,7 @@ export default function QueueDisplay() {
       if (slideTimerRef.current) clearTimeout(slideTimerRef.current);
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
     };
-  }, [currentSlide, goToNextSlide, dropNotice, config.showMedia]);
+  }, [currentSlide, goToNextSlide, dropNotice, isPatientCallActive, config.showMedia, config.doctorAudioIntervalMinutes]);
 
   // إظهار وإخفاء شريط الإعدادات عند حركة الماوس
   const handleMouseMove = useCallback(
@@ -1151,6 +1272,48 @@ export default function QueueDisplay() {
         </div>
       )}
 
+      {/* الإعلان المرئي المنبثق عن تواجد الطبيب (طبيب واحد كل 5 دقائق بالتتابع ثم تكرار من الأول) */}
+      {doctorNotice && !dropNotice && (
+        <div className="fixed inset-x-0 top-0 z-[50] flex justify-center pointer-events-none p-4 transition-all duration-500 animate-in slide-in-from-top-6 fade-in">
+          <div className="mt-16 sm:mt-20 bg-gradient-to-r from-emerald-950/95 via-slate-900/95 to-teal-950/95 backdrop-blur-md text-white rounded-3xl p-5 sm:p-6 shadow-2xl border-2 border-emerald-400/60 flex items-center gap-5 max-w-2xl w-full">
+            {/* صورة الطبيب */}
+            {doctorNotice.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={doctorNotice.photoUrl}
+                alt={doctorNotice.doctorName}
+                className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover shrink-0 border-2 border-emerald-400 shadow-lg"
+              />
+            ) : (
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-emerald-800/80 border-2 border-emerald-400/50 flex items-center justify-center shrink-0">
+                <Stethoscope className="w-10 h-10 text-emerald-300" />
+              </div>
+            )}
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 text-[11px] sm:text-xs font-black px-3 py-1 rounded-full flex items-center gap-1.5 shadow-xs">
+                  <Volume2 className="w-3.5 h-3.5 animate-pulse text-emerald-400" />
+                  <span>طبيب متواجد حالياً بالمركز</span>
+                </span>
+                {doctorNotice.currentToken && (
+                  <span className="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[11px] font-bold px-2 py-0.5 rounded-full font-mono">
+                    الدور الحالي: {doctorNotice.currentToken}
+                  </span>
+                )}
+              </div>
+              <h3 className="text-xl sm:text-2xl font-black text-white truncate">
+                د. {doctorNotice.doctorName}
+              </h3>
+              <p className="text-sm sm:text-base text-emerald-200 font-bold mt-0.5 truncate">
+                {doctorNotice.clinicName}
+                {doctorNotice.specialty ? ` — ${doctorNotice.specialty}` : ''}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* نداء السكرتارية من الطبيب */}
       {secretaryAlert && (
         <div className="fixed inset-x-0 top-0 z-[60] flex justify-center pointer-events-none p-4">
@@ -1426,18 +1589,30 @@ export default function QueueDisplay() {
             }`}
           >
             {presentDoctorsList.map((doc) => {
+              const isBeingAnnounced = doctorNotice?.doctorId === doc.profile_id;
               const isCurrentInSlide =
                 currentSlide?.type === 'doctor' && currentSlide.doctorId === doc.profile_id;
+              const isHighlighted = isBeingAnnounced || isCurrentInSlide;
 
               return (
                 <div
                   key={doc.profile_id}
                   style={{
                     backgroundColor: config.cardBgColor,
-                    borderColor: isCurrentInSlide ? config.accentColor : config.cardBorderColor,
-                    boxShadow: isCurrentInSlide ? `0 0 15px ${config.accentColor}30` : undefined,
+                    borderColor: isBeingAnnounced
+                      ? '#10b981'
+                      : isCurrentInSlide
+                      ? config.accentColor
+                      : config.cardBorderColor,
+                    boxShadow: isBeingAnnounced
+                      ? '0 0 20px rgba(16, 185, 129, 0.45)'
+                      : isCurrentInSlide
+                      ? `0 0 15px ${config.accentColor}30`
+                      : undefined,
                   }}
-                  className={`border rounded-2xl ${cardPaddingClass} flex items-center gap-3 transition-all duration-300`}
+                  className={`border rounded-2xl ${cardPaddingClass} flex items-center gap-3 transition-all duration-300 ${
+                    isBeingAnnounced ? 'ring-2 ring-emerald-400 scale-[1.02]' : ''
+                  }`}
                 >
                   {/* صورة الطبيب الصغيرة */}
                   {doc.photoUrl ? (
@@ -1462,14 +1637,19 @@ export default function QueueDisplay() {
                   )}
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <h4
                         className="font-bold truncate"
                         style={{ color: config.textColor, fontSize: `${config.clinicsFontSizePx || 14}px` }}
                       >
                         {doc.doctorName}
                       </h4>
-                      {isCurrentInSlide && (
+                      {isBeingAnnounced ? (
+                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-emerald-400 text-emerald-950 animate-pulse flex items-center gap-1 shadow-xs">
+                          <Volume2 className="w-3 h-3 text-emerald-950" />
+                          <span>نداء الآن</span>
+                        </span>
+                      ) : isCurrentInSlide ? (
                         <span
                           style={{
                             backgroundColor: config.accentColor,
@@ -1479,7 +1659,7 @@ export default function QueueDisplay() {
                         >
                           معروض
                         </span>
-                      )}
+                      ) : null}
                     </div>
                     <p className="text-xs truncate mt-0.5" style={{ color: config.mutedTextColor }}>
                       {doc.clinicName}
@@ -2003,6 +2183,7 @@ export default function QueueDisplay() {
             } pr-0.5`}
           >
             {presentDoctorsList.map((doc) => {
+              const isBeingAnnounced = doctorNotice?.doctorId === doc.profile_id;
               const isCurrentInSlide =
                 currentSlide?.type === 'doctor' && currentSlide.doctorId === doc.profile_id;
               const photoSize = config.doctorCardPhotoSizePx || 44;
@@ -2012,10 +2193,20 @@ export default function QueueDisplay() {
                   key={doc.profile_id}
                   style={{
                     backgroundColor: config.cardBgColor,
-                    borderColor: isCurrentInSlide ? config.accentColor : config.cardBorderColor,
-                    boxShadow: isCurrentInSlide ? `0 0 15px ${config.accentColor}30` : undefined,
+                    borderColor: isBeingAnnounced
+                      ? '#10b981'
+                      : isCurrentInSlide
+                      ? config.accentColor
+                      : config.cardBorderColor,
+                    boxShadow: isBeingAnnounced
+                      ? '0 0 20px rgba(16, 185, 129, 0.45)'
+                      : isCurrentInSlide
+                      ? `0 0 15px ${config.accentColor}30`
+                      : undefined,
                   }}
-                  className={`${cardBorderWidthClass} ${cardRadiusClass} ${cardPaddingClass} flex items-center gap-2.5 transition-all duration-300`}
+                  className={`${cardBorderWidthClass} ${cardRadiusClass} ${cardPaddingClass} flex items-center gap-2.5 transition-all duration-300 ${
+                    isBeingAnnounced ? 'ring-2 ring-emerald-400 scale-[1.02]' : ''
+                  }`}
                 >
                   {doc.photoUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -2045,7 +2236,7 @@ export default function QueueDisplay() {
                   )}
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <h4
                         className="font-bold truncate text-xs sm:text-sm"
                         style={{
@@ -2055,12 +2246,17 @@ export default function QueueDisplay() {
                       >
                         {doc.doctorName}
                       </h4>
-                      {isCurrentInSlide && (
+                      {isBeingAnnounced ? (
+                        <span className="text-[9px] font-black px-1.5 py-0.2 rounded-md bg-emerald-400 text-emerald-950 animate-pulse flex items-center gap-0.5 shadow-xs">
+                          <Volume2 className="w-2.5 h-2.5 text-emerald-950" />
+                          <span>نداء الآن</span>
+                        </span>
+                      ) : isCurrentInSlide ? (
                         <span
                           className="w-1.5 h-1.5 rounded-full animate-ping shrink-0"
                           style={{ backgroundColor: config.accentColor }}
                         />
-                      )}
+                      ) : null}
                     </div>
                     <p className="text-[11px] truncate" style={{ color: config.mutedTextColor }}>
                       {doc.clinicName}

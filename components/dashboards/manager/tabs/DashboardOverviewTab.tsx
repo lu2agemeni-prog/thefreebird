@@ -7,9 +7,15 @@
 // إيرادات اليوم).
 // ============================================================================
 import { useState, useEffect } from 'react';
-import { Stethoscope, Building, Users, Calculator, BellRing, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Stethoscope, Building, Users, Calculator, BellRing, ArrowLeft, CheckCircle2, Clock } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/lib/supabase';
+import {
+  QueueAutoExpireConfig,
+  DEFAULT_QUEUE_AUTO_EXPIRE_CONFIG,
+  fetchQueueAutoExpireConfig,
+  formatExpiryConfigSummary,
+} from '@/lib/queue-auto-complete';
 
 function StatCard({ title, value, icon }: { title: string; value: string; icon: React.ReactNode }) {
   return (
@@ -35,8 +41,12 @@ export function DashboardOverviewTab({ onNavigateTab }: DashboardOverviewTabProp
   const [patientsToday, setPatientsToday] = useState<number | null>(null);
   const [revenueToday, setRevenueToday] = useState<number | null>(null);
   const [upcoming24hCount, setUpcoming24hCount] = useState<number | null>(null);
+  const [autoExpireConfig, setAutoExpireConfig] = useState<QueueAutoExpireConfig>(DEFAULT_QUEUE_AUTO_EXPIRE_CONFIG);
 
   useEffect(() => {
+    // جلب إعدادات الإنهاء التلقائي للنداء
+    fetchQueueAutoExpireConfig(supabase).then(setAutoExpireConfig).catch(() => {});
+
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date();
@@ -122,6 +132,39 @@ export function DashboardOverviewTab({ onNavigateTab }: DashboardOverviewTabProp
               className="flex items-center gap-2 bg-white text-emerald-900 hover:bg-emerald-50 px-5 py-3 rounded-xl font-bold text-sm shadow-sm cursor-pointer transition-all hover:scale-[1.02]"
             >
               <span>إدارة وإرسال التذكيرات</span>
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* بطاقة التحكم في مدة الإنهاء التلقائي للنداء الآلي */}
+      <div className="bg-white border-2 border-emerald-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+        <div className="flex items-center gap-4">
+          <div className="p-3.5 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-200">
+            <Clock className="w-8 h-8" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-xl font-black text-gray-900">نظام الإنهاء التلقائي للنداء الآلي</h3>
+              <span className="text-[11px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-0.5 rounded-full font-black">
+                {formatExpiryConfigSummary(autoExpireConfig)}
+              </span>
+            </div>
+            <p className="text-sm text-gray-600 leading-relaxed max-w-xl">
+              إنهاء واستبعاد أي حالة يمر عليها هذا الوقت تلقائياً من شاشة النداء وقائمة الانتظار في حال نسيان الطبيب أو السكرتارية إنهاء المقابلة (ساعة، ساعتان، أكثر، أو نهاية اليوم 12:00 م).
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+          {onNavigateTab && (
+            <button
+              type="button"
+              onClick={() => onNavigateTab('queue_auto_expire')}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl font-bold text-sm shadow-sm cursor-pointer transition-all hover:scale-[1.02]"
+            >
+              <span>تعديل وضبط المدة (المدير)</span>
               <ArrowLeft className="w-4 h-4" />
             </button>
           )}

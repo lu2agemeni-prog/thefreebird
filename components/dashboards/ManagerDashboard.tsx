@@ -14,10 +14,11 @@ import { Sidebar, SidebarItem } from './Sidebar';
 import {
   Building, Calculator, Stethoscope, Activity, QrCode, Shield,
   BarChart, FileText, Newspaper, List, FlaskConical, Wallet, Megaphone, User, Users, Percent, Printer, PieChart,
-  BellRing,
+  BellRing, Clock,
 } from 'lucide-react';
 import { SecretaryCallQueue } from './secretary/SecretaryCallQueue';
 import { QueueMediaManager } from './manager/QueueMediaManager';
+import { QueueAutoExpireSettingsCard } from '@/components/queue/QueueAutoExpireSettingsCard';
 import { DashboardOverviewTab } from './manager/tabs/DashboardOverviewTab';
 import { DoctorsTab } from './manager/tabs/DoctorsTab';
 import { ClinicsTab } from './manager/tabs/ClinicsTab';
@@ -49,6 +50,7 @@ const managerNav: SidebarItem[] = [
   { name: 'الخدمات والأسعار', id: 'services', icon: List },
   { name: 'النداء الآلي', id: 'call_queue', icon: Activity },
   { name: 'وسائط شاشة النداء', id: 'queue_media', icon: List },
+  { name: 'مدة الإنهاء التلقائي للنداء', id: 'queue_auto_expire', icon: Clock },
   { name: 'طباعة معمل', id: 'lab_print', icon: Printer },
   { name: 'المعمل', id: 'lab', icon: FlaskConical },
   { name: 'حسابات المعمل', id: 'lab_accounts', icon: FlaskConical },
@@ -85,6 +87,7 @@ export function ManagerDashboard() {
           {activeTab === 'medical_news' && <MedicalNewsTab />}
           {activeTab === 'call_queue' && <SecretaryCallQueue />}
           {activeTab === 'queue_media' && <QueueMediaManager />}
+          {activeTab === 'queue_auto_expire' && <QueueAutoExpireSettingsCard />}
           {activeTab === 'lab_print' && <LabPrintTab />}
           {activeTab === 'lab' && <LabTab />}
           {activeTab === 'lab_accounts' && <LabAccountsTab />}
