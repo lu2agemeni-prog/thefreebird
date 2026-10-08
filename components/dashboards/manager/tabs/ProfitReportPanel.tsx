@@ -22,6 +22,9 @@ import {
   Info,
   DollarSign,
   PieChart,
+  Stethoscope,
+  X,
+  Filter,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
@@ -51,6 +54,45 @@ export function ProfitReportPanel() {
   // الافتراضي: الشهر المالي الحالي (من 21 في الشهر إلى 20 في الشهر التالي)
   const [dateFrom, setDateFrom] = useState(() => getFinancialMonthBounds().startStr);
   const [dateTo, setDateTo] = useState(() => getFinancialMonthBounds().endStr);
+
+  // قائمة الأطباء وفلتر الطبيب
+  const [doctors, setDoctors] = useState<Array<{ id: string; name: string; clinicIds: string[] }>>([]);
+  const [doctorFilter, setDoctorFilter] = useState<string>('');
+
+  useEffect(() => {
+    async function loadDoctors() {
+      const [profilesRes, dcRes, docsRes] = await Promise.all([
+        supabase.from('profiles').select('id, first_name, last_name').eq('role', 'doctor').order('first_name'),
+        supabase.from('doctor_clinics').select('doctor_id, clinic_id'),
+        supabase.from('doctors').select('profile_id, clinic_id'),
+      ]);
+
+      const docClinicsMap = new Map<string, Set<string>>();
+      (dcRes.data || []).forEach((r: any) => {
+        if (!docClinicsMap.has(r.doctor_id)) docClinicsMap.set(r.doctor_id, new Set());
+        if (r.clinic_id) docClinicsMap.get(r.doctor_id)!.add(r.clinic_id);
+      });
+      (docsRes.data || []).forEach((r: any) => {
+        if (!docClinicsMap.has(r.profile_id)) docClinicsMap.set(r.profile_id, new Set());
+        if (r.clinic_id) docClinicsMap.get(r.profile_id)!.add(r.clinic_id);
+      });
+
+      if (profilesRes.data) {
+        setDoctors(
+          profilesRes.data.map((p: any) => ({
+            id: p.id,
+            name: `د. ${p.first_name || ''} ${p.last_name || ''}`.trim(),
+            clinicIds: Array.from(docClinicsMap.get(p.id) || []),
+          }))
+        );
+      }
+    }
+    loadDoctors();
+  }, []);
+
+  const activeDoctor = useMemo(() => {
+    return doctors.find((d) => d.id === doctorFilter) || null;
+  }, [doctors, doctorFilter]);
 
   // حالة المودالات
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
@@ -140,16 +182,31 @@ export function ProfitReportPanel() {
     return validRows;
   }, [rows]);
 
+  // تصفية الحركات بحسب الطبيب المحدد إن وُجد
+  const displayRows = useMemo(() => {
+    if (!doctorFilter || !activeDoctor) return cleanedRows;
+    return cleanedRows.filter((t) => {
+      // 1) رواتب ومستحقات وسلفات مسجلة لهذا الطبيب مباشرة
+      if (t.user_id === doctorFilter || t.beneficiary_id === doctorFilter) return true;
+      // 2) إيرادات ومصروفات العيادات المسندة لهذا الطبيب
+      if (t.clinic_id && activeDoctor.clinicIds.includes(t.clinic_id)) return true;
+      // 3) ورود اسم الطبيب في وصف الحركة
+      const desc = (t.description || '').toLowerCase();
+      if (activeDoctor.name && desc.includes(activeDoctor.name.toLowerCase())) return true;
+      return false;
+    });
+  }, [cleanedRows, doctorFilter, activeDoctor]);
+
   // حسابات المركز العامة
   const center = useMemo(() => {
-    const incomeRows = cleanedRows.filter((t) => t.type === 'income');
-    const expenseRows = cleanedRows.filter((t) => t.type !== 'income');
+    const incomeRows = displayRows.filter((t) => t.type === 'income');
+    const expenseRows = displayRows.filter((t) => t.type !== 'income');
     const income = incomeRows.reduce((s, t) => s + Number(t.amount || 0), 0);
     const expense = expenseRows.reduce((s, t) => s + Number(t.amount || 0), 0);
     const net = income - expense;
     const profitMargin = income > 0 ? Math.round((net / income) * 100) : 0;
     return { income, expense, net, profitMargin, incomeRows, expenseRows };
-  }, [cleanedRows]);
+  }, [displayRows]);
 
   // تفصيل أرباح ومصروفات كل عيادة
   const clinicBreakdown = useMemo(() => {
@@ -157,7 +214,7 @@ export function ProfitReportPanel() {
       string,
       { name: string; income: number; expense: number; transactions: any[] }
     >();
-    cleanedRows.forEach((t) => {
+    displayRows.forEach((t) => {
       const key = t.clinic_id || UNASSIGNED_KEY;
       const name = t.clinics?.name || 'مصروفات عامة (غير مخصصة لعيادة)';
       if (!map.has(key)) map.set(key, { name, income: 0, expense: 0, transactions: [] });
@@ -176,14 +233,14 @@ export function ProfitReportPanel() {
       .sort((a, b) =>
         a.key === UNASSIGNED_KEY ? 1 : b.key === UNASSIGNED_KEY ? -1 : b.net - a.net
       );
-  }, [cleanedRows]);
+  }, [displayRows]);
 
   // تصنيف المصروفات (مجموعات)
   const expenseCategoriesBreakdown = useMemo(() => {
     const map = new Map<string, { label: string; amount: number; count: number; transactions: any[] }>();
 
     // 1) رواتب ومستحقات الأطباء (type === 'salary')
-    const doctorSalaries = cleanedRows.filter((t) => t.type === 'salary');
+    const doctorSalaries = displayRows.filter((t) => t.type === 'salary');
     if (doctorSalaries.length > 0) {
       map.set('doctor_salaries', {
         label: 'مستحقات وأجور الأطباء',
@@ -194,7 +251,7 @@ export function ProfitReportPanel() {
     }
 
     // 2) بقية المصروفات
-    cleanedRows
+    displayRows
       .filter((t) => t.type !== 'income' && t.type !== 'salary')
       .forEach((t) => {
         const catKey = t.category || 'misc';
@@ -211,7 +268,7 @@ export function ProfitReportPanel() {
     return Array.from(map.entries())
       .map(([key, v]) => ({ key, ...v }))
       .sort((a, b) => b.amount - a.amount);
-  }, [cleanedRows]);
+  }, [displayRows]);
 
   // إجمالي المدفوع لكل طبيب
   const doctorBreakdown = useMemo(() => {
@@ -219,7 +276,7 @@ export function ProfitReportPanel() {
       string,
       { name: string; amount: number; count: number; transactions: any[] }
     >();
-    cleanedRows
+    displayRows
       .filter((t) => t.type === 'salary' && t.user_id)
       .forEach((t) => {
         const key = t.user_id;
@@ -233,7 +290,7 @@ export function ProfitReportPanel() {
         row.transactions.push(t);
       });
     return Array.from(map.values()).sort((a, b) => b.amount - a.amount);
-  }, [cleanedRows]);
+  }, [displayRows]);
 
   // ==========================================
   // تصدير إكسيل متعدد الأوراق شامل
@@ -322,7 +379,10 @@ export function ProfitReportPanel() {
       });
     }
 
-    exportMultiSheetExcel(sheets, `تقرير_الأرباح_الشامل_${dateFrom}_${dateTo}`);
+    const fileName = activeDoctor
+      ? `تقرير_أرباح_${activeDoctor.name.replace(/\s+/g, '_')}_${dateFrom}_${dateTo}`
+      : `تقرير_الأرباح_الشامل_${dateFrom}_${dateTo}`;
+    exportMultiSheetExcel(sheets, fileName);
   };
 
   return (
@@ -394,7 +454,7 @@ export function ProfitReportPanel() {
             </div>
           </div>
 
-          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2 text-gray-500 text-xs font-bold">
               <Calendar className="w-4 h-4 text-emerald-600" />
               <span>من:</span>
@@ -412,9 +472,40 @@ export function ProfitReportPanel() {
               onChange={(e) => setDateTo(e.target.value)}
               className="border border-gray-300 rounded-xl p-2 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
             />
-            <span className="text-xs text-gray-400 mr-2">
-              (يتم تحديث جميع الأرقام والرسوم تلقائياً وفق النطاق الزمني المحدد)
-            </span>
+
+            {/* فلتر الطبيب */}
+            <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700 bg-emerald-50/70 border border-emerald-300 rounded-xl px-2.5 py-1.5">
+              <Stethoscope className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>تصفية حسب الطبيب:</span>
+              <select
+                value={doctorFilter}
+                onChange={(e) => setDoctorFilter(e.target.value)}
+                className="bg-transparent border-none text-emerald-900 font-bold focus:outline-hidden text-xs cursor-pointer"
+              >
+                <option value="">جميع الأطباء (تقرير شامل للمركز)</option>
+                {doctors.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+              {doctorFilter && (
+                <button
+                  type="button"
+                  onClick={() => setDoctorFilter('')}
+                  className="text-gray-400 hover:text-red-600 p-0.5 rounded-full cursor-pointer ml-1"
+                  title="مسح فلترة الطبيب"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {activeDoctor && (
+              <span className="text-xs text-emerald-700 font-bold bg-emerald-100/70 px-2 py-1 rounded-lg">
+                عرض تقرير مخصص لـ {activeDoctor.name}
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -813,17 +904,18 @@ export function ProfitReportPanel() {
       <PrintableReportModal
         isOpen={isPrintModalOpen}
         onClose={() => setIsPrintModalOpen(false)}
-        title="تقرير الأرباح والموقف المالي المفصل"
-        subtitle="تقرير شامل يوضح إيرادات ومصروفات وصافي أرباح المركز والعيادات"
+        title={activeDoctor ? `تقرير الأرباح والموقف المالي — ${activeDoctor.name}` : "تقرير الأرباح والموقف المالي المفصل"}
+        subtitle={activeDoctor ? `تقرير شامل يوضح إيرادات عيادات ومصروفات وصافي أرباح ${activeDoctor.name}` : "تقرير شامل يوضح إيرادات ومصروفات وصافي أرباح المركز والعيادات"}
         dateRange={{ from: dateFrom, to: dateTo }}
         metaItems={[
-          { label: 'إجمالي الحركات', value: `${rows.length} حركة` },
+          { label: 'إجمالي الحركات', value: `${displayRows.length} حركة` },
           { label: 'هامش الربح', value: `${center.profitMargin}%` },
+          ...(activeDoctor ? [{ label: 'الطبيب المحدد', value: activeDoctor.name }] : []),
         ]}
         summaryCards={[
-          { label: 'إجمالي الإيرادات', value: `+${center.income.toLocaleString('ar-EG')} ج.م`, sub: `${center.incomeRows.length} حركة` },
-          { label: 'إجمالي المصروفات', value: `-${center.expense.toLocaleString('ar-EG')} ج.م`, sub: `${center.expenseRows.length} حركة` },
-          { label: 'صافي ربح المركز', value: `${center.net >= 0 ? '+' : ''}${center.net.toLocaleString('ar-EG')} ج.م`, sub: `نسبة ${center.profitMargin}%` },
+          { label: activeDoctor ? `إيرادات عيادات ${activeDoctor.name}` : 'إجمالي الإيرادات', value: `+${center.income.toLocaleString('ar-EG')} ج.م`, sub: `${center.incomeRows.length} حركة` },
+          { label: activeDoctor ? `مستحقات ومصروفات ${activeDoctor.name}` : 'إجمالي المصروفات', value: `-${center.expense.toLocaleString('ar-EG')} ج.م`, sub: `${center.expenseRows.length} حركة` },
+          { label: activeDoctor ? 'صافي أرباح الطبيب للمركز' : 'صافي ربح المركز', value: `${center.net >= 0 ? '+' : ''}${center.net.toLocaleString('ar-EG')} ج.م`, sub: `نسبة ${center.profitMargin}%` },
         ]}
         sections={[
           {

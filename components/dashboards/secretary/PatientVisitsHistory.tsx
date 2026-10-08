@@ -17,7 +17,7 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { CalendarClock, Pencil, Trash2, Plus, Loader2, Building, Stethoscope, Calendar, ChevronRight, ChevronLeft, CalendarDays, CalendarRange, CheckCircle2 } from 'lucide-react';
+import { CalendarClock, Pencil, Trash2, Plus, Loader2, Building, Stethoscope, Calendar, ChevronRight, ChevronLeft, CalendarDays, CalendarRange, CheckCircle2, Download, FileSpreadsheet } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { Pagination } from '@/components/ui/pagination';
@@ -26,7 +26,9 @@ import { supabase } from '@/lib/supabase';
 import { getFriendlyErrorMessage } from '@/lib/errors';
 import { getFinancialMonthBounds, getPreviousFinancialMonthBounds } from '@/lib/financialMonth';
 import { authFetchJson } from '@/lib/api-client';
+import { exportRowsToExcel } from '@/lib/export-excel';
 import { AddVisitModal } from './AddVisitModal';
+import { ExportVisitsModal } from './ExportVisitsModal';
 
 const PAGE_SIZE = 8;
 const FETCH_CAP = 1000;
@@ -162,6 +164,34 @@ export function PatientVisitsHistory() {
 
   const [actionToast, setActionToast] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
+
+  // تصدير سريع للزيارات المفلترة حالياً مباشرة
+  const handleQuickExport = () => {
+    if (filteredGroups.length === 0) {
+      alert('لا توجد زيارات مطابقة للتصدير.');
+      return;
+    }
+    const rowsForExcel = filteredGroups.map((g, idx) => {
+      const doc = g.first.doctor;
+      const doctorName = doc ? `د. ${doc.first_name || ''} ${doc.last_name || ''}`.trim() : 'غير محدد';
+      const total = g.rows.reduce((s, r) => s + Number(r.paid_amount || 0), 0);
+      const servicesList = g.rows.map((r) => r.service_name || 'خدمة كشف').join(' + ');
+      return {
+        'م': idx + 1,
+        'تاريخ الزيارة': (g.first.visit_date || '').slice(0, 10),
+        'اسم المريض': g.first.patient_name || 'بدون اسم',
+        'العيادة': g.first.clinics?.name || 'غير محددة',
+        'الطبيب المعالج': doctorName,
+        'الخدمات الطبية': servicesList,
+        'عدد الخدمات': g.rows.length,
+        'المبلغ المحصل (ج.م)': total,
+        'كود الزيارة': g.groupId,
+      };
+    });
+    const dateLabel = browseMode === 'day' ? selectedDay : `${dateFrom || 'الكل'}_إلى_${dateTo || 'الكل'}`;
+    exportRowsToExcel(rowsForExcel, 'سجل الزيارات', `سجل_الزيارات_${dateLabel}`);
+  };
 
   // عدّاد الفلاتر النشطة عشان يبان للمستخدم إن فيه فلتر شغّال (نطاق
   // التاريخ في وضع التصفح اليومي مش "فلتر" — هو أصل الشاشة)
@@ -220,8 +250,29 @@ export function PatientVisitsHistory() {
             <CardTitle className="flex items-center gap-2">
               <CalendarClock className="w-5 h-5 text-emerald-600" /> سجل الزيارات
             </CardTitle>
-            <div className="w-full md:w-72">
-              <SearchInput value={search} onValueChange={setSearch} placeholder="ابحث باسم المريض..." />
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowExportModal(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors"
+                title="تصدير سجل الزيارات لفترة معينة (Excel / CSV / طباعة)"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>تصدير سجل الزيارات</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleQuickExport}
+                disabled={filteredGroups.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 shadow-2xs transition-colors disabled:opacity-50"
+                title="تصدير سريع للزيارات المفلترة حالياً إلى Excel"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-600" />
+                <span>إكسيل ({filteredGroups.length})</span>
+              </button>
+              <div className="w-full sm:w-64">
+                <SearchInput value={search} onValueChange={setSearch} placeholder="ابحث باسم المريض..." />
+              </div>
             </div>
           </div>
 
@@ -475,6 +526,16 @@ export function PatientVisitsHistory() {
           addServiceTo={addingServiceToGroup}
           onClose={() => setAddingServiceToGroup(null)}
           onAdded={fetchVisits}
+        />
+      )}
+
+      {showExportModal && (
+        <ExportVisitsModal
+          initialDateFrom={browseMode === 'day' ? selectedDay : (dateFrom || undefined)}
+          initialDateTo={browseMode === 'day' ? selectedDay : (dateTo || undefined)}
+          initialClinicId={clinicFilter}
+          initialDoctorId={doctorFilter}
+          onClose={() => setShowExportModal(false)}
         />
       )}
     </Card>

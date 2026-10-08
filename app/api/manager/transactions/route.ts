@@ -16,11 +16,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const type = searchParams.get('type'); // 'income' | 'expense' | 'salary' | null
   const expenseGroup = searchParams.get('expenseGroup');
   const clinicId = searchParams.get('clinicId');
+  const doctorId = searchParams.get('doctorId');
   const sortBy = searchParams.get('sortBy') || 'created_at';
   const sortOrder = searchParams.get('sortOrder') === 'asc';
   const dateFrom = searchParams.get('dateFrom'); // YYYY-MM-DD
   const dateTo = searchParams.get('dateTo'); // YYYY-MM-DD
   const fetchAll = searchParams.get('fetchAll') === 'true' || searchParams.get('all') === 'true';
+
+  // جلب العيادات المسندة للطبيب إذا كان هناك فلتر طبيب
+  let doctorClinicIds: string[] = [];
+  if (doctorId) {
+    const [dcRes, docRes] = await Promise.all([
+      supabase.from('doctor_clinics').select('clinic_id').eq('doctor_id', doctorId),
+      supabase.from('doctors').select('clinic_id').eq('profile_id', doctorId),
+    ]);
+    const set = new Set<string>();
+    (dcRes.data || []).forEach((r: any) => { if (r.clinic_id) set.add(r.clinic_id); });
+    (docRes.data || []).forEach((r: any) => { if (r.clinic_id) set.add(r.clinic_id); });
+    doctorClinicIds = Array.from(set);
+  }
 
   let query = supabase
     .from('transactions')
@@ -39,6 +53,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (expenseGroup) query = query.eq('expense_group', expenseGroup);
   if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00`);
   if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59`);
+
+  if (doctorId) {
+    if (doctorClinicIds.length > 0) {
+      query = query.or(`user_id.eq.${doctorId},beneficiary_id.eq.${doctorId},clinic_id.in.(${doctorClinicIds.join(',')})`);
+    } else {
+      query = query.or(`user_id.eq.${doctorId},beneficiary_id.eq.${doctorId}`);
+    }
+  }
 
   if (q) {
     query = query.or(`description.ilike.%${q}%,category.ilike.%${q}%`);
@@ -101,6 +123,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (expenseGroup) sumQuery = sumQuery.eq('expense_group', expenseGroup);
   if (dateFrom) sumQuery = sumQuery.gte('created_at', `${dateFrom}T00:00:00`);
   if (dateTo) sumQuery = sumQuery.lte('created_at', `${dateTo}T23:59:59`);
+  if (doctorId) {
+    if (doctorClinicIds.length > 0) {
+      sumQuery = sumQuery.or(`user_id.eq.${doctorId},beneficiary_id.eq.${doctorId},clinic_id.in.(${doctorClinicIds.join(',')})`);
+    } else {
+      sumQuery = sumQuery.or(`user_id.eq.${doctorId},beneficiary_id.eq.${doctorId}`);
+    }
+  }
   if (q) {
     sumQuery = sumQuery.or(`description.ilike.%${q}%,category.ilike.%${q}%`);
   }

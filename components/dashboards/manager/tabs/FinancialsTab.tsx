@@ -34,6 +34,7 @@ import {
   CalendarRange,
   Loader2,
   AlertCircle,
+  Stethoscope,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
@@ -76,13 +77,15 @@ export function FinancialsTab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // قائمة العيادات للفلترة والتعديل
+  // قائمة العيادات والأطباء للفلترة والتعديل
   const [clinics, setClinics] = useState<Array<{ id: string; name: string }>>([]);
+  const [doctors, setDoctors] = useState<Array<{ id: string; name: string }>>([]);
 
   // الفلاتر
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [clinicFilter, setClinicFilter] = useState('');
+  const [doctorFilter, setDoctorFilter] = useState('');
   const [expenseGroupFilter, setExpenseGroupFilter] = useState('');
   const [dateFrom, setDateFrom] = useState(() => getFinancialMonthBounds().startStr);
   const [dateTo, setDateTo] = useState(() => getFinancialMonthBounds().endStr);
@@ -128,7 +131,7 @@ export function FinancialsTab() {
   const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
 
-  // جلب العيادات
+  // جلب العيادات والأطباء
   useEffect(() => {
     supabase
       .from('clinics')
@@ -136,6 +139,22 @@ export function FinancialsTab() {
       .order('name')
       .then(({ data }) => {
         if (data) setClinics(data);
+      });
+
+    supabase
+      .from('profiles')
+      .select('id, first_name, last_name')
+      .eq('role', 'doctor')
+      .order('first_name')
+      .then(({ data }) => {
+        if (data) {
+          setDoctors(
+            data.map((d: any) => ({
+              id: d.id,
+              name: `د. ${d.first_name || ''} ${d.last_name || ''}`.trim(),
+            }))
+          );
+        }
       });
   }, []);
 
@@ -165,6 +184,7 @@ export function FinancialsTab() {
     if (search.trim()) params.set('q', search.trim());
     if (typeFilter) params.set('type', typeFilter);
     if (clinicFilter) params.set('clinicId', clinicFilter);
+    if (doctorFilter) params.set('doctorId', doctorFilter);
     if (expenseGroupFilter) params.set('expenseGroup', expenseGroupFilter);
     if (sortBy) params.set('sortBy', sortBy);
     if (sortOrder) params.set('sortOrder', sortOrder);
@@ -181,7 +201,7 @@ export function FinancialsTab() {
       }
     }
     setLoading(false);
-  }, [page, search, typeFilter, clinicFilter, expenseGroupFilter, sortBy, sortOrder, dateFrom, dateTo]);
+  }, [page, search, typeFilter, clinicFilter, doctorFilter, expenseGroupFilter, sortBy, sortOrder, dateFrom, dateTo]);
 
   useEffect(() => {
     const t = setTimeout(fetchTransactions, 0);
@@ -192,7 +212,7 @@ export function FinancialsTab() {
   useEffect(() => {
     const t = setTimeout(() => setPage(0), 0);
     return () => clearTimeout(t);
-  }, [search, typeFilter, clinicFilter, expenseGroupFilter, sortBy, sortOrder, dateFrom, dateTo]);
+  }, [search, typeFilter, clinicFilter, doctorFilter, expenseGroupFilter, sortBy, sortOrder, dateFrom, dateTo]);
 
   // اختيار شهر مالي محدد من القائمة المنسدلة
   const handleSelectFinancialMonth = (val: string) => {
@@ -251,10 +271,11 @@ export function FinancialsTab() {
   };
 
   // مسح الفلاتر
-  const hasActiveFilters = Boolean(typeFilter || clinicFilter || expenseGroupFilter || dateFrom || dateTo || search);
+  const hasActiveFilters = Boolean(typeFilter || clinicFilter || doctorFilter || expenseGroupFilter || dateFrom || dateTo || search);
   const clearFilters = () => {
     setTypeFilter('');
     setClinicFilter('');
+    setDoctorFilter('');
     setExpenseGroupFilter('');
     setDateFrom('');
     setDateTo('');
@@ -376,6 +397,7 @@ export function FinancialsTab() {
     if (search.trim()) params.set('q', search.trim());
     if (typeFilter) params.set('type', typeFilter);
     if (clinicFilter) params.set('clinicId', clinicFilter);
+    if (doctorFilter) params.set('doctorId', doctorFilter);
     if (expenseGroupFilter) params.set('expenseGroup', expenseGroupFilter);
     if (sortBy) params.set('sortBy', sortBy);
     if (sortOrder) params.set('sortOrder', sortOrder);
@@ -409,6 +431,7 @@ export function FinancialsTab() {
         if (search.trim()) params.set('q', search.trim());
         if (typeFilter) params.set('type', typeFilter);
         if (clinicFilter) params.set('clinicId', clinicFilter);
+        if (doctorFilter) params.set('doctorId', doctorFilter);
         if (expenseGroupFilter) params.set('expenseGroup', expenseGroupFilter);
         if (sortBy) params.set('sortBy', sortBy);
         if (sortOrder) params.set('sortOrder', sortOrder);
@@ -695,12 +718,26 @@ export function FinancialsTab() {
               <select
                 value={clinicFilter}
                 onChange={(e) => setClinicFilter(e.target.value)}
-                className="border border-gray-300 rounded-xl p-2 text-xs bg-white text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                className="border border-gray-300 rounded-xl p-2 text-xs bg-white text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 font-bold"
               >
                 <option value="">كل العيادات</option>
                 {clinics.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* فلتر الطبيب */}
+              <select
+                value={doctorFilter}
+                onChange={(e) => setDoctorFilter(e.target.value)}
+                className="border border-gray-300 rounded-xl p-2 text-xs bg-white text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 font-bold"
+              >
+                <option value="">كل الأطباء</option>
+                {doctors.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
                   </option>
                 ))}
               </select>
@@ -1162,10 +1199,11 @@ export function FinancialsTab() {
         onClose={() => setIsPrintModalOpen(false)}
         isLoading={printDataLoading}
         title="كشف الحركات والمعاملات المالية"
-        subtitle={`سجل حركات الخزينة والإيرادات والمصروفات — ${periodTitleLabel}`}
+        subtitle={`سجل حركات الخزينة والإيرادات والمصروفات — ${periodTitleLabel}${doctorFilter ? ` | الطبيب: ${doctors.find(d => d.id === doctorFilter)?.name || ''}` : ''}`}
         dateRange={dateFrom && dateTo ? { from: dateFrom, to: dateTo } : undefined}
         metaItems={[
           { label: 'الفترة المحددة', value: periodTitleLabel },
+          ...(doctorFilter ? [{ label: 'تصفية الطبيب', value: doctors.find(d => d.id === doctorFilter)?.name || 'طبيب محدد' }] : []),
           { label: 'إجمالي السجلات بالتقرير', value: `${printDisplayTransactions.length} حركة` },
           { label: 'إجمالي الإيرادات', value: `+${periodSummary.income.toLocaleString('ar-EG')} ج.م` },
           { label: 'إجمالي المصروفات', value: `-${periodSummary.expense.toLocaleString('ar-EG')} ج.م` },
