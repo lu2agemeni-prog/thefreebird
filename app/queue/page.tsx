@@ -147,9 +147,11 @@ export default function QueueDisplay() {
   const presentDoctorsListRef = useRef<any[]>([]);
   const mediaSlidesRef = useRef<MediaSlideItem[]>([]);
 
-  // مراجع نداء المريض وتكرار النداء
+  // مراجع نداء المريض وتكرار النداء وحماية منع ازدواجية الصوت
   const lastAnnouncedIdRef = useRef<string | null>(null);
   const lastAnnouncedCallKeyRef = useRef<string | null>(null);
+  const lastAnnouncementSignatureRef = useRef<string | null>(null);
+  const lastAnnouncementTimeRef = useRef<number>(0);
   const [repeatPulseKey, setRepeatPulseKey] = useState(0);
   const [isRepeatCallNotice, setIsRepeatCallNotice] = useState(false);
   const [isRepeatingCurrentCall, setIsRepeatingCurrentCall] = useState(false);
@@ -267,6 +269,18 @@ export default function QueueDisplay() {
     clinicAudioNumber?: number | null;
     isRepeat?: boolean;
   }) => {
+    // منع تكرار النداء المتزامن (في حال وصول الحدث مرتين خلال 2.5 ثانية لنفس الدور والعيادة)
+    const now = Date.now();
+    const signature = `${callData.id || ''}_${callData.token}_${callData.clinicName}_${!!callData.isRepeat}`;
+    if (
+      lastAnnouncementSignatureRef.current === signature &&
+      now - lastAnnouncementTimeRef.current < 2500
+    ) {
+      return;
+    }
+    lastAnnouncementSignatureRef.current = signature;
+    lastAnnouncementTimeRef.current = now;
+
     // 1. الأولوية المطلقة لنداء المريض: إيقاف أي صوت ميديا أو إعلان طبيب فوراً بدون أي تأخير (0ms)
     isPatientCallActiveRef.current = true;
     setIsPatientCallActive(true);

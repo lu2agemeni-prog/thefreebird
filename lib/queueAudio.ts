@@ -6,17 +6,65 @@
 // النداء يفشل بصمت.
 // ============================================================================
 
-function playFile(src: string): Promise<void> {
+let currentAnnouncementAudio: HTMLAudioElement | null = null;
+let currentAnnouncementId = 0;
+
+export function stopCurrentAnnouncement(): void {
+  currentAnnouncementId++;
+  if (currentAnnouncementAudio) {
+    try {
+      currentAnnouncementAudio.pause();
+      currentAnnouncementAudio.currentTime = 0;
+    } catch {
+      // ignore
+    }
+    currentAnnouncementAudio = null;
+  }
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function playFile(src: string, myId: number): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (myId !== currentAnnouncementId) {
+      resolve();
+      return;
+    }
     const audio = new Audio(src);
-    audio.addEventListener('ended', () => resolve());
-    audio.addEventListener('error', () => reject(new Error(`تعذر تشغيل ${src}`)));
-    audio.play().catch(reject);
+    currentAnnouncementAudio = audio;
+
+    const cleanup = () => {
+      if (currentAnnouncementAudio === audio) {
+        currentAnnouncementAudio = null;
+      }
+    };
+
+    audio.addEventListener('ended', () => {
+      cleanup();
+      resolve();
+    });
+    audio.addEventListener('error', () => {
+      cleanup();
+      reject(new Error(`تعذر تشغيل ${src}`));
+    });
+    audio.play().catch((err) => {
+      cleanup();
+      reject(err);
+    });
   });
 }
 
-function speak(text: string): Promise<void> {
+function speak(text: string, myId: number): Promise<void> {
   return new Promise((resolve) => {
+    if (myId !== currentAnnouncementId) {
+      resolve();
+      return;
+    }
     if (typeof window === 'undefined' || !window.speechSynthesis) {
       resolve();
       return;
@@ -54,15 +102,22 @@ export async function playQueueAnnouncement(
   audioNumber?: number | null,
   options?: QueueAnnouncementOptions
 ): Promise<void> {
+  // إلغاء أي نداء صوتي سابق شغال لمنع تداخل أو تكرار الأصوات
+  stopCurrentAnnouncement();
+  const myId = currentAnnouncementId;
+
   const isRepeat = !!options?.isRepeat;
   const chimeCount = options?.chimeCount || (isRepeat ? 2 : 1);
   const totalRounds = Math.max(1, Math.min(3, options?.repeatTimes || 1));
 
   for (let round = 0; round < totalRounds; round++) {
+    if (myId !== currentAnnouncementId) return;
+
     // 1. تشغيل نغمة التنبيه (ding) مع دعم التكرار السريع في حالة تكرار النداء
     for (let c = 0; c < chimeCount; c++) {
+      if (myId !== currentAnnouncementId) return;
       try {
-        await playFile('/audio/ding.mp3');
+        await playFile('/audio/ding.mp3', myId);
         if (c < chimeCount - 1) {
           await new Promise((r) => setTimeout(r, 120));
         }
@@ -71,30 +126,35 @@ export async function playQueueAnnouncement(
       }
     }
 
+    if (myId !== currentAnnouncementId) return;
+
     // 2. نطق رقم الدور
     try {
-      await playFile(`/audio/${tokenNumber}.mp3`);
+      await playFile(`/audio/${tokenNumber}.mp3`, myId);
     } catch {
+      if (myId !== currentAnnouncementId) return;
       const prefix = isRepeat ? 'تكرار النداء.. ' : '';
-      await speak(`${prefix}دور رقم ${tokenNumber}`);
+      await speak(`${prefix}دور رقم ${tokenNumber}`, myId);
     }
+
+    if (myId !== currentAnnouncementId) return;
 
     // 3. نطق اسم أو رقم العيادة
     let playedClinicFile = false;
     if (audioNumber) {
       try {
-        await playFile(`/audio/clinic${audioNumber}.mp3`);
+        await playFile(`/audio/clinic${audioNumber}.mp3`, myId);
         playedClinicFile = true;
       } catch {
         // نكمل على TTS تحت
       }
     }
 
-    if (!playedClinicFile) {
-      await speak(`تفضل بالدخول إلى ${clinicName}`);
+    if (!playedClinicFile && myId === currentAnnouncementId) {
+      await speak(`تفضل بالدخول إلى ${clinicName}`, myId);
     }
 
-    if (round < totalRounds - 1) {
+    if (round < totalRounds - 1 && myId === currentAnnouncementId) {
       await new Promise((r) => setTimeout(r, 1200));
     }
   }
